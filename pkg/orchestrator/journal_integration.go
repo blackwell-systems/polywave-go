@@ -67,13 +67,7 @@ func PrepareAgentContext(opts PrepareAgentContextOpts) result.Result[PrepareCont
 	}
 
 	// Generate context markdown using journal.GenerateContext
-	contextMd, genErr := journal.GenerateContext(entries, maxEntries)
-	if genErr != nil {
-		return result.NewFailure[PrepareContextData]([]result.SAWError{
-			result.NewFatal(result.CodeJournalInitFail,
-				fmt.Sprintf("failed to generate context: %s", genErr.Error())),
-		})
-	}
+	contextMd := journal.GenerateContext(entries, maxEntries)
 
 	return result.NewSuccess(PrepareContextData{ContextMD: contextMd})
 }

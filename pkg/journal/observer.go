@@ -539,10 +539,7 @@ func (o *JournalObserver) GenerateContext() (string, error) {
 	}
 
 	// Call journal.GenerateContext with no limit (maxEntries=0 means all entries)
-	context, err := GenerateContext(entries, 0)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate context: %w", err)
-	}
+	context := GenerateContext(entries, 0)
 
 	return context, nil
 }
