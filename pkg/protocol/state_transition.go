@@ -26,6 +26,7 @@ type SetImplStateData struct {
 
 // allowedTransitions maps each state to the set of valid next states.
 var allowedTransitions = map[ProtocolState][]ProtocolState{
+	StateInterviewing:    {StateScoutPending},
 	StateScoutPending:    {StateScoutValidating, StateReviewed, StateNotSuitable, StateBlocked},
 	StateScoutValidating: {StateScoutValidating, StateReviewed, StateNotSuitable, StateBlocked},
 	// StateReviewed allows direct transition to COMPLETE for close-impl

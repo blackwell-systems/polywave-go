@@ -444,6 +444,7 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 	}
 
 	validStates := map[ProtocolState]bool{
+		StateInterviewing:    true,
 		StateScoutPending:    true,
 		StateScoutValidating: true,
 		StateReviewed:        true,
@@ -460,7 +461,7 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 	if !validStates[m.State] {
 		errs = append(errs, result.SAWError{
 			Code:     result.CodeInvalidState,
-			Message:  fmt.Sprintf("state has invalid value %q — must be one of: SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
+			Message:  fmt.Sprintf("state has invalid value %q — must be one of: INTERVIEWING, SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
 			Severity: "error",
 			Field:    "state",
 		})
