@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -99,6 +101,24 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		// Step 3: Partition IMPLs (E28A)
 		needsScout, preExisting := PartitionIMPLsByStatus(manifest, currentTier)
 
+		// Step 3a: P1+ conflict check — detect overlapping file ownership across
+		// IMPLs in the same tier before launching any scouts or waves.
+		tierSlugs := getTierSlugs(manifest, currentTier)
+		conflictReport, conflictErr := protocol.CheckIMPLConflicts(tierSlugs, opts.RepoPath)
+		if conflictErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr))
+			result.FinalState = "conflict_check_error"
+			return result, fmt.Errorf("P1+ tier conflict check failed: %w", conflictErr)
+		}
+		if len(conflictReport.Conflicts) > 0 {
+			for _, c := range conflictReport.Conflicts {
+				result.Errors = append(result.Errors,
+					fmt.Sprintf("file ownership conflict: %s claimed by %s", c.File, strings.Join(c.Impls, ", ")))
+			}
+			result.FinalState = "conflict_detected"
+			return result, fmt.Errorf("RunTierLoop: %d file ownership conflict(s) detected in tier %d", len(conflictReport.Conflicts), currentTier)
+		}
+
 		// Step 4: Launch parallel Scouts for pending IMPLs
 		if len(needsScout) > 0 {
 			emitEvent(opts.OnEvent, TierLoopEvent{
@@ -149,7 +169,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		}
 
 		// Step 8: Execute waves for each IMPL in the tier, respecting serial_waves
-		tierSlugs := getTierSlugs(manifest, currentTier)
+		// tierSlugs was already computed in Step 3a above.
 		waveProgress := make(map[string]int)
 
 		// Find max wave count in this tier
@@ -184,7 +204,8 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				if implPath == "" {
 					result.Errors = append(result.Errors,
 						fmt.Sprintf("IMPL doc not found for %s", slug))
-					continue
+					result.FinalState = "impl_not_found"
+					return result, fmt.Errorf("RunTierLoop: IMPL doc not found for slug %q", slug)
 				}
 
 				implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, currentTier, slug)
@@ -226,15 +247,18 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 			})
 		}
 
-		// Step 9: Run tier gate (E29)
-		gateRes := protocol.RunTierGate(manifest, currentTier, opts.RepoPath)
-		if gateRes.IsFatal() {
-			result.Errors = append(result.Errors, fmt.Sprintf("tier gate error: %s", gateRes.Errors[0].Message))
-			result.FinalState = "gate_error"
-			return result, fmt.Errorf("RunTierLoop: tier gate: %s", gateRes.Errors[0].Message)
+		// Steps 9-12: AdvanceTierAutomatically runs the tier gate (E29), freezes
+		// contracts (E30), and advances the tier (E33). Do NOT call RunTierGate
+		// separately — AdvanceTierAutomatically owns the canonical gate invocation.
+		advResult, advErr := AdvanceTierAutomatically(manifest, currentTier, opts.RepoPath, opts.AutoMode)
+		if advErr != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("advance tier error: %s", advErr))
+			result.FinalState = "advance_error"
+			return result, fmt.Errorf("RunTierLoop: advance tier: %w", advErr)
 		}
-		gateResult := gateRes.GetData()
 
+		// Surface the gate result from AdvanceTierAutomatically.
+		gateResult := advResult.GateResult
 		emitEvent(opts.OnEvent, TierLoopEvent{
 			Type:   "tier_gate",
 			Tier:   currentTier,
@@ -279,46 +303,33 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 		// E40: Emit tier_gate_passed.
 		nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierGatePassedEvent(manifest.ProgramSlug, currentTier))
 
-		// Step 10: Freeze contracts (E30)
-		freezeRes := protocol.FreezeContracts(manifest, currentTier, opts.RepoPath)
-		if freezeRes.IsFatal() {
-			result.Errors = append(result.Errors, fmt.Sprintf("freeze contracts error: %s", freezeRes.Errors[0].Message))
-		} else {
-			freezeResult := freezeRes.GetData()
-			if freezeResult.Success {
-				emitEvent(opts.OnEvent, TierLoopEvent{
-					Type:   "contracts_frozen",
-					Tier:   currentTier,
-					Detail: fmt.Sprintf("Froze %d contracts", len(freezeResult.ContractsFrozen)),
-				})
-			}
+		// Emit contracts_frozen if AdvanceTierAutomatically froze contracts.
+		if advResult.FreezeResult != nil && advResult.FreezeResult.Success {
+			emitEvent(opts.OnEvent, TierLoopEvent{
+				Type:   "contracts_frozen",
+				Tier:   currentTier,
+				Detail: fmt.Sprintf("Froze %d contracts", len(advResult.FreezeResult.ContractsFrozen)),
+			})
 		}
 
-		// Step 12: Advance tier (E33) — use AdvanceTierAutomatically in auto mode.
-		if opts.AutoMode {
-			advResult, advErr := AdvanceTierAutomatically(manifest, currentTier, opts.RepoPath, true)
-			if advErr != nil {
-				result.Errors = append(result.Errors, fmt.Sprintf("advance tier error: %s", advErr))
-				result.FinalState = "advance_error"
-				return result, fmt.Errorf("RunTierLoop: advance tier: %w", advErr)
-			}
-			if advResult.ProgramComplete {
-				result.ProgramComplete = true
-				result.FinalState = "complete"
-				result.TiersExecuted = len(manifest.Tiers)
-				result.TiersRemaining = 0
-				return result, nil
-			}
-			if advResult.AdvancedToNext {
-				emitEvent(opts.OnEvent, TierLoopEvent{
-					Type:   "tier_advanced",
-					Tier:   currentTier,
-					Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, advResult.NextTier),
-				})
-				nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
-				result.TiersExecuted++
-			}
-		} else {
+		if advResult.ProgramComplete {
+			result.ProgramComplete = true
+			result.FinalState = "complete"
+			result.TiersExecuted = len(manifest.Tiers)
+			result.TiersRemaining = 0
+			return result, nil
+		}
+
+		if advResult.AdvancedToNext {
+			emitEvent(opts.OnEvent, TierLoopEvent{
+				Type:   "tier_advanced",
+				Tier:   currentTier,
+				Detail: fmt.Sprintf("Advancing from tier %d to %d", currentTier, advResult.NextTier),
+			})
+			nilSafeEmit(ctx, opts.ObsEmitter, observability.NewTierAdvancedEvent(manifest.ProgramSlug, currentTier))
+			result.TiersExecuted++
+		} else if !opts.AutoMode {
+			// Non-auto mode: check if this is the final tier.
 			if isFinalTier(manifest, currentTier) {
 				result.ProgramComplete = true
 				result.FinalState = "complete"
@@ -326,7 +337,6 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) (*TierLoopResult, error
 				result.TiersRemaining = 0
 				return result, nil
 			}
-
 			emitEvent(opts.OnEvent, TierLoopEvent{
 				Type:   "tier_advanced",
 				Tier:   currentTier,
@@ -495,16 +505,15 @@ func getIMPLWaveCount(manifest *protocol.PROGRAMManifest, slug string) int {
 // findIMPLDocPath searches for an IMPL doc on disk in common locations.
 // Returns empty string if not found.
 func findIMPLDocPath(repoPath, slug string) string {
-	// Try common locations
 	locations := []string{
-		fmt.Sprintf("%s/docs/IMPL/IMPL-%s.yaml", repoPath, slug),
-		fmt.Sprintf("%s/docs/IMPL/complete/IMPL-%s.yaml", repoPath, slug),
-		fmt.Sprintf("%s/docs/IMPL/in-progress/IMPL-%s.yaml", repoPath, slug),
+		filepath.Join(repoPath, "docs/IMPL", fmt.Sprintf("IMPL-%s.yaml", slug)),
+		filepath.Join(repoPath, "docs/IMPL/complete", fmt.Sprintf("IMPL-%s.yaml", slug)),
+		filepath.Join(repoPath, "docs/IMPL", fmt.Sprintf("IMPL-%s.yml", slug)),
 	}
 	for _, loc := range locations {
-		// We just return the first path — RunWaveFull will handle not-found
-		// In a real implementation this would check file existence
-		return loc
+		if _, err := os.Stat(loc); err == nil {
+			return loc
+		}
 	}
 	return ""
 }
