@@ -143,14 +143,30 @@ func (s *store) QueryEvents(ctx context.Context, filters obs.QueryFilters) ([]ob
 
 // GetRollup computes aggregated metrics over stored events.
 // Delegates to the existing rollup functions in pkg/observability.
+// TODO(wave2-agent-E): update to result.Result[obs.RollupResult] return type.
 func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
 	switch req.Type {
 	case "cost":
-		return obs.ComputeCostRollup(ctx, s, req)
+		res := obs.ComputeCostRollup(ctx, s, req)
+		if res.IsFatal() {
+			return nil, fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		data := res.GetData()
+		return &data, nil
 	case "success_rate":
-		return obs.ComputeSuccessRateRollup(ctx, s, req)
+		res := obs.ComputeSuccessRateRollup(ctx, s, req)
+		if res.IsFatal() {
+			return nil, fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		data := res.GetData()
+		return &data, nil
 	case "retry_count":
-		return obs.ComputeRetryRollup(ctx, s, req)
+		res := obs.ComputeRetryRollup(ctx, s, req)
+		if res.IsFatal() {
+			return nil, fmt.Errorf("%s", res.Errors[0].Message)
+		}
+		data := res.GetData()
+		return &data, nil
 	default:
 		return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
 	}
