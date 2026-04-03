@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // setupTestRepo creates a temporary git repository for testing.
@@ -136,10 +138,7 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// Verify result
 	if !result.IsSuccess() {
@@ -255,10 +254,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// With new MERGE_HEAD logic, git's recursive strategy may auto-resolve some conflicts
 	// or treat auto-resolved merges as success even with non-zero exit
@@ -310,11 +306,11 @@ func TestMergeAgents_WaveNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Try to merge wave 2 (does not exist)
-	_, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 2, RepoDir: repoDir})
+	res := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 2, RepoDir: repoDir})
 
-	// Should return error
-	if err == nil {
-		t.Fatalf("expected error for non-existent wave, got nil")
+	// Should return fatal result
+	if !res.IsFatal() {
+		t.Fatalf("expected fatal result for non-existent wave, got success or partial")
 	}
 }
 
@@ -334,10 +330,7 @@ func TestMergeAgents_BranchNotFound(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge (branch wave1-agent-A does not exist)
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// With MERGE_HEAD logic, branch not found might be treated differently
 	// Result may be success, partial, or fatal
@@ -386,10 +379,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	if !result.IsSuccess() {
 		t.Errorf("expected merge to succeed, got errors: %v", result.Errors)
@@ -457,10 +447,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	}
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// Verify result
 	if !result.IsSuccess() {
@@ -524,10 +511,7 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	if !result.IsSuccess() {
 		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
@@ -624,10 +608,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	}
 
 	// Now "restart" - MergeAgents should skip A and B (already merged) and merge C
-	result2, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("second MergeAgents returned error: %v", err)
-	}
+	result2 := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// Verify all three agents show in result
 	if !result2.IsSuccess() {
@@ -699,10 +680,7 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	// Get data regardless of success/partial status
 	var data MergeAgentsData
@@ -847,13 +825,13 @@ func TestPreMergeValidation_UnknownAgent(t *testing.T) {
 	}
 	found := false
 	for _, e := range errs {
-		if e.Code == "UNKNOWN_AGENT_IN_OWNERSHIP" {
+		if e.Code == result.CodeUnknownAgentInOwnership {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected UNKNOWN_AGENT_IN_OWNERSHIP error, got: %v", errs)
+		t.Errorf("expected %s error, got: %v", result.CodeUnknownAgentInOwnership, errs)
 	}
 }
 
@@ -882,13 +860,13 @@ func TestPreMergeValidation_DuplicateFile(t *testing.T) {
 	}
 	found := false
 	for _, e := range errs {
-		if e.Code == "DUPLICATE_FILE_OWNERSHIP" {
+		if e.Code == result.CodeDisjointOwnership {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected DUPLICATE_FILE_OWNERSHIP error, got: %v", errs)
+		t.Errorf("expected %s error, got: %v", result.CodeDisjointOwnership, errs)
 	}
 }
 
@@ -908,8 +886,8 @@ func TestPreMergeValidation_WaveNotFound(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected WAVE_NOT_FOUND error, got none")
 	}
-	if errs[0].Code != "WAVE_NOT_FOUND" {
-		t.Errorf("expected WAVE_NOT_FOUND, got %q", errs[0].Code)
+	if errs[0].Code != result.CodeWaveNotFound {
+		t.Errorf("expected %s, got %q", result.CodeWaveNotFound, errs[0].Code)
 	}
 }
 
@@ -961,10 +939,7 @@ func TestMergeAgents_WithMergeTarget(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge with mergeTarget = "impl/test-feature"
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir, MergeTarget: "impl/test-feature"})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir, MergeTarget: "impl/test-feature"})
 
 	if !result.IsSuccess() {
 		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)
@@ -1015,10 +990,7 @@ func TestMergeAgents_EmptyMergeTarget(t *testing.T) {
 	manifestPath := createManifest(t, repoDir, waves)
 
 	// Run merge with empty mergeTarget (backward compatible)
-	result, err := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
-	if err != nil {
-		t.Fatalf("MergeAgents returned error: %v", err)
-	}
+	result := MergeAgents(MergeAgentsOpts{Ctx: context.Background(), ManifestPath: manifestPath, WaveNum: 1, RepoDir: repoDir})
 
 	if !result.IsSuccess() {
 		t.Errorf("expected IsSuccess()=true, got false with errors: %v", result.Errors)

@@ -219,7 +219,7 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 	const stepName = "merge-agents"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	mergeRes, err := protocol.MergeAgents(protocol.MergeAgentsOpts{
+	mergeRes := protocol.MergeAgents(protocol.MergeAgentsOpts{
 		Ctx:          ctx,
 		ManifestPath: opts.IMPLPath,
 		WaveNum:      opts.WaveNum,
@@ -227,14 +227,6 @@ func StepMergeAgents(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 		MergeTarget:  opts.MergeTarget,
 		Logger:       opts.Logger,
 	})
-	if err != nil {
-		emitStepEvent(onEvent, stepName, "failed", err.Error())
-		return &StepResult{
-			Step:   stepName,
-			Status: "failed",
-			Detail: err.Error(),
-		}, fmt.Errorf("merge-agents: %w", err)
-	}
 	if !mergeRes.IsSuccess() {
 		emitStepEvent(onEvent, stepName, "failed", fmt.Sprintf("%v", mergeRes.Errors))
 		return &StepResult{
