@@ -37,7 +37,7 @@ Output: JSON with validation results and gate population stats.`,
 			manifestPath := args[0]
 
 			// Call engine wrapper (context-aware, consistent with web app path)
-			res, _ := engine.FinalizeIMPLEngine(cmd.Context(), manifestPath, repoRoot)
+			res := engine.FinalizeIMPLEngine(cmd.Context(), engine.FinalizeIMPLEngineOpts{IMPLPath: manifestPath, RepoRoot: repoRoot})
 
 			// Marshal to pretty JSON
 			out, err := json.MarshalIndent(res, "", "  ")

@@ -41,21 +41,25 @@ Exit codes:
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]
 
-			engineResult, err := engine.FinalizeTierEngine(cmd.Context(), engine.FinalizeTierOpts{
+			engineRes := engine.FinalizeTierEngine(cmd.Context(), engine.FinalizeTierOpts{
 				ManifestPath: manifestPath,
 				TierNumber:   tierNum,
 				RepoDir:      repoDir,
 				Logger:       newSawLogger(),
 			})
-			if err != nil {
-				return err
-			}
+			engineResult := engineRes.GetData()
 
-			out, _ := json.MarshalIndent(engineResult, "", "  ")
+			out, _ := json.MarshalIndent(engineRes, "", "  ")
 			fmt.Fprintln(cmd.OutOrStdout(), string(out))
 
+			if engineRes.IsFatal() {
+				if len(engineRes.Errors) > 0 {
+					return fmt.Errorf("finalize-tier: %s", engineRes.Errors[0].Message)
+				}
+				return fmt.Errorf("finalize-tier: failed")
+			}
 			if len(engineResult.Errors) > 0 {
-				return fmt.Errorf("finalize-tier: %s", engineResult.Errors[0])
+				return fmt.Errorf("finalize-tier: %s", engineResult.Errors[0].Message)
 			}
 
 			// If --auto is set and tier gate passed, advance to next tier
