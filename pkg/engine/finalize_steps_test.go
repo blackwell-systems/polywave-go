@@ -426,17 +426,17 @@ completion_reports:
 
 	// This will fail at VerifyCommits (no git repo) because 2 agents bypass solo-wave path.
 	// The OnEvent callback should be called for the verify-commits step.
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 		OnEvent:  onEvent,
 	})
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if res.Data == nil && !res.IsFatal() {
+		t.Fatal("expected non-nil result data or fatal error")
 	}
-	if err == nil {
+	if res.IsSuccess() {
 		t.Fatal("expected error from FinalizeWave (no git repo)")
 	}
 
@@ -445,7 +445,11 @@ completion_reports:
 	// StepVerifyBuild or other steps, not necessarily verify-commits.
 	// Just verify the callback was wired correctly (called at least once).
 	_ = events // events may be empty if failure happens before any step emits
-	t.Logf("OnEvent test: FinalizeWave error=%v, events collected=%d", err, len(*events))
+	var errMsg string
+	if len(res.Errors) > 0 {
+		errMsg = res.Errors[0].Message
+	}
+	t.Logf("OnEvent test: FinalizeWave error=%v, events collected=%d", errMsg, len(*events))
 }
 
 func TestStepVerifyCompletionReports_MissingReports(t *testing.T) {
@@ -912,16 +916,13 @@ completion_reports:
 `)
 
 	// No OnEvent set — should not panic
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if err == nil {
+	if res.IsSuccess() {
 		t.Fatal("expected error from FinalizeWave (no git repo)")
 	}
 	// Just verify it didn't panic — that's the backward compat guarantee

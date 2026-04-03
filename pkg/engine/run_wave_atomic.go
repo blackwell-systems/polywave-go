@@ -113,7 +113,7 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 	}
 
 	// Execute FinalizeWave with the provided options.
-	finalizeResult, finalizeErr := FinalizeWave(ctx, FinalizeWaveOpts{
+	finalizeRes := FinalizeWave(ctx, FinalizeWaveOpts{
 		IMPLPath:    opts.IMPLPath,
 		RepoPath:    opts.RepoPath,
 		WaveNum:     opts.WaveNum,
@@ -122,7 +122,15 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 		Logger:      opts.Logger,
 	})
 
-	if finalizeErr != nil {
+	if finalizeRes.IsFatal() || finalizeRes.IsPartial() {
+		// Build a human-readable error message from the result errors.
+		var finalizeErrMsg string
+		if len(finalizeRes.Errors) > 0 {
+			finalizeErrMsg = fmt.Sprintf("[%s] %s", finalizeRes.Errors[0].Code, finalizeRes.Errors[0].Message)
+		} else {
+			finalizeErrMsg = "FinalizeWave failed"
+		}
+
 		// Roll back IMPL doc state to pre-execution snapshot.
 		restoreRes := restoreSnapshot(opts.IMPLPath, snap)
 		if restoreRes.IsFatal() {
@@ -130,9 +138,9 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 			if len(restoreRes.Errors) > 0 {
 				rbErrMsg = restoreRes.Errors[0].Message
 			}
-			msg := fmt.Sprintf("engine.RunWaveTransaction: rollback failed (%s) after: %v", rbErrMsg, finalizeErr)
-			if finalizeResult != nil {
-				return result.NewPartial(*finalizeResult, []result.SAWError{
+			msg := fmt.Sprintf("engine.RunWaveTransaction: rollback failed (%s) after: %v", rbErrMsg, finalizeErrMsg)
+			if finalizeRes.Data != nil {
+				return result.NewPartial(*finalizeRes.Data, []result.SAWError{
 					result.NewFatal(result.CodeFinalizeWaveFailed, msg),
 				})
 			}
@@ -140,9 +148,9 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 				result.NewFatal(result.CodeFinalizeWaveFailed, msg),
 			})
 		}
-		msg := fmt.Sprintf("engine.RunWaveTransaction: %v", finalizeErr)
-		if finalizeResult != nil {
-			return result.NewPartial(*finalizeResult, []result.SAWError{
+		msg := fmt.Sprintf("engine.RunWaveTransaction: %v", finalizeErrMsg)
+		if finalizeRes.Data != nil {
+			return result.NewPartial(*finalizeRes.Data, []result.SAWError{
 				result.NewError(result.CodeFinalizeWaveFailed, msg),
 			})
 		}
@@ -151,11 +159,5 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 		})
 	}
 
-	if finalizeResult == nil {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
-			result.NewFatal(result.CodeFinalizeWaveFailed,
-				"engine.RunWaveTransaction: FinalizeWave returned nil result"),
-		})
-	}
-	return result.NewSuccess(*finalizeResult)
+	return finalizeRes
 }

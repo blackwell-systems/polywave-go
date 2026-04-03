@@ -59,21 +59,25 @@ completion_reports:
 		t.Fatalf("failed to write IMPL: %v", err)
 	}
 
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
-	// Must return a non-nil result (partial) and a non-nil error
-	if result == nil {
-		t.Fatal("expected non-nil result even on pipeline failure")
+	// Must return a partial result and errors
+	if res.Data == nil && !res.IsFatal() {
+		t.Fatal("expected non-nil result data or fatal error on pipeline failure")
 	}
-	if err == nil {
+	if res.IsSuccess() {
 		t.Fatal("expected error from FinalizeWave (no git repo, ancestor check fails)")
 	}
 
-	t.Logf("FinalizeWave returned expected error: %v", err)
+	var errMsg string
+	if len(res.Errors) > 0 {
+		errMsg = res.Errors[0].Message
+	}
+	t.Logf("FinalizeWave returned expected error: %v", errMsg)
 }
 
 // TestFinalizeWave_SuccessProducesMergeResult verifies that a successful pipeline
@@ -125,22 +129,22 @@ completion_reports:
 		t.Fatalf("failed to write IMPL: %v", err)
 	}
 
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
 	// Expect error (no git repo, VerifyCommits will fail)
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-	if err == nil {
+	if res.IsSuccess() {
 		t.Fatal("expected error from FinalizeWave (no git repo)")
 	}
 	// MergeResult must be empty (map has no entries) since the pipeline exited before Step 4
-	if len(result.MergeResult) > 0 {
-		t.Errorf("expected MergeResult empty on early pipeline exit, got %+v", result.MergeResult)
+	if res.Data != nil {
+		result := res.GetData()
+		if len(result.MergeResult) > 0 {
+			t.Errorf("expected MergeResult empty on early pipeline exit, got %+v", result.MergeResult)
+		}
 	}
 }
 
@@ -251,12 +255,13 @@ waves:
 
 	// Call FinalizeWave — may fail at VerifyCommits (no git repo) or succeed via
 	// solo-wave path. Either way, the MergeTarget field is correctly threaded through.
-	result, err := FinalizeWave(context.Background(), opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	res := FinalizeWave(context.Background(), opts)
+	var errMsg string
+	if len(res.Errors) > 0 {
+		errMsg = res.Errors[0].Message
 	}
 
-	t.Logf("FinalizeWave with MergeTarget: err=%v", err)
+	t.Logf("FinalizeWave with MergeTarget: err=%v", errMsg)
 }
 
 // TestRunWaveFull_MergeTargetDefault verifies that an empty MergeTarget works
@@ -356,9 +361,10 @@ completion_reports:
 
 	// Run FinalizeWave — may succeed via solo-wave path with echo ok commands,
 	// or fail at git ops. Either way, the RequireNoStubs field is correctly plumbed.
-	result, fErr := FinalizeWave(context.Background(), opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	fRes := FinalizeWave(context.Background(), opts)
+	var fErr string
+	if len(fRes.Errors) > 0 {
+		fErr = fRes.Errors[0].Message
 	}
 
 	t.Logf("RequireNoStubs test: stubs detected=%d, FinalizeWave err=%v", len(stubResult.Hits), fErr)
@@ -432,9 +438,10 @@ completion_reports:
 
 	// Run FinalizeWave — may succeed via solo-wave path or fail at git ops.
 	// Either way, the EnforceIntegrationValidation field is correctly plumbed.
-	result, fErr := FinalizeWave(context.Background(), opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	fRes := FinalizeWave(context.Background(), opts)
+	var fErr string
+	if len(fRes.Errors) > 0 {
+		fErr = fRes.Errors[0].Message
 	}
 
 	t.Logf("EnforceIntegrationValidation test: FinalizeWave err=%v", fErr)
@@ -498,23 +505,23 @@ completion_reports:
 
 	// Run FinalizeWave — may succeed via solo-wave path or fail at git ops.
 	// Importantly it must NOT fail on stubs (RequireNoStubs=false default).
-	result, err := FinalizeWave(context.Background(), opts)
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
+	res := FinalizeWave(context.Background(), opts)
 
-	// If there is an error, it should NOT be from stub detection or integration gaps
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "stub") {
-			t.Errorf("default behavior should not fail on stubs, but got: %v", err)
+	// If there are errors, they should NOT be from stub detection or integration gaps
+	for _, sawErr := range res.Errors {
+		if strings.Contains(sawErr.Message, "stub") {
+			t.Errorf("default behavior should not fail on stubs, but got: %v", sawErr.Message)
 		}
-		if strings.Contains(errMsg, "unconnected export") {
-			t.Errorf("default behavior should not fail on integration gaps, but got: %v", err)
+		if strings.Contains(sawErr.Message, "unconnected export") {
+			t.Errorf("default behavior should not fail on integration gaps, but got: %v", sawErr.Message)
 		}
 	}
 
-	t.Logf("Default behavior test: err=%v", err)
+	var errMsg string
+	if len(res.Errors) > 0 {
+		errMsg = res.Errors[0].Message
+	}
+	t.Logf("Default behavior test: err=%v", errMsg)
 }
 
 // TestFinalizeWave_IntegrationError_NonFatal verifies that the pipeline continues
@@ -558,20 +565,24 @@ completion_reports:
 
 	// Call FinalizeWave - may succeed via solo-wave path or fail at git ops.
 	// This confirms the pipeline structure handles integration step correctly.
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
-	if result == nil {
-		t.Fatal("expected non-nil result even on error")
+	var errMsg string
+	if len(res.Errors) > 0 {
+		errMsg = res.Errors[0].Message
 	}
 
 	// The pipeline structure is intact - the key assertion is that the integration
 	// step doesn't break the pipeline flow regardless of outcome.
-	t.Logf("FinalizeWave result: err=%v", err)
-	t.Logf("IntegrationReport: %v", result.IntegrationReport != nil)
+	t.Logf("FinalizeWave result: err=%v", errMsg)
+	if res.Data != nil {
+		result := res.GetData()
+		t.Logf("IntegrationReport: %v", result.IntegrationReport != nil)
+	}
 }
 
 // TestFinalizeWave_ResultMapFields verifies the new FinalizeWaveResult map structure.
@@ -600,17 +611,16 @@ waves:
 		t.Fatalf("failed to write IMPL: %v", err)
 	}
 
-	result, err := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath: implPath,
 		RepoPath: repoRoot,
 		WaveNum:  1,
 	})
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if res.Data == nil {
+		t.Fatal("expected non-nil result data")
 	}
-	// err is expected (no git repo)
-	_ = err
+	result := res.GetData()
 
 	// Verify map fields are initialized (not nil)
 	if result.VerifyCommits == nil {
@@ -662,16 +672,17 @@ waves:
 	}
 
 	// Use SkipMerge to bypass the git operations; MergeResult should be set with "." key
-	result, _ := FinalizeWave(context.Background(), FinalizeWaveOpts{
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
 		IMPLPath:  implPath,
 		RepoPath:  repoRoot,
 		WaveNum:   1,
 		SkipMerge: true,
 	})
 
-	if result == nil {
-		t.Fatal("expected non-nil result")
+	if res.Data == nil {
+		t.Fatal("expected non-nil result data")
 	}
+	result := res.GetData()
 	// MergeResult should have "." key for single-repo IMPL
 	if _, ok := result.MergeResult["."]; !ok {
 		t.Errorf("expected MergeResult[\".\"] to be set for single-repo IMPL, got keys: %v", getMapKeys(result.MergeResult))

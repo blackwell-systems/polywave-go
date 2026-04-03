@@ -52,7 +52,15 @@ var daemonRunScoutFunc = func(ctx context.Context, opts RunScoutOpts, onChunk fu
 
 // daemonFinalizeWaveFunc is the function called to finalize a wave.
 var daemonFinalizeWaveFunc = func(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
-	return FinalizeWave(ctx, opts)
+	r := FinalizeWave(ctx, opts)
+	data := r.GetData()
+	if !r.IsSuccess() {
+		if len(r.Errors) > 0 {
+			return &data, fmt.Errorf("[%s] %s", r.Errors[0].Code, r.Errors[0].Message)
+		}
+		return &data, fmt.Errorf("FinalizeWave failed")
+	}
+	return &data, nil
 }
 
 // daemonAutoRemediateFunc is the function called to auto-remediate a failed wave.

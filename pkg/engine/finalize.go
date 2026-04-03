@@ -202,17 +202,24 @@ func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo
 //  6. Cleanup - remove worktrees and branches
 //
 // Stops on first fatal failure and returns partial result.
-func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResult, error) {
+func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[FinalizeWaveResult] {
 	if opts.IMPLPath == "" {
-		return nil, fmt.Errorf("engine.FinalizeWave: IMPLPath is required")
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeWave: IMPLPath is required"),
+		})
 	}
 	if opts.RepoPath == "" {
-		return nil, fmt.Errorf("engine.FinalizeWave: RepoPath is required")
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeWave: RepoPath is required"),
+		})
 	}
 
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return nil, fmt.Errorf("engine.FinalizeWave: load manifest: %w", err)
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed,
+				fmt.Sprintf("engine.FinalizeWave: load manifest: %v", err)),
+		})
 	}
 
 	// Extract repos from manifest for multi-repo support.
@@ -222,7 +229,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 	// are recoverable: read the file, create the branch refs, retry finalize-wave.
 	writeBranchRefs(manifest, opts.WaveNum, opts.RepoPath)
 
-	result := &FinalizeWaveResult{
+	res := &FinalizeWaveResult{
 		Wave:             opts.WaveNum,
 		CrossRepo:        len(repos) > 1,
 		VerifyCommits:    make(map[string]*protocol.VerifyCommitsData),
@@ -236,11 +243,18 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 
 	onEvent := opts.OnEvent
 
+	// fatalf returns a partial result with a fatal error attached.
+	fatalf := func(msg string, args ...interface{}) result.Result[FinalizeWaveResult] {
+		return result.NewPartial(*res, []result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf(msg, args...)),
+		})
+	}
+
 	// If SkipMerge is true, skip steps 1-4 and jump directly to verify-build.
 	// Populate MergeResult with synthetic entry indicating merge already done.
 	if opts.SkipMerge {
 		for repoKey := range repos {
-			result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+			res.MergeResult[repoKey] = &protocol.MergeAgentsData{
 				Wave: opts.WaveNum,
 			}
 		}
@@ -295,7 +309,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 						}
 						for _, repoPath := range repos {
 							if !git.IsAncestor(repoPath, report.Commit, "HEAD") {
-								return result, fmt.Errorf(
+								return fatalf(
 									"engine.FinalizeWave: agent %s commit %s is NOT reachable from main in %s — "+
 										"branches deleted without merging (data loss). "+
 										"Recover with: git branch recover-%s %s",
@@ -308,7 +322,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			}
 			// Populate synthetic merge results for all repos
 			for repoKey := range repos {
-				result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+				res.MergeResult[repoKey] = &protocol.MergeAgentsData{
 					Wave: opts.WaveNum,
 				}
 			}
@@ -321,10 +335,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts.RepoPath = repoPath
 				_, verifyData, stepErr := StepVerifyCommits(ctx, repoOpts, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: verify-commits failed in %s: %w", repoKey, stepErr)
+					return fatalf("engine.FinalizeWave: verify-commits failed in %s: %v", repoKey, stepErr)
 				}
 				if verifyData != nil {
-					result.VerifyCommits[repoKey] = verifyData
+					res.VerifyCommits[repoKey] = verifyData
 				}
 			}
 
@@ -333,7 +347,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, stepErr := StepVerifyCompletionReports(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
 			}
 
@@ -342,7 +356,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, stepErr := StepCheckAgentStatuses(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
 			}
 
@@ -352,14 +366,14 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, conflictData, stepErr := StepPredictConflictsEnhanced(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
 
 				// If all conflicts are auto-mergeable, attempt auto-merge
 				if conflictData != nil && conflictData.AutoMergeable > 0 && conflictData.AutoMergeable == conflictData.ConflictsDetected {
 					_, autoMergeResults, autoMergeErr := StepAutoMergeAppendConflicts(ctx, repoOpts, manifest, conflictData.Conflicts, onEvent)
 					if autoMergeErr != nil {
-						return result, fmt.Errorf("engine.FinalizeWave: %w", autoMergeErr)
+						return fatalf("engine.FinalizeWave: %v", autoMergeErr)
 					}
 
 					// Track how many agents were successfully merged
@@ -375,10 +389,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, stubData, stepErr := StepScanStubs(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
 				if stubData != nil {
-					result.StubReport = stubData
+					res.StubReport = stubData
 				}
 			}
 
@@ -388,10 +402,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				cache := gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 				gateRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 				if !gateRes.IsSuccess() {
-					return result, fmt.Errorf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
+					return fatalf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
 				}
 				gateResults := gateRes.GetData().Gates
-				result.GateResults[repoKey] = gateResults
+				res.GateResults[repoKey] = gateResults
 
 				// C2 closed-loop retry when enabled
 				if opts.ClosedLoopRetryEnabled {
@@ -435,7 +449,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 								rerunRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, cache, opts.Logger)
 								if rerunRes.IsSuccess() {
 									rerunResults := rerunRes.GetData().Gates
-									result.GateResults[repoKey] = rerunResults
+									res.GateResults[repoKey] = rerunResults
 									stillFailing := false
 									for _, rg := range rerunResults {
 										if rg.Required && !rg.Passed {
@@ -448,14 +462,14 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 									}
 								}
 							}
-							return result, fmt.Errorf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
+							return fatalf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
 						}
 					}
 				} else {
 					// No retry: fail immediately on required gate failure
 					for _, gate := range gateResults {
 						if gate.Required && !gate.Passed {
-							return result, fmt.Errorf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
+							return fatalf("engine.FinalizeWave: required pre-merge gate %q failed in %s", gate.Type, repoKey)
 						}
 					}
 				}
@@ -467,10 +481,10 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts.RepoPath = repoPath
 				_, collisionReport, stepErr := StepCheckTypeCollisions(ctx, repoOpts, onEvent)
 				if collisionReport != nil {
-					result.CollisionReports[repoKey] = collisionReport
+					res.CollisionReports[repoKey] = collisionReport
 				}
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
 			}
 
@@ -479,9 +493,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, integrationReport, stepErr := StepValidateIntegration(ctx, repoOpts, manifest, onEvent)
 				if stepErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: %w", stepErr)
+					return fatalf("engine.FinalizeWave: %v", stepErr)
 				}
-				result.IntegrationReport = integrationReport
+				res.IntegrationReport = integrationReport
 			}
 
 			// Step 3.6: CheckWiringDeclarations (E35, non-fatal) — run once
@@ -489,11 +503,11 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 				repoOpts := firstRepoOpts(opts, repos)
 				_, wiringData, _ := StepCheckWiringDeclarations(ctx, repoOpts, manifest, onEvent)
 				if wiringData != nil {
-					result.WiringReport = wiringData
+					res.WiringReport = wiringData
 					if !wiringData.Valid {
-						result.IntegrationActionRequired = true
+						res.IntegrationActionRequired = true
 						for _, gap := range wiringData.Gaps {
-							result.WiringGaps = append(result.WiringGaps,
+							res.WiringGaps = append(res.WiringGaps,
 								fmt.Sprintf("%s not called in %s", gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
 						}
 					}
@@ -511,7 +525,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			}
 			for repoKey, repoPath := range repos {
 				if skipMergeAgents {
-					result.MergeResult[repoKey] = &protocol.MergeAgentsData{
+					res.MergeResult[repoKey] = &protocol.MergeAgentsData{
 						Wave: opts.WaveNum,
 					}
 					continue
@@ -525,13 +539,13 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 					Logger:       opts.Logger,
 				})
 				if mergeErr != nil {
-					return result, fmt.Errorf("engine.FinalizeWave: merge-agents failed in %s: %w", repoKey, mergeErr)
+					return fatalf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeErr)
 				}
 				if !mergeRes.IsSuccess() {
-					return result, fmt.Errorf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)
+					return fatalf("engine.FinalizeWave: merge-agents failed in %s: %v", repoKey, mergeRes.Errors)
 				}
 				mergeData := mergeRes.GetData()
-				result.MergeResult[repoKey] = &mergeData
+				res.MergeResult[repoKey] = &mergeData
 			}
 
 			// Step 4.2: PopulateIntegrationChecklist (M5, non-fatal) — run once
@@ -563,14 +577,14 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		if stepErr != nil {
 			allBuildPassed = false
 			if verifyData != nil {
-				result.VerifyBuild[repoKey] = verifyData
+				res.VerifyBuild[repoKey] = verifyData
 			}
 			// Diagnosis is still in StepResult.Data as map[string]interface{}
 			if verifyBuildStepResult != nil && verifyBuildStepResult.Data != nil {
 				if dataMap, ok := verifyBuildStepResult.Data.(map[string]interface{}); ok {
 					if d, ok := dataMap["diagnosis"]; ok {
 						if diagnosis, ok := d.(*builddiag.Diagnosis); ok {
-							result.BuildDiagnosis[repoKey] = diagnosis
+							res.BuildDiagnosis[repoKey] = diagnosis
 						}
 					}
 				}
@@ -578,35 +592,35 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 			// Still run cleanup before returning
 			_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
 			if cleanupData != nil {
-				result.CleanupResult[repoKey] = cleanupData
+				res.CleanupResult[repoKey] = cleanupData
 			}
-			return result, fmt.Errorf("engine.FinalizeWave: verify-build failed in %s: %w", repoKey, stepErr)
+			return fatalf("engine.FinalizeWave: verify-build failed in %s: %v", repoKey, stepErr)
 		}
 		if verifyData != nil {
-			result.VerifyBuild[repoKey] = verifyData
+			res.VerifyBuild[repoKey] = verifyData
 			if !verifyData.TestPassed || !verifyData.LintPassed {
 				allBuildPassed = false
 			}
 		}
 	}
-	result.BuildPassed = allBuildPassed
+	res.BuildPassed = allBuildPassed
 
 	// Step 5.5: RunPostMergeGates (E21) — per repo
 	for repoKey, repoPath := range repos {
 		postGateRes := protocol.RunPostMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.Logger)
 		if !postGateRes.IsSuccess() {
-			return result, fmt.Errorf("engine.FinalizeWave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
+			return fatalf("engine.FinalizeWave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
 		}
 		postGateResults := postGateRes.GetData().Gates
-		result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
+		res.GateResults[repoKey] = append(res.GateResults[repoKey], postGateResults...)
 		for _, gate := range postGateResults {
 			if gate.Required && !gate.Passed {
 				// Still run cleanup before returning
 				_, cleanupData, _ := StepCleanup(ctx, opts, onEvent)
 				if cleanupData != nil {
-					result.CleanupResult[repoKey] = cleanupData
+					res.CleanupResult[repoKey] = cleanupData
 				}
-				return result, fmt.Errorf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
+				return fatalf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
 			}
 		}
 	}
@@ -617,12 +631,12 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 		repoOpts.RepoPath = repoPath
 		_, cleanupData, _ := StepCleanup(ctx, repoOpts, onEvent)
 		if cleanupData != nil {
-			result.CleanupResult[repoKey] = cleanupData
+			res.CleanupResult[repoKey] = cleanupData
 		}
 	}
 
-	result.Success = true
-	return result, nil
+	res.Success = true
+	return result.NewSuccess(*res)
 }
 
 // MarkIMPLCompleteOpts configures IMPL completion marking.

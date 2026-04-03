@@ -74,12 +74,18 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 		MergeTarget: opts.MergeTarget,
 		Logger:      opts.Logger,
 	}
-	finalizeResult, err := FinalizeWave(ctx, finalizeOpts)
-	result.FinalizeResult = finalizeResult
-	if err != nil {
-		return result, fmt.Errorf("finalize wave: %w", err)
+	finalizeRes := FinalizeWave(ctx, finalizeOpts)
+	if finalizeRes.Data != nil {
+		fd := finalizeRes.GetData()
+		result.FinalizeResult = &fd
 	}
-
-	result.Success = finalizeResult.Success
+	if !finalizeRes.IsSuccess() {
+		if len(finalizeRes.Errors) > 0 {
+			return result, fmt.Errorf("finalize wave: [%s] %s", finalizeRes.Errors[0].Code, finalizeRes.Errors[0].Message)
+		}
+		return result, fmt.Errorf("finalize wave failed")
+	}
+	finalizeData := finalizeRes.GetData()
+	result.Success = finalizeData.Success
 	return result, nil
 }

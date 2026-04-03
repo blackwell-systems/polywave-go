@@ -52,7 +52,7 @@ All pipeline steps are handled by the engine. The engine supports:
 					fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s\n", step, status)
 				}
 			})
-			result, err := engine.FinalizeWave(cmd.Context(), engine.FinalizeWaveOpts{
+			r := engine.FinalizeWave(cmd.Context(), engine.FinalizeWaveOpts{
 				IMPLPath:                  manifestPath,
 				RepoPath:                  defaultRepoPath,
 				WaveNum:                   waveNum,
@@ -63,10 +63,13 @@ All pipeline steps are handled by the engine. The engine supports:
 				ClosedLoopRetryEnabled:    true,
 				OnEvent:                   onEvent,
 			})
-			out, _ := json.MarshalIndent(result, "", "  ")
+			out, _ := json.MarshalIndent(r.Data, "", "  ")
 			fmt.Println(string(out))
-			if err != nil {
-				return fmt.Errorf("finalize-wave: %w", err)
+			if r.IsFatal() {
+				if len(r.Errors) > 0 {
+					return fmt.Errorf("finalize-wave: [%s] %s", r.Errors[0].Code, r.Errors[0].Message)
+				}
+				return fmt.Errorf("finalize-wave failed")
 			}
 			return nil
 		},
