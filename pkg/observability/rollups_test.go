@@ -109,10 +109,11 @@ func TestRollupCost(t *testing.T) {
 		Type:    "cost",
 		GroupBy: []string{"agent"},
 	}
-	result, err := ComputeCostRollup(ctx, store, req)
-	if err != nil {
-		t.Fatalf("ComputeCostRollup: %v", err)
+	res112 := ComputeCostRollup(ctx, store, req)
+	if res112.IsFatal() {
+		t.Fatalf("ComputeCostRollup: %s", res112.Errors[0].Message)
 	}
+	result := res112.GetData()
 
 	if result.Type != "cost" {
 		t.Errorf("expected type cost, got %s", result.Type)
@@ -142,10 +143,11 @@ func TestRollupCostEmpty(t *testing.T) {
 	ctx := context.Background()
 	store := &rollupMockStore{}
 
-	result, err := ComputeCostRollup(ctx, store, RollupRequest{Type: "cost", GroupBy: []string{"agent"}})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res145 := ComputeCostRollup(ctx, store, RollupRequest{Type: "cost", GroupBy: []string{"agent"}})
+	if res145.IsFatal() {
+		t.Fatalf("unexpected error: %s", res145.Errors[0].Message)
 	}
+	result := res145.GetData()
 	if result.TotalCost != 0 {
 		t.Errorf("expected 0 total cost, got %f", result.TotalCost)
 	}
@@ -183,13 +185,14 @@ func TestRollupSuccessRate(t *testing.T) {
 		})
 	}
 
-	result, err := ComputeSuccessRateRollup(ctx, store, RollupRequest{
+	res186 := ComputeSuccessRateRollup(ctx, store, RollupRequest{
 		Type:    "success_rate",
 		GroupBy: []string{"agent"},
 	})
-	if err != nil {
-		t.Fatalf("ComputeSuccessRateRollup: %v", err)
+	if res186.IsFatal() {
+		t.Fatalf("ComputeSuccessRateRollup: %s", res186.Errors[0].Message)
 	}
+	result := res186.GetData()
 
 	if len(result.Groups) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(result.Groups))
@@ -243,13 +246,14 @@ func TestRollupRetry(t *testing.T) {
 		})
 	}
 
-	result, err := ComputeRetryRollup(ctx, store, RollupRequest{
+	res246 := ComputeRetryRollup(ctx, store, RollupRequest{
 		Type:    "retry_count",
 		GroupBy: []string{"agent"},
 	})
-	if err != nil {
-		t.Fatalf("ComputeRetryRollup: %v", err)
+	if res246.IsFatal() {
+		t.Fatalf("ComputeRetryRollup: %s", res246.Errors[0].Message)
 	}
+	result := res246.GetData()
 
 	if len(result.Groups) != 2 {
 		t.Fatalf("expected 2 groups, got %d", len(result.Groups))
@@ -291,16 +295,16 @@ func TestRollupTrend(t *testing.T) {
 		})
 	}
 
-	result, err := ComputeTrend(ComputeTrendOpts{
-		Ctx:       ctx,
+	res294 := ComputeTrend(ctx, ComputeTrendOpts{
 		Store:     store,
 		Metric:    "cost",
 		TimeRange: 7 * 24 * time.Hour,
 		Buckets:   7,
 	})
-	if err != nil {
-		t.Fatalf("ComputeTrend: %v", err)
+	if res294.IsFatal() {
+		t.Fatalf("ComputeTrend: %s", res294.Errors[0].Message)
 	}
+	result := res294.GetData()
 
 	if result.Metric != "cost" {
 		t.Errorf("expected metric cost, got %s", result.Metric)
@@ -322,14 +326,13 @@ func TestRollupTrend(t *testing.T) {
 func TestRollupTrendUnsupportedMetric(t *testing.T) {
 	ctx := context.Background()
 	store := &rollupMockStore{}
-	_, err := ComputeTrend(ComputeTrendOpts{
-		Ctx:       ctx,
+	errRes325 := ComputeTrend(ctx, ComputeTrendOpts{
 		Store:     store,
 		Metric:    "unknown",
 		TimeRange: time.Hour,
 		Buckets:   5,
 	})
-	if err == nil {
+	if !errRes325.IsFatal() {
 		t.Fatal("expected error for unsupported metric")
 	}
 }
@@ -365,13 +368,14 @@ func TestRollupMultiDimensionGroupBy(t *testing.T) {
 		})
 	}
 
-	result, err := ComputeCostRollup(ctx, store, RollupRequest{
+	res368 := ComputeCostRollup(ctx, store, RollupRequest{
 		Type:    "cost",
 		GroupBy: []string{"agent", "wave"},
 	})
-	if err != nil {
-		t.Fatalf("ComputeCostRollup: %v", err)
+	if res368.IsFatal() {
+		t.Fatalf("ComputeCostRollup: %s", res368.Errors[0].Message)
 	}
+	result := res368.GetData()
 
 	if len(result.Groups) != 4 {
 		t.Errorf("expected 4 groups (agent+wave), got %d", len(result.Groups))
