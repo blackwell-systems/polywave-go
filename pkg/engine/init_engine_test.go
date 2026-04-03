@@ -14,12 +14,23 @@ func TestRunInit_AlreadyExists(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := RunInit(InitOpts{RepoDir: dir, Force: false})
-	if err == nil {
-		t.Fatal("expected error when saw.config.json exists without Force")
+	res := RunInit(InitOpts{RepoDir: dir, Force: false})
+	if res.IsSuccess() {
+		t.Fatal("expected non-success when saw.config.json exists without Force")
 	}
-	if !strings.Contains(err.Error(), "already exists") {
-		t.Errorf("error = %q, want it to mention 'already exists'", err.Error())
+	// AlreadyExists path returns PARTIAL with data
+	if res.IsFatal() {
+		t.Fatal("expected PARTIAL (not FATAL) when saw.config.json exists without Force")
+	}
+	data := res.GetData()
+	if !data.AlreadyExists {
+		t.Error("expected AlreadyExists=true")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in partial result")
+	}
+	if !strings.Contains(res.Errors[0].Message, "already exists") {
+		t.Errorf("error message = %q, want it to mention 'already exists'", res.Errors[0].Message)
 	}
 }
 
@@ -34,12 +45,13 @@ func TestRunInit_Force(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RunInit(InitOpts{RepoDir: dir, Force: true})
-	if err != nil {
-		t.Fatalf("unexpected error with Force: %v", err)
+	res := RunInit(InitOpts{RepoDir: dir, Force: true})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure with Force: %v", res.Errors)
 	}
-	if result.Language != "go" {
-		t.Errorf("Language = %q, want 'go'", result.Language)
+	data := res.GetData()
+	if data.Language != "go" {
+		t.Errorf("Language = %q, want 'go'", data.Language)
 	}
 }
 
@@ -49,28 +61,29 @@ func TestRunInit_GoProject(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RunInit(InitOpts{RepoDir: dir, Force: false})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunInit(InitOpts{RepoDir: dir, Force: false})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
-	if result.Language != "go" {
-		t.Errorf("Language = %q, want 'go'", result.Language)
+	data := res.GetData()
+	if data.Language != "go" {
+		t.Errorf("Language = %q, want 'go'", data.Language)
 	}
-	if result.ProjectName != filepath.Base(dir) {
-		t.Errorf("ProjectName = %q, want %q", result.ProjectName, filepath.Base(dir))
+	if data.ProjectName != filepath.Base(dir) {
+		t.Errorf("ProjectName = %q, want %q", data.ProjectName, filepath.Base(dir))
 	}
-	if result.ConfigPath != filepath.Join(dir, "saw.config.json") {
-		t.Errorf("ConfigPath = %q, want %q", result.ConfigPath, filepath.Join(dir, "saw.config.json"))
+	if data.ConfigPath != filepath.Join(dir, "saw.config.json") {
+		t.Errorf("ConfigPath = %q, want %q", data.ConfigPath, filepath.Join(dir, "saw.config.json"))
 	}
 
 	// Verify config file was created.
-	if _, err := os.Stat(result.ConfigPath); err != nil {
-		t.Errorf("config file not found at %s: %v", result.ConfigPath, err)
+	if _, err := os.Stat(data.ConfigPath); err != nil {
+		t.Errorf("config file not found at %s: %v", data.ConfigPath, err)
 	}
 
 	// Verify InstallResult is populated.
-	if result.InstallResult.Verdict == "" {
+	if data.InstallResult.Verdict == "" {
 		t.Error("InstallResult.Verdict is empty")
 	}
 }
@@ -79,13 +92,14 @@ func TestRunInit_UnknownProject(t *testing.T) {
 	dir := t.TempDir()
 	// No marker files — unknown project.
 
-	result, err := RunInit(InitOpts{RepoDir: dir, Force: false})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunInit(InitOpts{RepoDir: dir, Force: false})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
-	if result.Language != "unknown" {
-		t.Errorf("Language = %q, want 'unknown'", result.Language)
+	data := res.GetData()
+	if data.Language != "unknown" {
+		t.Errorf("Language = %q, want 'unknown'", data.Language)
 	}
 }
 
@@ -137,27 +151,28 @@ func TestRunInit_ConfigHasBuildTestKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, err := RunInit(InitOpts{RepoDir: dir})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	res := RunInit(InitOpts{RepoDir: dir})
+	if !res.IsSuccess() {
+		t.Fatalf("unexpected failure: %v", res.Errors)
 	}
 
-	data, err := os.ReadFile(result.ConfigPath)
+	data := res.GetData()
+	content, err := os.ReadFile(data.ConfigPath)
 	if err != nil {
 		t.Fatalf("cannot read config: %v", err)
 	}
 
-	content := string(data)
-	if !strings.Contains(content, `"build"`) {
+	s := string(content)
+	if !strings.Contains(s, `"build"`) {
 		t.Error("config missing 'build' key")
 	}
-	if !strings.Contains(content, `"test"`) {
+	if !strings.Contains(s, `"test"`) {
 		t.Error("config missing 'test' key")
 	}
-	if !strings.Contains(content, `"go build ./..."`) {
+	if !strings.Contains(s, `"go build ./..."`) {
 		t.Error("config missing go build command")
 	}
-	if !strings.Contains(content, `"go test ./..."`) {
+	if !strings.Contains(s, `"go test ./..."`) {
 		t.Error("config missing go test command")
 	}
 }
