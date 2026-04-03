@@ -10,6 +10,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // FinalizeTierOpts configures the thick finalize-tier orchestrator.
@@ -28,7 +29,7 @@ type FinalizeTierResult struct {
 	MergeResults   map[string]*protocol.MergeAgentsData `json:"merge_results"`
 	TierGateResult *protocol.TierGateData               `json:"tier_gate_result,omitempty"`
 	StateAdvanced  bool                                 `json:"state_advanced"`
-	Errors         []string                             `json:"errors,omitempty"`
+	Errors         []result.SAWError                    `json:"errors,omitempty"`
 }
 
 // FinalizeTierEngine is the thick orchestrator for finalize-tier.
@@ -38,10 +39,10 @@ type FinalizeTierResult struct {
 //  2. Merge each IMPL branch into HEAD, handling the "branch in worktree" case.
 //  3. Run RunTierGate with enriched statuses.
 //  4. Update IMPL statuses in the PROGRAM manifest and commit.
-func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTierResult, error) {
+func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) result.Result[FinalizeTierResult] {
 	logger := loggerFrom(opts.Logger)
 
-	result := FinalizeTierResult{
+	data := FinalizeTierResult{
 		TierNumber:   opts.TierNumber,
 		ImplsClosed:  []string{},
 		ImplsSkipped: []string{},
@@ -53,7 +54,9 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 
 	manifest, err := protocol.ParseProgramManifest(opts.ManifestPath)
 	if err != nil {
-		return result, fmt.Errorf("finalize-tier: parse manifest: %w", err)
+		return result.NewFailure[FinalizeTierResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf("finalize-tier: parse manifest: %v", err)),
+		})
 	}
 
 	// Find the target tier
@@ -65,7 +68,9 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		}
 	}
 	if targetTier == nil {
-		return result, fmt.Errorf("finalize-tier: tier %d not found in manifest", opts.TierNumber)
+		return result.NewFailure[FinalizeTierResult]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf("finalize-tier: tier %d not found in manifest", opts.TierNumber)),
+		})
 	}
 
 	for _, implSlug := range targetTier.Impls {
@@ -73,12 +78,12 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		if err != nil {
 			// ResolveIMPLPath returns an error when not found — treat as archived
 			logger.Info("finalize-tier: IMPL not found on disk (already archived?)", "slug", implSlug)
-			result.ImplsSkipped = append(result.ImplsSkipped, implSlug)
+			data.ImplsSkipped = append(data.ImplsSkipped, implSlug)
 			continue
 		}
 		if _, statErr := os.Stat(implPath); os.IsNotExist(statErr) {
 			logger.Info("finalize-tier: IMPL not on disk (already archived)", "slug", implSlug)
-			result.ImplsSkipped = append(result.ImplsSkipped, implSlug)
+			data.ImplsSkipped = append(data.ImplsSkipped, implSlug)
 			continue
 		}
 
@@ -89,11 +94,12 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		})
 		if res.IsFatal() {
 			logger.Warn("finalize-tier: failed to close IMPL", "slug", implSlug, "error", res.Errors[0].Message)
-			result.Errors = append(result.Errors, fmt.Sprintf("close IMPL %s: %s", implSlug, res.Errors[0].Message))
+			data.Errors = append(data.Errors, result.NewError(result.CodeFinalizeWaveFailed,
+				fmt.Sprintf("close IMPL %s: %s", implSlug, res.Errors[0].Message)))
 			// non-fatal, continue
 		} else {
 			logger.Info("finalize-tier: closed IMPL", "slug", implSlug)
-			result.ImplsClosed = append(result.ImplsClosed, implSlug)
+			data.ImplsClosed = append(data.ImplsClosed, implSlug)
 		}
 	}
 
@@ -105,7 +111,7 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 
 		if !git.BranchExists(opts.RepoDir, branch) {
 			logger.Info("finalize-tier: branch not found (already merged or never created)", "branch", branch)
-			result.MergeResults[implSlug] = &protocol.MergeAgentsData{
+			data.MergeResults[implSlug] = &protocol.MergeAgentsData{
 				Wave:   opts.TierNumber,
 				Merges: []protocol.MergeStatus{{Agent: implSlug, Branch: branch, Success: true, Error: "skipped: branch not found"}},
 			}
@@ -114,7 +120,7 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 
 		if git.IsAncestor(opts.RepoDir, branch, "HEAD") {
 			logger.Info("finalize-tier: branch already merged into HEAD", "branch", branch)
-			result.MergeResults[implSlug] = &protocol.MergeAgentsData{
+			data.MergeResults[implSlug] = &protocol.MergeAgentsData{
 				Wave:   opts.TierNumber,
 				Merges: []protocol.MergeStatus{{Agent: implSlug, Branch: branch, Success: true, Error: "skipped: already merged"}},
 			}
@@ -124,31 +130,26 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		message := fmt.Sprintf("Merge program tier %d impl %s: %s", opts.TierNumber, implSlug, branch)
 		if mergeErr := mergeIMPLBranchWorktreeAware(opts.RepoDir, branch, message); mergeErr != nil {
 			logger.Warn("finalize-tier: merge failed", "branch", branch, "error", mergeErr)
-			result.Errors = append(result.Errors, fmt.Sprintf("merge %s: %v", branch, mergeErr))
-			return result, nil // stop-on-first behavior
+			data.Errors = append(data.Errors, result.NewError(result.CodeFinalizeWaveFailed,
+				fmt.Sprintf("merge %s: %v", branch, mergeErr)))
+			return result.NewPartial(data, data.Errors) // stop-on-first behavior
 		}
 
 		logger.Info("finalize-tier: merged IMPL branch", "branch", branch)
-		result.MergeResults[implSlug] = &protocol.MergeAgentsData{
+		data.MergeResults[implSlug] = &protocol.MergeAgentsData{
 			Wave:   opts.TierNumber,
 			Merges: []protocol.MergeStatus{{Agent: implSlug, Branch: branch, Success: true}},
 		}
 	}
 
 	// Step 3 — Run tier gate
+	// No disk writes to manifest occurred between the initial parse and here,
+	// so use the in-memory manifest rather than re-parsing from disk.
 	logger.Info("finalize-tier: step 3 — running tier gate", "tier", opts.TierNumber)
-
-	// Re-parse manifest so enriched statuses are picked up
-	manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
-	if err != nil {
-		logger.Warn("finalize-tier: failed to re-parse manifest for tier gate", "error", err)
-		result.Errors = append(result.Errors, fmt.Sprintf("re-parse manifest: %v", err))
-		return result, nil
-	}
 
 	gateRes := protocol.RunTierGate(manifest, opts.TierNumber, opts.RepoDir)
 	gateData := gateRes.GetData()
-	result.TierGateResult = gateData
+	data.TierGateResult = gateData
 
 	if gateData == nil || !gateData.Passed {
 		errMsg := "tier gate did not pass"
@@ -156,8 +157,9 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 			errMsg = gateRes.Errors[0].Message
 		}
 		logger.Warn("finalize-tier: tier gate failed", "error", errMsg)
-		result.Errors = append(result.Errors, fmt.Sprintf("tier gate: %s", errMsg))
-		return result, nil
+		data.Errors = append(data.Errors, result.NewError(result.CodeFinalizeWaveFailed,
+			fmt.Sprintf("tier gate: %s", errMsg)))
+		return result.NewPartial(data, data.Errors)
 	}
 
 	// Step 4 — Update IMPL statuses in PROGRAM manifest and commit
@@ -171,16 +173,20 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		}
 	}
 
-	data, marshalErr := yaml.Marshal(manifest)
+	marshaledData, marshalErr := yaml.Marshal(manifest)
 	if marshalErr != nil {
 		logger.Warn("finalize-tier: failed to marshal manifest", "error", marshalErr)
-		result.StateAdvanced = false
-		return result, nil
+		data.StateAdvanced = false
+		data.Errors = append(data.Errors, result.NewError(result.CodeFinalizeWaveFailed,
+			fmt.Sprintf("marshal manifest: %v", marshalErr)))
+		return result.NewPartial(data, data.Errors)
 	}
-	if writeErr := os.WriteFile(opts.ManifestPath, data, 0644); writeErr != nil {
+	if writeErr := os.WriteFile(opts.ManifestPath, marshaledData, 0644); writeErr != nil {
 		logger.Warn("finalize-tier: failed to write manifest", "error", writeErr)
-		result.StateAdvanced = false
-		return result, nil
+		data.StateAdvanced = false
+		data.Errors = append(data.Errors, result.NewError(result.CodeFinalizeWaveFailed,
+			fmt.Sprintf("write manifest: %v", writeErr)))
+		return result.NewPartial(data, data.Errors)
 	}
 
 	if addErr := git.Add(opts.RepoDir, opts.ManifestPath); addErr != nil {
@@ -192,10 +198,13 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) (FinalizeTie
 		logger.Warn("finalize-tier: git commit failed", "error", commitErr)
 		// non-fatal
 	} else {
-		result.StateAdvanced = true
+		data.StateAdvanced = true
 	}
 
-	return result, nil
+	if len(data.Errors) > 0 {
+		return result.NewPartial(data, data.Errors)
+	}
+	return result.NewSuccess(data)
 }
 
 // mergeIMPLBranchWorktreeAware merges branch into HEAD of repoDir.

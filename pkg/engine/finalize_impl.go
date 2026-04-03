@@ -8,6 +8,12 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// FinalizeIMPLEngineOpts configures the FinalizeIMPLEngine call.
+type FinalizeIMPLEngineOpts struct {
+	IMPLPath string // absolute path to IMPL doc (required)
+	RepoRoot string // absolute path to repo root (required)
+}
+
 // FinalizeIMPLEngine is the canonical engine wrapper around protocol.FinalizeIMPL.
 // Both CLI (`sawtools finalize-impl`) and web app automation should use this
 // function to ensure consistent behavior: context cancellation support,
@@ -17,26 +23,32 @@ import (
 //
 // Usage (typical webapp flow after Scout completes):
 //
-//	res, err := FinalizeIMPLEngine(ctx, implPath, repoRoot)
-//	if err != nil {
-//	  // Handle context cancellation
+//	res := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: implPath, RepoRoot: repoRoot})
+//	if res.IsFatal() {
+//	  // Handle context cancellation or validation failure
 //	}
 //	if !res.IsSuccess() {
 //	  // Handle validation/population failures (show in UI)
 //	}
-func FinalizeIMPLEngine(ctx context.Context, implPath, repoRoot string) (result.Result[protocol.FinalizeIMPLData], error) {
+func FinalizeIMPLEngine(ctx context.Context, opts FinalizeIMPLEngineOpts) result.Result[protocol.FinalizeIMPLData] {
 	// Validate required parameters
-	if implPath == "" {
-		return result.Result[protocol.FinalizeIMPLData]{}, fmt.Errorf("engine.FinalizeIMPLEngine: implPath is required")
+	if opts.IMPLPath == "" {
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeIMPLEngine: implPath is required"),
+		})
 	}
-	if repoRoot == "" {
-		return result.Result[protocol.FinalizeIMPLData]{}, fmt.Errorf("engine.FinalizeIMPLEngine: repoRoot is required")
+	if opts.RepoRoot == "" {
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeIMPLEngine: repoRoot is required"),
+		})
 	}
 
 	// Check context cancellation before starting
 	select {
 	case <-ctx.Done():
-		return result.Result[protocol.FinalizeIMPLData]{}, ctx.Err()
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+			result.NewFatal(result.CodeContextCancelled, fmt.Sprintf("engine.FinalizeIMPLEngine: context cancelled: %v", ctx.Err())),
+		})
 	default:
 	}
 
@@ -44,14 +56,16 @@ func FinalizeIMPLEngine(ctx context.Context, implPath, repoRoot string) (result.
 	resultCh := make(chan result.Result[protocol.FinalizeIMPLData], 1)
 
 	go func() {
-		resultCh <- protocol.FinalizeIMPL(implPath, repoRoot)
+		resultCh <- protocol.FinalizeIMPL(opts.IMPLPath, opts.RepoRoot)
 	}()
 
 	// Wait for either completion or context cancellation
 	select {
 	case <-ctx.Done():
-		return result.Result[protocol.FinalizeIMPLData]{}, ctx.Err()
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+			result.NewFatal(result.CodeContextCancelled, fmt.Sprintf("engine.FinalizeIMPLEngine: context cancelled during execution: %v", ctx.Err())),
+		})
 	case r := <-resultCh:
-		return r, nil
+		return r
 	}
 }

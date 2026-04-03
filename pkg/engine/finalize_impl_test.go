@@ -79,18 +79,13 @@ waves:
 
 	// Run: FinalizeIMPLEngine with context
 	ctx := context.Background()
-	result, err := FinalizeIMPLEngine(ctx, implPath, repoRoot)
-
-	// Verify: no error
-	if err != nil {
-		t.Errorf("FinalizeIMPLEngine returned error: %v", err)
-	}
+	res := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: implPath, RepoRoot: repoRoot})
 
 	// Verify: result matches protocol.FinalizeIMPL output
-	if !result.IsSuccess() {
-		t.Fatalf("expected success, got failure. Errors: %+v", result.Errors)
+	if !res.IsSuccess() {
+		t.Fatalf("expected success, got failure. Errors: %+v", res.Errors)
 	}
-	data := result.GetData()
+	data := res.GetData()
 
 	// Should have H2 data available
 	if !data.GatePopulation.H2DataAvailable {
@@ -161,20 +156,16 @@ waves:
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	result, err := FinalizeIMPLEngine(ctx, implPath, repoRoot)
+	res := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: implPath, RepoRoot: repoRoot})
 
-	// Verify: returns context.Canceled error
-	if err == nil {
-		t.Error("expected error when context is cancelled, got nil")
+	// Verify: returns fatal result with cancellation code
+	if !res.IsFatal() {
+		t.Error("expected fatal result when context is cancelled, got non-fatal")
 	}
 
-	if err != context.Canceled {
-		t.Errorf("expected context.Canceled error, got: %v", err)
-	}
-
-	// Result should be zero-value when context cancelled before execution
-	if result.IsSuccess() {
-		t.Errorf("expected non-success result when context cancelled, got: %+v", result)
+	// Should not be success
+	if res.IsSuccess() {
+		t.Errorf("expected non-success result when context cancelled, got: %+v", res)
 	}
 }
 
@@ -216,18 +207,15 @@ waves:
 	// Add small delay to increase chance of catching cancellation during execution
 	time.Sleep(2 * time.Millisecond)
 
-	result, err := FinalizeIMPLEngine(ctx, implPath, repoRoot)
+	res := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: implPath, RepoRoot: repoRoot})
 
-	// Verify: should return error (either context.Canceled or context.DeadlineExceeded)
+	// Verify: should return fatal result or success (timing-dependent)
 	// Note: timing-dependent - might complete before timeout, so we allow both outcomes
-	if err == nil && result.IsSuccess() {
+	if res.IsSuccess() {
 		// Operation completed before timeout - this is OK
 		t.Logf("operation completed before context timeout (timing-dependent)")
-	} else if err != nil {
-		// Should be a context error
-		if err != context.Canceled && err != context.DeadlineExceeded {
-			t.Errorf("expected context error, got: %v", err)
-		}
+	} else if !res.IsFatal() {
+		t.Errorf("expected fatal result on context cancellation, got partial: %+v", res)
 	}
 }
 
@@ -239,34 +227,34 @@ func TestFinalizeIMPLEngine_ValidationParameters(t *testing.T) {
 		name     string
 		implPath string
 		repoRoot string
-		wantErr  string
+		wantMsg  string
 	}{
 		{
 			name:     "missing implPath",
 			implPath: "",
 			repoRoot: "/tmp/repo",
-			wantErr:  "implPath is required",
+			wantMsg:  "implPath is required",
 		},
 		{
 			name:     "missing repoRoot",
 			implPath: "/tmp/IMPL.yaml",
 			repoRoot: "",
-			wantErr:  "repoRoot is required",
+			wantMsg:  "repoRoot is required",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := FinalizeIMPLEngine(ctx, tt.implPath, tt.repoRoot)
+			res := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: tt.implPath, RepoRoot: tt.repoRoot})
 
-			if err == nil {
-				t.Errorf("expected error containing %q, got nil", tt.wantErr)
-			} else if !containsString(err.Error(), tt.wantErr) {
-				t.Errorf("expected error containing %q, got: %v", tt.wantErr, err)
+			if !res.IsFatal() {
+				t.Errorf("expected fatal result for %q, got: %+v", tt.wantMsg, res)
+			} else if len(res.Errors) == 0 || !containsString(res.Errors[0].Message, tt.wantMsg) {
+				t.Errorf("expected error containing %q, got errors: %+v", tt.wantMsg, res.Errors)
 			}
 
-			if result.IsSuccess() {
-				t.Errorf("expected non-success result on parameter validation error, got: %+v", result)
+			if res.IsSuccess() {
+				t.Errorf("expected non-success result on parameter validation error, got: %+v", res)
 			}
 		})
 	}

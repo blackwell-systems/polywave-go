@@ -233,7 +233,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	}
 
 	// Finalize IMPL doc (M4: populate verification gates).
-	finalizeRes, _ := FinalizeIMPLEngine(ctx, implPath, repoPath)
+	finalizeRes := FinalizeIMPLEngine(ctx, FinalizeIMPLEngineOpts{IMPLPath: implPath, RepoRoot: repoPath})
 	gatesPopulated := 0
 	if finalizeRes.IsSuccess() {
 		gatesPopulated = finalizeRes.GetData().GatePopulation.AgentsUpdated

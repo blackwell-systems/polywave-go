@@ -57,21 +57,21 @@ func initTempGitRepo(t *testing.T) string {
 }
 
 // TestFinalizeTierEngine_MissingManifest verifies that a nonexistent manifest path
-// returns a non-nil error.
+// returns a fatal result.
 func TestFinalizeTierEngine_MissingManifest(t *testing.T) {
 	dir := t.TempDir()
-	_, err := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
+	res := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
 		ManifestPath: filepath.Join(dir, "nonexistent.yaml"),
 		TierNumber:   1,
 		RepoDir:      dir,
 	})
-	if err == nil {
-		t.Fatal("expected non-nil error for missing manifest, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing manifest, got non-fatal")
 	}
 }
 
 // TestFinalizeTierEngine_TierNotFound verifies that specifying a tier number
-// that does not exist in the manifest returns a non-nil error.
+// that does not exist in the manifest returns a fatal result.
 func TestFinalizeTierEngine_TierNotFound(t *testing.T) {
 	dir := t.TempDir()
 	manifestPath := filepath.Join(dir, "PROGRAM.yaml")
@@ -79,13 +79,13 @@ func TestFinalizeTierEngine_TierNotFound(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
+	res := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
 		ManifestPath: manifestPath,
 		TierNumber:   99,
 		RepoDir:      dir,
 	})
-	if err == nil {
-		t.Fatal("expected non-nil error for tier not found, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for tier not found, got non-fatal")
 	}
 }
 
@@ -123,15 +123,19 @@ func TestFinalizeTierEngine_AllImplsAlreadyArchived(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, _ := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
+	res := FinalizeTierEngine(context.Background(), FinalizeTierOpts{
 		ManifestPath: manifestPath,
 		TierNumber:   1,
 		RepoDir:      dir,
 	})
 
+	// Result will be partial or fatal (tier gate won't pass without branches),
+	// but ImplsSkipped should contain the slug regardless.
+	data := res.GetData()
+
 	// The IMPL slug should appear in ImplsSkipped (not ImplsClosed)
 	found := false
-	for _, s := range result.ImplsSkipped {
+	for _, s := range data.ImplsSkipped {
 		if s == implSlug {
 			found = true
 			break
@@ -139,6 +143,6 @@ func TestFinalizeTierEngine_AllImplsAlreadyArchived(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected %q in ImplsSkipped, got ImplsSkipped=%v ImplsClosed=%v",
-			implSlug, result.ImplsSkipped, result.ImplsClosed)
+			implSlug, data.ImplsSkipped, data.ImplsClosed)
 	}
 }
