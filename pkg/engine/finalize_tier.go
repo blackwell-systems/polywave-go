@@ -147,7 +147,7 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) result.Resul
 	// so use the in-memory manifest rather than re-parsing from disk.
 	logger.Info("finalize-tier: step 3 — running tier gate", "tier", opts.TierNumber)
 
-	gateRes := protocol.RunTierGate(manifest, opts.TierNumber, opts.RepoDir)
+	gateRes := protocol.RunTierGate(ctx, manifest, opts.TierNumber, opts.RepoDir)
 	gateData := gateRes.GetData()
 	data.TierGateResult = gateData
 

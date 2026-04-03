@@ -61,7 +61,7 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	}
 
 	// Step 1: Run tier gate
-	gateRes := protocol.RunTierGate(manifest, completedTier, repoPath)
+	gateRes := protocol.RunTierGate(context.Background(), manifest, completedTier, repoPath)
 	if gateRes.IsFatal() {
 		return result.NewFailure[TierAdvanceResult]([]result.SAWError{
 			result.NewFatal(result.CodeTierGateFailed,
