@@ -67,12 +67,18 @@ Examples:
 				Timeout:     timeout,
 				Logger:      newSawLogger(),
 			}
-			scoutRes, err := engine.RunScoutFull(cmd.Context(), scoutOpts, func(chunk string) {
+			// TODO(result-migration): Wave 5 Agent U will update this to full result.Result handling.
+			scoutResultR := engine.RunScoutFull(cmd.Context(), scoutOpts, func(chunk string) {
 				fmt.Print(chunk)
 			})
-			if err != nil {
-				return fmt.Errorf("auto: scout failed: %w", err)
+			if scoutResultR.IsFatal() {
+				errMsg := "scout failed"
+				if len(scoutResultR.Errors) > 0 {
+					errMsg = scoutResultR.Errors[0].Message
+				}
+				return fmt.Errorf("auto: scout failed: %s", errMsg)
 			}
+			scoutRes := scoutResultR.GetData()
 
 			// Phase 2: Read IMPL doc and check verdict.
 			implPath := scoutRes.IMPLPath

@@ -74,12 +74,18 @@ Output:
 				Logger:              newSawLogger(),
 			}
 
-			res, err := engine.RunScoutFull(cmd.Context(), opts, func(chunk string) {
+			// TODO(result-migration): Wave 5 Agent U will update this to full result.Result handling.
+			scoutResult := engine.RunScoutFull(cmd.Context(), opts, func(chunk string) {
 				fmt.Print(chunk)
 			})
-			if err != nil {
-				return fmt.Errorf("run-scout: %w", err)
+			if scoutResult.IsFatal() {
+				errMsg := "scout failed"
+				if len(scoutResult.Errors) > 0 {
+					errMsg = scoutResult.Errors[0].Message
+				}
+				return fmt.Errorf("run-scout: %s", errMsg)
 			}
+			res := scoutResult.GetData()
 
 			fmt.Println()
 			fmt.Printf("IMPL doc: %s\n", res.IMPLPath)
