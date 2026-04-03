@@ -20,21 +20,6 @@ const (
 	ErrorRetry    ErrorStrategy = "retry"    // Retry step up to MaxRetries times
 )
 
-// Error code constants for structured SAWError values emitted by this package.
-const (
-	// CodePipelineRunFailed is emitted when a pipeline Run is aborted due to
-	// step failure or context cancellation.
-	CodePipelineRunFailed = "N096_PIPELINE_RUN_FAILED"
-
-	// CodeStepExecutionFailed is emitted when a pipeline step fails during
-	// execution, including nil Func, context cancellation, and retry exhaustion.
-	CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
-
-	// CodeRequiredKeyMissing is emitted when a required pipeline state key is
-	// absent, nil, or the state.Values map is nil.
-	CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
-)
-
 // Step is a named, executable unit in a pipeline.
 type Step struct {
 	Name          string        `yaml:"name"`
