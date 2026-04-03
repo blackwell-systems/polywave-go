@@ -18,8 +18,8 @@ import (
 func createTestObserver(t *testing.T, projectName string) (*testObserverWrapper, string) {
 	tmpDir := t.TempDir()
 
-	// Create mock Claude project directory
-	hash := md5.Sum([]byte(projectName))
+	// Create mock Claude project directory — hash the full path (matching fixed getClaudeProjectDir)
+	hash := md5.Sum([]byte(tmpDir))
 	projectHash := fmt.Sprintf("%x", hash)[:16]
 	claudeDir := filepath.Join(tmpDir, ".claude", "projects", projectHash)
 	if err := os.MkdirAll(claudeDir, 0755); err != nil {
@@ -27,10 +27,11 @@ func createTestObserver(t *testing.T, projectName string) (*testObserverWrapper,
 	}
 
 	// Create observer with tmpDir as project root
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Wrap in test wrapper to override getClaudeProjectDir
 	wrapper := &testObserverWrapper{
@@ -53,17 +54,17 @@ func (w *testObserverWrapper) getClaudeProjectDir() string {
 }
 
 // Sync wraps the parent Sync but uses test claude dir
-func (w *testObserverWrapper) Sync() (*SyncResult, error) {
+func (w *testObserverWrapper) Sync() result_Sync {
 	// Find the latest session file in test claude dir
 	sessionFile, err := w.findLatestSessionFileIn(w.claudeDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to find session file: %w", err)
+		return result_Sync{err: fmt.Errorf("failed to find session file: %w", err)}
 	}
 
 	// Load cursor
 	cursor, err := w.loadCursor()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load cursor: %w", err)
+		return result_Sync{err: fmt.Errorf("failed to load cursor: %w", err)}
 	}
 
 	// If session file changed, reset cursor
@@ -77,12 +78,20 @@ func (w *testObserverWrapper) Sync() (*SyncResult, error) {
 	// Open session file from test claude dir
 	f, err := os.Open(filepath.Join(w.claudeDir, sessionFile))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open session file: %w", err)
+		return result_Sync{err: fmt.Errorf("failed to open session file: %w", err)}
 	}
 	defer f.Close()
 
 	// Rest is same as parent
-	return w.syncFromFile(f, cursor)
+	syncResult, err := w.syncFromFile(f, cursor)
+	return result_Sync{data: syncResult, err: err}
+}
+
+// result_Sync is a helper to allow testObserverWrapper.Sync to mirror the old
+// (*SyncResult, error) interface that tests use.
+type result_Sync struct {
+	data *SyncResult
+	err  error
 }
 
 func (w *testObserverWrapper) findLatestSessionFile() (string, error) {
@@ -170,27 +179,28 @@ func (w *testObserverWrapper) syncFromFile(f *os.File, cursor *SessionCursor) (*
 	}
 
 	// Count tool uses vs results
-	result := &SyncResult{
+	syncRes := &SyncResult{
 		NewBytes: bytesRead,
 	}
 	for _, e := range entries {
 		if e.Kind == "tool_use" {
-			result.NewToolUses++
+			syncRes.NewToolUses++
 		} else if e.Kind == "tool_result" {
-			result.NewToolResults++
+			syncRes.NewToolResults++
 		}
 	}
 
-	return result, nil
+	return syncRes, nil
 }
 
 func TestNewObserver_CreatesDirectories(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Verify journal directory exists
 	if _, err := os.Stat(obs.JournalDir); os.IsNotExist(err) {
@@ -232,10 +242,11 @@ func TestSync_FirstRun(t *testing.T) {
 		},
 	})
 
-	result, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
+	syncResult := obs.Sync()
+	if syncResult.err != nil {
+		t.Fatalf("Sync failed: %v", syncResult.err)
 	}
+	result := syncResult.data
 
 	if result.NewToolUses != 1 {
 		t.Errorf("NewToolUses = %d, want 1", result.NewToolUses)
@@ -279,10 +290,11 @@ func TestSync_Incremental(t *testing.T) {
 	})
 
 	// First sync
-	result1, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("First sync failed: %v", err)
+	sync1 := obs.Sync()
+	if sync1.err != nil {
+		t.Fatalf("First sync failed: %v", sync1.err)
 	}
+	result1 := sync1.data
 	if result1.NewToolUses != 1 {
 		t.Errorf("First sync: NewToolUses = %d, want 1", result1.NewToolUses)
 	}
@@ -300,10 +312,11 @@ func TestSync_Incremental(t *testing.T) {
 	})
 
 	// Second sync should only process new entries
-	result2, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Second sync failed: %v", err)
+	sync2 := obs.Sync()
+	if sync2.err != nil {
+		t.Fatalf("Second sync failed: %v", sync2.err)
 	}
+	result2 := sync2.data
 	if result2.NewToolUses != 1 {
 		t.Errorf("Second sync: NewToolUses = %d, want 1", result2.NewToolUses)
 	}
@@ -336,9 +349,8 @@ func TestSync_SessionFileChanged(t *testing.T) {
 	})
 
 	// First sync
-	_, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("First sync failed: %v", err)
+	if s := obs.Sync(); s.err != nil {
+		t.Fatalf("First sync failed: %v", s.err)
 	}
 
 	// Create newer session log
@@ -356,10 +368,11 @@ func TestSync_SessionFileChanged(t *testing.T) {
 	})
 
 	// Second sync should detect new session and reset cursor
-	result, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Second sync failed: %v", err)
+	sync2 := obs.Sync()
+	if sync2.err != nil {
+		t.Fatalf("Second sync failed: %v", sync2.err)
 	}
+	result := sync2.data
 
 	cursor, err := obs.loadCursor()
 	if err != nil {
@@ -407,10 +420,11 @@ func TestFindLatestSessionFile_SelectsMostRecent(t *testing.T) {
 func TestAppendToIndex_PreservesExisting(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// First append
 	entries1 := []ToolEntry{
@@ -462,10 +476,11 @@ func TestAppendToIndex_PreservesExisting(t *testing.T) {
 func TestUpdateRecent_MaintainsLast30(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Add 40 entries in batches
 	for i := 0; i < 40; i++ {
@@ -525,10 +540,11 @@ func TestSync_ExtractsToolBlocks(t *testing.T) {
 		},
 	})
 
-	result, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
+	syncResult := obs.Sync()
+	if syncResult.err != nil {
+		t.Fatalf("Sync failed: %v", syncResult.err)
 	}
+	result := syncResult.data
 
 	if result.NewToolUses != 1 {
 		t.Errorf("NewToolUses = %d, want 1", result.NewToolUses)
@@ -603,9 +619,8 @@ func TestSync_SavesFullOutputToFiles(t *testing.T) {
 		},
 	})
 
-	_, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
+	if s := obs.Sync(); s.err != nil {
+		t.Fatalf("Sync failed: %v", s.err)
 	}
 
 	// Verify full content was saved to file
@@ -741,10 +756,11 @@ func writeMockEntries(t *testing.T, f *os.File, entries []mockLogEntry) {
 func TestGenerateContext_CallsGenerateContextFunc(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Create index.jsonl with sample entries
 	entries := []ToolEntry{
@@ -767,10 +783,11 @@ func TestGenerateContext_CallsGenerateContextFunc(t *testing.T) {
 	}
 
 	// Call GenerateContext
-	context, err := obs.GenerateContext()
-	if err != nil {
-		t.Fatalf("GenerateContext failed: %v", err)
+	ctxRes := obs.GenerateContext()
+	if !ctxRes.IsSuccess() {
+		t.Fatalf("GenerateContext failed: %v", ctxRes.Errors[0].Message)
 	}
+	context := *ctxRes.Data
 
 	// Verify output has expected structure (from journal.GenerateContext)
 	if !strings.Contains(context, "## Session Context (Recovered from Tool Journal)") {
@@ -784,30 +801,32 @@ func TestGenerateContext_CallsGenerateContextFunc(t *testing.T) {
 func TestLoadJournal_EmptyJournal(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// No index.jsonl exists yet
-	entries, err := obs.LoadJournal()
-	if err != nil {
-		t.Fatalf("LoadJournal failed on non-existent file: %v", err)
+	res := obs.LoadJournal()
+	if !res.IsSuccess() {
+		t.Fatalf("LoadJournal failed on non-existent file: %v", res.Errors[0].Message)
 	}
 
 	// Should return empty slice, not error
-	if len(entries) != 0 {
-		t.Errorf("LoadJournal returned %d entries, want 0", len(entries))
+	if len(*res.Data) != 0 {
+		t.Errorf("LoadJournal returned %d entries, want 0", len(*res.Data))
 	}
 }
 
 func TestLoadJournal_ParsesJSONL(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Create index.jsonl manually
 	testEntries := []ToolEntry{
@@ -847,10 +866,11 @@ func TestLoadJournal_ParsesJSONL(t *testing.T) {
 	f.Close()
 
 	// Load journal
-	loaded, err := obs.LoadJournal()
-	if err != nil {
-		t.Fatalf("LoadJournal failed: %v", err)
+	res := obs.LoadJournal()
+	if !res.IsSuccess() {
+		t.Fatalf("LoadJournal failed: %v", res.Errors[0].Message)
 	}
+	loaded := *res.Data
 
 	// Verify all entries loaded
 	if len(loaded) != len(testEntries) {
@@ -871,10 +891,11 @@ func TestLoadJournal_ParsesJSONL(t *testing.T) {
 func TestLoadJournal_IgnoresInvalidLines(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	obs, err := NewObserver(tmpDir, "agent-A")
-	if err != nil {
-		t.Fatalf("NewObserver failed: %v", err)
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
 	}
+	obs := *obsRes.Data
 
 	// Create index.jsonl with valid and invalid lines
 	validEntry := ToolEntry{
@@ -887,22 +908,23 @@ func TestLoadJournal_IgnoresInvalidLines(t *testing.T) {
 	// Write mixed content
 	var content bytes.Buffer
 	encoder := json.NewEncoder(&content)
-	encoder.Encode(validEntry)                           // Valid
-	content.WriteString("this is not json\n")            // Invalid
-	content.WriteString("\n")                            // Empty line
-	content.WriteString("{\"incomplete\": \n")           // Invalid
-	encoder.Encode(validEntry)                           // Valid
-	content.WriteString("   \n")                         // Whitespace-only line
+	encoder.Encode(validEntry)                 // Valid
+	content.WriteString("this is not json\n")  // Invalid
+	content.WriteString("\n")                  // Empty line
+	content.WriteString("{\"incomplete\": \n") // Invalid
+	encoder.Encode(validEntry)                 // Valid
+	content.WriteString("   \n")               // Whitespace-only line
 
 	if err := os.WriteFile(obs.IndexPath, content.Bytes(), 0644); err != nil {
 		t.Fatalf("Failed to write index: %v", err)
 	}
 
 	// LoadJournal should skip invalid lines and return valid ones
-	entries, err := obs.LoadJournal()
-	if err != nil {
-		t.Fatalf("LoadJournal failed: %v", err)
+	res := obs.LoadJournal()
+	if !res.IsSuccess() {
+		t.Fatalf("LoadJournal failed: %v", res.Errors[0].Message)
 	}
+	entries := *res.Data
 
 	// Should have loaded 2 valid entries
 	if len(entries) != 2 {
@@ -929,7 +951,7 @@ func TestGenerateContext_Integration(t *testing.T) {
 				ID:    "toolu_001",
 				Name:  "Edit",
 				Input: map[string]interface{}{
-					"file_path": "pkg/journal/observer.go",
+					"file_path":  "pkg/journal/observer.go",
 					"old_string": "not implemented",
 					"new_string": "actual implementation",
 				},
@@ -975,19 +997,21 @@ func TestGenerateContext_Integration(t *testing.T) {
 	})
 
 	// Sync to load entries into journal
-	result, err := obs.Sync()
-	if err != nil {
-		t.Fatalf("Sync failed: %v", err)
+	syncResult := obs.Sync()
+	if syncResult.err != nil {
+		t.Fatalf("Sync failed: %v", syncResult.err)
 	}
+	result := syncResult.data
 	if result.NewToolUses != 3 {
 		t.Errorf("Sync found %d tool uses, want 3", result.NewToolUses)
 	}
 
 	// Now call GenerateContext (end-to-end)
-	context, err := obs.GenerateContext()
-	if err != nil {
-		t.Fatalf("GenerateContext failed: %v", err)
+	ctxRes := obs.JournalObserver.GenerateContext()
+	if !ctxRes.IsSuccess() {
+		t.Fatalf("GenerateContext failed: %v", ctxRes.Errors[0].Message)
 	}
+	context := *ctxRes.Data
 
 	// Verify context has expected sections
 	expectedSections := []string{
@@ -1011,5 +1035,110 @@ func TestGenerateContext_Integration(t *testing.T) {
 	// Verify context is non-trivial (not just empty state message)
 	if strings.Contains(context, "No tool activity recorded yet") {
 		t.Errorf("Context should not indicate empty activity")
+	}
+}
+
+// TestNewObserver_WavePrefix verifies that wave prefix stripping works correctly
+// and that RawAgentID preserves the original value.
+func TestNewObserver_WavePrefix(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	res := NewObserver(tmpDir, "wave3-agent-C")
+	if !res.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", res.Errors[0].Message)
+	}
+	obs := *res.Data
+
+	if obs.AgentID != "agent-C" {
+		t.Errorf("AgentID = %q, want %q", obs.AgentID, "agent-C")
+	}
+	if obs.RawAgentID != "wave3-agent-C" {
+		t.Errorf("RawAgentID = %q, want %q", obs.RawAgentID, "wave3-agent-C")
+	}
+	if !strings.Contains(obs.JournalDir, filepath.Join("wave3", "agent-C")) {
+		t.Errorf("JournalDir = %q, expected to contain wave3/agent-C", obs.JournalDir)
+	}
+}
+
+// TestExtractToolResult_ArrayContent verifies that content sent as []interface{}
+// (array of text blocks) is correctly joined into the Preview field.
+func TestExtractToolResult_ArrayContent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	obsRes := NewObserver(tmpDir, "agent-A")
+	if !obsRes.IsSuccess() {
+		t.Fatalf("NewObserver failed: %v", obsRes.Errors[0].Message)
+	}
+	obs := *obsRes.Data
+
+	block := map[string]interface{}{
+		"type":        "tool_result",
+		"tool_use_id": "toolu_array_001",
+		"content": []interface{}{
+			map[string]interface{}{"type": "text", "text": "first part"},
+			map[string]interface{}{"type": "text", "text": "second part"},
+		},
+	}
+
+	timestamp := time.Now()
+	entry := obs.extractToolResult(block, timestamp)
+
+	if entry == nil {
+		t.Fatal("extractToolResult returned nil, want non-nil entry")
+	}
+	if !strings.Contains(entry.Preview, "first part") {
+		t.Errorf("Preview = %q, expected to contain 'first part'", entry.Preview)
+	}
+	if !strings.Contains(entry.Preview, "second part") {
+		t.Errorf("Preview = %q, expected to contain 'second part'", entry.Preview)
+	}
+}
+
+// TestGetClaudeProjectDir_FullPath verifies that observers with the same base name
+// but different full paths produce different Claude project directories.
+func TestGetClaudeProjectDir_FullPath(t *testing.T) {
+	// Two paths with the same base name but different parent directories
+	path1 := filepath.Join(t.TempDir(), "myproject")
+	path2 := filepath.Join(t.TempDir(), "myproject")
+
+	// Ensure the directories exist
+	if err := os.MkdirAll(path1, 0755); err != nil {
+		t.Fatalf("Failed to create path1: %v", err)
+	}
+	if err := os.MkdirAll(path2, 0755); err != nil {
+		t.Fatalf("Failed to create path2: %v", err)
+	}
+
+	res1 := NewObserver(path1, "agent-A")
+	if !res1.IsSuccess() {
+		t.Fatalf("NewObserver(path1) failed: %v", res1.Errors[0].Message)
+	}
+	res2 := NewObserver(path2, "agent-A")
+	if !res2.IsSuccess() {
+		t.Fatalf("NewObserver(path2) failed: %v", res2.Errors[0].Message)
+	}
+
+	dir1 := (*res1.Data).getClaudeProjectDir()
+	dir2 := (*res2.Data).getClaudeProjectDir()
+
+	if dir1 == dir2 {
+		t.Errorf("getClaudeProjectDir returned the same path for different project roots: %s", dir1)
+	}
+}
+
+// TestNewObserver_ResultType verifies the result-based API contract for NewObserver.
+func TestNewObserver_ResultType(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	res := NewObserver(tmpDir, "agent-A")
+
+	if !res.IsSuccess() {
+		t.Fatalf("NewObserver expected success, got failure: %v", res.Errors)
+	}
+	if res.Data == nil {
+		t.Fatal("NewObserver result.Data is nil, want non-nil *JournalObserver")
+	}
+	if (*res.Data).JournalDir == "" {
+		t.Error("NewObserver result.Data.JournalDir is empty")
 	}
 }
