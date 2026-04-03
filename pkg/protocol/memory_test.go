@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -58,10 +59,11 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 	}
 
 	// Load
-	loaded, err := LoadProjectMemory(path)
-	if err != nil {
-		t.Fatalf("LoadProjectMemory failed: %v", err)
+	loadRes := LoadProjectMemory(context.Background(), path)
+	if loadRes.IsFatal() {
+		t.Fatalf("LoadProjectMemory failed: %v", loadRes.Errors)
 	}
+	loaded := loadRes.GetData()
 
 	// Verify all fields
 	if loaded.Created != original.Created {
@@ -103,19 +105,12 @@ func TestLoadProjectMemory_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "nonexistent.yaml")
 
-	_, err := LoadProjectMemory(path)
-	if err == nil {
-		t.Fatal("Expected error for missing file, got nil")
-	}
-	if !os.IsNotExist(err) && !isReadError(err) {
-		t.Errorf("Expected os.IsNotExist or read error, got: %v", err)
+	res := LoadProjectMemory(context.Background(), path)
+	if !res.IsFatal() {
+		t.Fatal("Expected IsFatal() == true for missing file, got false")
 	}
 }
 
-// isReadError checks if an error is a read error (wrapped with our message).
-func isReadError(err error) bool {
-	return err != nil && (os.IsNotExist(err) || err.Error() != "")
-}
 
 // TestSaveProjectMemory_Creates tests that SaveProjectMemory creates a file that doesn't exist.
 func TestSaveProjectMemory_Creates(t *testing.T) {
@@ -201,10 +196,11 @@ func TestSaveProjectMemory_Roundtrip(t *testing.T) {
 	}
 
 	// Load
-	loaded, err := LoadProjectMemory(path)
-	if err != nil {
-		t.Fatalf("LoadProjectMemory failed: %v", err)
+	loadRes := LoadProjectMemory(context.Background(), path)
+	if loadRes.IsFatal() {
+		t.Fatalf("LoadProjectMemory failed: %v", loadRes.Errors)
 	}
+	loaded := loadRes.GetData()
 
 	// Deep verification
 	if loaded.Created != original.Created {
@@ -390,10 +386,11 @@ func TestArchitectureModule_Roundtrip(t *testing.T) {
 		t.Fatalf("SaveProjectMemory failed: %v", saveRes.Errors)
 	}
 
-	loaded, err := LoadProjectMemory(path)
-	if err != nil {
-		t.Fatalf("LoadProjectMemory failed: %v", err)
+	loadRes := LoadProjectMemory(context.Background(), path)
+	if loadRes.IsFatal() {
+		t.Fatalf("LoadProjectMemory failed: %v", loadRes.Errors)
 	}
+	loaded := loadRes.GetData()
 
 	if loaded.Architecture.Description != original.Architecture.Description {
 		t.Errorf("Architecture.Description: got %q, want %q", loaded.Architecture.Description, original.Architecture.Description)

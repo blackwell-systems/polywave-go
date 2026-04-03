@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestListIMPLs_MultipleFiles(t *testing.T) {
@@ -326,8 +328,8 @@ func TestListIMPLs_CancelledContext(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error for cancelled context")
 	}
-	if res.Errors[0].Code != "CANCELLED" {
-		t.Errorf("expected error code 'CANCELLED', got '%s'", res.Errors[0].Code)
+	if res.Errors[0].Code != result.CodeContextCancelled {
+		t.Errorf("expected error code %q, got %q", result.CodeContextCancelled, res.Errors[0].Code)
 	}
 }
 
@@ -343,9 +345,9 @@ func TestArchiveIMPL_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := ArchiveIMPL(ctx, src)
-	if err == nil {
-		t.Error("expected error for cancelled context, got nil")
+	res := ArchiveIMPL(ctx, src)
+	if !res.IsFatal() {
+		t.Error("expected IsFatal() == true for cancelled context, got false")
 	}
 }
 
@@ -361,8 +363,8 @@ func TestArchiveProgram_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel immediately
 
-	_, err := ArchiveProgram(ctx, src)
-	if err == nil {
-		t.Error("expected error for cancelled context, got nil")
+	res := ArchiveProgram(ctx, src)
+	if !res.IsFatal() {
+		t.Error("expected IsFatal() == true for cancelled context, got false")
 	}
 }
