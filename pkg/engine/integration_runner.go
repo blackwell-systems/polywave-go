@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
 )
 
 // RunIntegrationAgentOpts configures an integration agent run (E26).
@@ -128,13 +128,13 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 		}})
 	}
 
-	// Build constraints for integrator role.
-	// Agent F (wave 2) adds buildIntegratorConstraints to constraints.go.
-	// After merge, replace this with:
-	//   constraints := buildIntegratorConstraints(manifest, extractConnectors(manifest))
-	// For now, use buildConstraints with "integrator" role (returns nil-safe default).
-	constraints := buildConstraints(manifest, "integrator", "integrator")
-	_ = constraints // Constraints available for future tool enforcement.
+	// Build constraints for integrator role (E26 I1 enforcement).
+	// AllowedPathPrefixes is derived from integration_connectors so the agent
+	// is restricted to connector files only. The constraint list is injected
+	// into the system prompt because NewBackendFromModel does not accept a
+	// constraints parameter directly.
+	constraints := buildIntegratorConstraints(manifest, extractConnectors(manifest))
+	prompt = injectAllowedPathsRestriction(prompt, constraints)
 
 	// Create agent runner and execute with streaming.
 	runner := agent.NewRunner(b)
@@ -286,17 +286,22 @@ func autoCommitIntegration(repoPath string, waveNum int) error {
 	return nil
 }
 
-// integrationPromptPath returns the path to the integration-agent.md prompt
-// file in the SAW protocol repo, if it exists.
-func integrationPromptPath() string {
-	sawRepo := os.Getenv("SAW_REPO")
-	if sawRepo == "" {
-		home, _ := os.UserHomeDir()
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+// injectAllowedPathsRestriction prepends an explicit file-restriction notice
+// to the prompt when constraints carry a non-empty AllowedPathPrefixes list.
+// This enforces E26 I1 at the prompt level because NewBackendFromModel does
+// not accept a constraints parameter for tool-level enforcement.
+// Returns the original prompt unchanged when constraints is nil or has no
+// allowed prefixes (backward compatible — no enforcement for unconstrained runs).
+func injectAllowedPathsRestriction(prompt string, constraints *tools.Constraints) string {
+	if constraints == nil || len(constraints.AllowedPathPrefixes) == 0 {
+		return prompt
 	}
-	p := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "integration-agent.md")
-	if _, err := os.Stat(p); err == nil {
-		return p
+	var sb strings.Builder
+	sb.WriteString("## STRICT FILE RESTRICTION (E26 I1)\n\n")
+	sb.WriteString("You are the Integration Agent. You MUST only write to the following files:\n\n")
+	for _, p := range constraints.AllowedPathPrefixes {
+		sb.WriteString(fmt.Sprintf("- %s\n", p))
 	}
-	return ""
+	sb.WriteString("\nDo NOT modify any other file. Do NOT modify agent-owned implementation files.\n\n---\n\n")
+	return sb.String() + prompt
 }
