@@ -60,14 +60,6 @@ type UpdateData struct {
 	CompletedAgents []string `json:"completed_agents"`
 }
 
-// ExecuteMergeData is returned by executeMergeWave on success.
-type ExecuteMergeData struct {
-	// WaveNum is the wave number that was merged.
-	WaveNum int `json:"wave_num"`
-	// MergedAgents lists agent letters that were merged.
-	MergedAgents []string `json:"merged_agents"`
-}
-
 // ConflictData is returned by predictConflicts on success.
 type ConflictData struct {
 	// FilesChecked is the number of unique files that were checked.
@@ -86,12 +78,6 @@ type UpdateContextData struct {
 	Slug string `json:"slug"`
 	// ContextPath is the path to docs/CONTEXT.md that was written.
 	ContextPath string `json:"context_path"`
-}
-
-// RunVerificationData is returned by runVerification on success.
-type RunVerificationData struct {
-	// TestCommand is the command that was run.
-	TestCommand string `json:"test_command"`
 }
 
 // PrepareContextData is returned by PrepareAgentContext on success.

@@ -12,6 +12,14 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
+// loggerFrom returns the provided logger, or slog.Default() if nil.
+func loggerFrom(l *slog.Logger) *slog.Logger {
+	if l == nil {
+		return slog.Default()
+	}
+	return l
+}
+
 // RunStubScan implements E20: collects all files_changed and files_created from
 // wave agent completion reports, invokes scan-stubs.sh, and appends the
 // ## Stub Report — Wave {N} section to the IMPL doc at implDocPath.
