@@ -38,10 +38,11 @@ func newMarkCompleteCmd() *cobra.Command {
 			}
 
 			// Always archive to docs/IMPL/complete/
-			archivedPath, err := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
-			if err != nil {
-				return fmt.Errorf("mark-complete: archive failed: %w", err)
+			archRes := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
+			if archRes.IsFatal() {
+				return fmt.Errorf("mark-complete: archive failed: %s", archRes.Errors[0].Message)
 			}
+			archivedPath := archRes.GetData().NewPath
 
 			// Auto-clean worktrees for the completed IMPL
 			projectRoot := repoDir

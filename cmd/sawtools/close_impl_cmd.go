@@ -60,10 +60,11 @@ Examples:
 			fmt.Fprintf(os.Stderr, "close-impl: marked complete (date=%s)\n", date)
 
 			// Step 2: Archive to complete/
-			archivedPath, err := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
-			if err != nil {
-				return fmt.Errorf("close-impl: archive failed: %w", err)
+			archRes := protocol.ArchiveIMPL(cmd.Context(), manifestPath)
+			if archRes.IsFatal() {
+				return fmt.Errorf("close-impl: archive failed: %s", archRes.Errors[0].Message)
 			}
+			archivedPath := archRes.GetData().NewPath
 			fmt.Fprintf(os.Stderr, "close-impl: archived to %s\n", archivedPath)
 
 			// Step 3: Update CONTEXT.md

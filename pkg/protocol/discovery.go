@@ -69,7 +69,7 @@ func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Re
 		// Check for cancellation before scanning each directory
 		if err := ctx.Err(); err != nil {
 			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
-				{Code: "CANCELLED", Message: "context cancelled during directory scan", Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: "context cancelled during directory scan", Severity: "fatal"},
 			})
 		}
 
@@ -99,7 +99,7 @@ func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Re
 		// Check for cancellation before processing each file
 		if err := ctx.Err(); err != nil {
 			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
-				{Code: "CANCELLED", Message: "context cancelled during manifest processing", Severity: "fatal"},
+				{Code: result.CodeContextCancelled, Message: "context cancelled during manifest processing", Severity: "fatal"},
 			})
 		}
 
@@ -144,11 +144,18 @@ func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Re
 	return result.NewSuccess(data)
 }
 
+// ArchiveData holds the result of an archive operation.
+type ArchiveData struct {
+	NewPath string `json:"new_path"`
+}
+
 // ArchiveIMPL moves an IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
 // Returns the new path if successful.
-func ArchiveIMPL(ctx context.Context, manifestPath string) (string, error) {
+func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[ArchiveData] {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
+		})
 	}
 	// Get directory and filename
 	dir := filepath.Dir(manifestPath)
@@ -156,48 +163,58 @@ func ArchiveIMPL(ctx context.Context, manifestPath string) (string, error) {
 
 	// Check if already in complete directory
 	if filepath.Base(dir) == "complete" {
-		return manifestPath, nil // already archived
+		return result.NewSuccess(ArchiveData{NewPath: manifestPath}) // already archived
 	}
 
 	// Ensure complete directory exists
 	completeDir := filepath.Join(dir, "complete")
 	if err := os.MkdirAll(completeDir, 0755); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: "ARCHIVE_MKDIR_FAILED", Message: err.Error(), Severity: "fatal"},
+		})
 	}
 
 	// Move file
 	destPath := filepath.Join(completeDir, filename)
 	if err := os.Rename(manifestPath, destPath); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: "ARCHIVE_RENAME_FAILED", Message: err.Error(), Severity: "fatal"},
+		})
 	}
 
-	return destPath, nil
+	return result.NewSuccess(ArchiveData{NewPath: destPath})
 }
 
 // ArchiveProgram moves a PROGRAM manifest from docs/PROGRAM/ to docs/PROGRAM/complete/.
 // Returns the new path. Idempotent — returns the existing path if already archived.
-func ArchiveProgram(ctx context.Context, manifestPath string) (string, error) {
+func ArchiveProgram(ctx context.Context, manifestPath string) result.Result[ArchiveData] {
 	if err := ctx.Err(); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
+		})
 	}
 	dir := filepath.Dir(manifestPath)
 	filename := filepath.Base(manifestPath)
 
 	// Check if already in complete directory
 	if filepath.Base(dir) == "complete" {
-		return manifestPath, nil
+		return result.NewSuccess(ArchiveData{NewPath: manifestPath})
 	}
 
 	// Archive to docs/PROGRAM/complete/
 	completeDir := filepath.Join(dir, "complete")
 	if err := os.MkdirAll(completeDir, 0755); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: "ARCHIVE_MKDIR_FAILED", Message: err.Error(), Severity: "fatal"},
+		})
 	}
 
 	destPath := filepath.Join(completeDir, filename)
 	if err := os.Rename(manifestPath, destPath); err != nil {
-		return "", err
+		return result.NewFailure[ArchiveData]([]result.SAWError{
+			{Code: "ARCHIVE_RENAME_FAILED", Message: err.Error(), Severity: "fatal"},
+		})
 	}
 
-	return destPath, nil
+	return result.NewSuccess(ArchiveData{NewPath: destPath})
 }

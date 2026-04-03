@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -73,13 +74,20 @@ type CompletedFeature struct {
 }
 
 // LoadProjectMemory reads a YAML project memory file from the specified path and parses it into a ProjectMemory.
-// Returns an error if the file cannot be read or the YAML is invalid.
-func LoadProjectMemory(path string) (*ProjectMemory, error) {
+// Returns a fatal result if the context is cancelled, the file cannot be read, or the YAML is invalid.
+func LoadProjectMemory(ctx context.Context, path string) result.Result[*ProjectMemory] {
+	if err := ctx.Err(); err != nil {
+		return result.NewFailure[*ProjectMemory]([]result.SAWError{
+			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
+		})
+	}
 	pm, err := LoadYAML[ProjectMemory](path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read project memory file: %w", err)
+		return result.NewFailure[*ProjectMemory]([]result.SAWError{
+			result.NewFatal("MEMORY_LOAD_FAILED", fmt.Sprintf("failed to read project memory file: %v", err)),
+		})
 	}
-	return &pm, nil
+	return result.NewSuccess(&pm)
 }
 
 // SaveProjectMemory writes a ProjectMemory to the specified path as YAML.
