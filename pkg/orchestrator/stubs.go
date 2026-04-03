@@ -1,6 +1,7 @@
 package orchestrator
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -28,7 +29,7 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // ~/code/scout-and-wave (same fallback as RunScout).
 //
 // Always returns success — stub detection is informational only (E20).
-func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData] {
+func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData] {
 	log := loggerFrom(logger)
 	// 1. Collect the union of all FilesChanged and FilesCreated, deduplicated,
 	//    skipping any files under docs/IMPL/.
@@ -86,7 +87,7 @@ func RunStubScan(implDocPath string, waveNum int, reports map[string]*protocol.C
 		output = ""
 	} else {
 		args := append([]string{scriptPath}, files...)
-		cmd := exec.Command("bash", args...)
+		cmd := exec.CommandContext(ctx, "bash", args...)
 		cmd.Dir = filepath.Dir(implDocPath)
 		out, err := cmd.CombinedOutput()
 		if err != nil {
