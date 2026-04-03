@@ -5,14 +5,15 @@
 // RunScout generates an IMPL doc from a user prompt:
 //
 //	opts := engine.RunScoutOpts{
-//	    Prompt:     "Add user authentication to the API",
+//	    Feature:    "Add user authentication to the API",
 //	    RepoPath:   "/path/to/repo",
 //	    ScoutModel: "claude-sonnet-4-6",
 //	}
-//	implPath, err := engine.RunScout(ctx, opts)
-//	if err != nil {
-//	    log.Fatalf("Scout failed: %v", err)
+//	res := engine.RunScout(ctx, opts, nil)
+//	if !res.OK() {
+//	    log.Fatalf("Scout failed: %v", res.Errors())
 //	}
+//	implPath := res.Data().IMPLPath
 //
 // Scout analyzes the codebase, determines suitability, and generates:
 //   - Wave/agent structure with file ownership
@@ -37,10 +38,15 @@
 //
 // RunScaffold executes the Scaffold Agent to materialize shared types/interfaces:
 //
-//	err := engine.RunScaffold(ctx, implPath, repoPath)
-//	if err != nil {
-//	    log.Fatalf("Scaffold failed: %v", err)
+//	opts := engine.RunScaffoldOpts{
+//	    ImplPath: implPath,
+//	    RepoPath: repoPath,
 //	}
+//	res := engine.RunScaffold(opts)
+//	if !res.OK() {
+//	    log.Fatalf("Scaffold failed: %v", res.Errors())
+//	}
+//	data := res.Data() // ScaffoldData{IMPLPath, ScaffoldsFound}
 //
 // The Scaffold Agent writes shared types that multiple wave agents depend on,
 // then runs build verification to ensure the scaffold compiles.
@@ -49,14 +55,14 @@
 //
 // RunChat provides standalone chat with Claude (no IMPL doc):
 //
-//	opts := engine.ChatOpts{
-//	    Model:      "claude-sonnet-4-6",
-//	    RepoPath:   "/path/to/repo",
-//	    SystemPrompt: "You are a helpful coding assistant",
+//	opts := engine.RunChatOpts{
+//	    IMPLPath: implPath,
+//	    RepoPath: "/path/to/repo",
+//	    Message:  "What does this module do?",
 //	}
-//	err := engine.RunChat(ctx, opts, onChunk)
-//	if err != nil {
-//	    log.Fatalf("Chat failed: %v", err)
+//	res := engine.RunChat(ctx, opts, onChunk)
+//	if !res.OK() {
+//	    log.Fatalf("Chat failed: %v", res.Errors())
 //	}
 //
 // # Multi-Wave Orchestration
@@ -89,12 +95,13 @@
 //	    manifest *protocol.IMPLManifest,
 //	    onEvent EventCallback) (*StepResult, *protocol.MyStepData, error)
 //
-// Every step: takes a context, the wave options struct (FinalizeWaveOpts or
-// PrepareWaveOpts), the loaded manifest, and an EventCallback; returns a
-// *StepResult, an optional typed data pointer (e.g. *protocol.VerifyCommitsData),
-// and an error. Steps emit events via EventCallback at start ("running") and at
-// completion ("complete" or "failed"). All steps are nil-safe with respect to
-// EventCallback — the callback may be nil and steps guard before calling.
+// Every step takes a context, the wave options struct (FinalizeWaveOpts or
+// PrepareWaveOpts), and an EventCallback; steps that need the parsed IMPL doc
+// also take a *protocol.IMPLManifest. Returns a *StepResult, an optional typed
+// data pointer (e.g. *protocol.VerifyCommitsData), and an error. Steps emit
+// events via EventCallback at start ("running") and at completion ("complete"
+// or "failed"). All steps are nil-safe with respect to EventCallback — the
+// callback may be nil and steps guard before calling.
 //
 // FinalizeWave assembles the finalize pipeline (~15 steps, including
 // StepGoWorkRestore) and PrepareWave assembles the prepare pipeline (~14 steps,
@@ -122,6 +129,4 @@
 //     stating what the step checks, one sentence stating its fatality (fatal or
 //     non-fatal), and any relevant rule codes (E*, I*, M*, H*) in parentheses.
 //
-// Note: StepGoWorkSetup and StepGoWorkRestore will be added by the
-// IMPL-gowork-lsp-setup wave. Their doc comments will be written as part of that wave.
 package engine

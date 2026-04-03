@@ -21,7 +21,7 @@ func StepGoWorkSetup(ctx context.Context, repoRoot string, waveNum int, worktree
 	mgr := &workspace.GoWorkspaceManager{}
 	if !mgr.Detect(repoRoot) {
 		emitStepEvent(onEvent, "gowork_setup", "skipped", "not a Go repo")
-		return &StepResult{Step: "gowork_setup", Status: "success", Detail: "not a Go repo"}
+		return &StepResult{Step: "gowork_setup", Status: "skipped", Detail: "not a Go repo"}
 	}
 	if err := mgr.Setup(repoRoot, waveNum, paths); err != nil {
 		emitStepEvent(onEvent, "gowork_setup", "warning", err.Error())
