@@ -17,8 +17,8 @@ func TestStepGoWorkSetup_SkipsNonGoRepo(t *testing.T) {
 
 	result := StepGoWorkSetup(context.Background(), repoRoot, 1, nil, nil, nil)
 
-	if result.Status != "success" {
-		t.Errorf("expected status=success, got %q", result.Status)
+	if result.Status != "skipped" {
+		t.Errorf("expected status=skipped, got %q", result.Status)
 	}
 	if !strings.Contains(result.Detail, "not a Go repo") {
 		t.Errorf("expected detail to contain 'not a Go repo', got %q", result.Detail)
