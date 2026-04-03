@@ -419,11 +419,11 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) (*FinalizeWaveResu
 									WorktreePath: wtPath,
 									MaxRetries:   2,
 								}
-								retryResult, retryErr := ClosedLoopGateRetry(ctx, retryOpts)
-								if retryErr != nil {
+								retryRes := ClosedLoopGateRetry(ctx, retryOpts)
+								if retryRes.IsFatal() {
 									loggerFrom(opts.Logger).Warn("engine.FinalizeWave: closed-loop retry error",
-										"agent", ag.ID, "err", retryErr)
-								} else if retryResult != nil && retryResult.Fixed {
+										"agent", ag.ID, "errors", retryRes.Errors)
+								} else if retryRes.GetData().Fixed {
 									retryFixed = true
 								}
 								// Only retry with the first agent — the gate is repo-scoped.

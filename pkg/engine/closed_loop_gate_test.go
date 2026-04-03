@@ -35,21 +35,19 @@ func TestClosedLoopGateRetry_FixesOnFirstAttempt(t *testing.T) {
 		MaxRetries:   3,
 	}
 
-	result, err := ClosedLoopGateRetry(context.Background(), opts)
-	if err != nil {
-		t.Fatalf("ClosedLoopGateRetry returned error: %v", err)
+	r := ClosedLoopGateRetry(context.Background(), opts)
+	if r.IsFatal() {
+		t.Fatalf("ClosedLoopGateRetry returned fatal result: %v", r.Errors)
 	}
-	if result == nil {
-		t.Fatal("result is nil")
-	}
-	if !result.Fixed {
+	got := r.GetData()
+	if !got.Fixed {
 		t.Error("expected Fixed=true, got false")
 	}
-	if result.Attempts != 1 {
-		t.Errorf("expected Attempts=1, got %d", result.Attempts)
+	if got.Attempts != 1 {
+		t.Errorf("expected Attempts=1, got %d", got.Attempts)
 	}
-	if result.AgentID != "A" {
-		t.Errorf("expected AgentID=A, got %q", result.AgentID)
+	if got.AgentID != "A" {
+		t.Errorf("expected AgentID=A, got %q", got.AgentID)
 	}
 }
 
@@ -85,18 +83,16 @@ func TestClosedLoopGateRetry_ExhaustsRetries(t *testing.T) {
 		MaxRetries:   maxRetries,
 	}
 
-	result, err := ClosedLoopGateRetry(context.Background(), opts)
-	if err != nil {
-		t.Fatalf("ClosedLoopGateRetry returned error: %v", err)
+	r := ClosedLoopGateRetry(context.Background(), opts)
+	if r.IsFatal() {
+		t.Fatalf("ClosedLoopGateRetry returned fatal result: %v", r.Errors)
 	}
-	if result == nil {
-		t.Fatal("result is nil")
-	}
-	if result.Fixed {
+	got := r.GetData()
+	if got.Fixed {
 		t.Error("expected Fixed=false, got true")
 	}
-	if result.Attempts != maxRetries {
-		t.Errorf("expected Attempts=%d, got %d", maxRetries, result.Attempts)
+	if got.Attempts != maxRetries {
+		t.Errorf("expected Attempts=%d, got %d", maxRetries, got.Attempts)
 	}
 	if agentCallCount != maxRetries {
 		t.Errorf("expected fix agent called %d times, got %d", maxRetries, agentCallCount)
@@ -142,11 +138,12 @@ func TestClosedLoopGateRetry_EmitsEvents(t *testing.T) {
 		},
 	}
 
-	result, err := ClosedLoopGateRetry(context.Background(), opts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := ClosedLoopGateRetry(context.Background(), opts)
+	if r.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", r.Errors)
 	}
-	if !result.Fixed {
+	got := r.GetData()
+	if !got.Fixed {
 		t.Error("expected Fixed=true")
 	}
 
@@ -200,11 +197,12 @@ func TestClosedLoopGateRetry_RunsInWorktree(t *testing.T) {
 		MaxRetries:   1,
 	}
 
-	result, err := ClosedLoopGateRetry(context.Background(), opts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := ClosedLoopGateRetry(context.Background(), opts)
+	if r.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", r.Errors)
 	}
-	if !result.Fixed {
+	got := r.GetData()
+	if !got.Fixed {
 		t.Error("expected Fixed=true")
 	}
 
@@ -225,33 +223,36 @@ func TestClosedLoopGateRetry_ValidationErrors(t *testing.T) {
 	tests := []struct {
 		name    string
 		opts    ClosedLoopRetryOpts
-		wantErr string
+		wantMsg string
 	}{
 		{
 			name:    "missing AgentID",
 			opts:    ClosedLoopRetryOpts{GateCommand: "go build ./...", WorktreePath: "/tmp"},
-			wantErr: "AgentID is required",
+			wantMsg: "AgentID is required",
 		},
 		{
 			name:    "missing GateCommand",
 			opts:    ClosedLoopRetryOpts{AgentID: "A", WorktreePath: "/tmp"},
-			wantErr: "GateCommand is required",
+			wantMsg: "GateCommand is required",
 		},
 		{
 			name:    "missing WorktreePath",
 			opts:    ClosedLoopRetryOpts{AgentID: "A", GateCommand: "go build ./..."},
-			wantErr: "WorktreePath is required",
+			wantMsg: "WorktreePath is required",
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ClosedLoopGateRetry(ctx, tc.opts)
-			if err == nil {
-				t.Fatal("expected error, got nil")
+			r := ClosedLoopGateRetry(ctx, tc.opts)
+			if !r.IsFatal() {
+				t.Fatal("expected fatal result, got non-fatal")
 			}
-			if !containsSubstr(err.Error(), tc.wantErr) {
-				t.Errorf("expected error containing %q, got %q", tc.wantErr, err.Error())
+			if len(r.Errors) == 0 {
+				t.Fatal("expected errors in result")
+			}
+			if !containsSubstr(r.Errors[0].Message, tc.wantMsg) {
+				t.Errorf("expected error message containing %q, got %q", tc.wantMsg, r.Errors[0].Message)
 			}
 		})
 	}
@@ -287,11 +288,12 @@ func TestClosedLoopGateRetry_ExhaustsEmitsEvent(t *testing.T) {
 		},
 	}
 
-	result, err := ClosedLoopGateRetry(context.Background(), opts)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	r := ClosedLoopGateRetry(context.Background(), opts)
+	if r.IsFatal() {
+		t.Fatalf("unexpected fatal result: %v", r.Errors)
 	}
-	if result.Fixed {
+	got := r.GetData()
+	if got.Fixed {
 		t.Error("expected Fixed=false")
 	}
 

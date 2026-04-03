@@ -68,14 +68,14 @@ Examples:
 
 			// Handle --backend agent-tool: print assembled prompt to stdout and exit.
 			if backendMode == "agent-tool" {
-				prompt, err := engine.BuildCriticPrompt(cmd.Context(), engine.BuildCriticPromptOpts{
+				promptRes := engine.BuildCriticPrompt(cmd.Context(), engine.BuildCriticPromptOpts{
 					IMPLPath:    implPath,
 					SAWRepoPath: "",
 				})
-				if err != nil {
-					return fmt.Errorf("run-critic: failed to build critic prompt: %w", err)
+				if promptRes.IsFatal() {
+					return fmt.Errorf("run-critic: failed to build critic prompt: %v", promptRes.Errors)
 				}
-				fmt.Print(prompt)
+				fmt.Print(promptRes.GetData())
 				return nil
 			}
 
@@ -100,14 +100,15 @@ Examples:
 			fmt.Printf("  IMPL doc: %s\n", implPath)
 			fmt.Println()
 
-			result, err := engine.RunCritic(cmd.Context(), engine.RunCriticOpts{
+			criticRes := engine.RunCritic(cmd.Context(), engine.RunCriticOpts{
 				IMPLPath:    implPath,
 				CriticModel: criticModel,
 				Timeout:     timeout,
 			}, func(chunk string) { fmt.Print(chunk) })
-			if err != nil {
-				return err
+			if criticRes.IsFatal() {
+				return fmt.Errorf("run-critic: %v", criticRes.Errors)
 			}
+			result := criticRes.GetData()
 
 			fmt.Println()
 			fmt.Println("Critic agent completed")

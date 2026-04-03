@@ -9,25 +9,28 @@ import (
 
 // TestRunCritic_RelativePathRejected verifies that a relative IMPL path is rejected.
 func TestRunCritic_RelativePathRejected(t *testing.T) {
-	_, err := RunCritic(context.Background(), RunCriticOpts{
+	r := RunCritic(context.Background(), RunCriticOpts{
 		IMPLPath: "relative/path/IMPL-foo.yaml",
 	}, nil)
-	if err == nil {
-		t.Fatal("expected error for relative impl-path")
+	if !r.IsFatal() {
+		t.Fatal("expected fatal result for relative impl-path")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected errors in result")
 	}
 	want := `run-critic: impl-path must be absolute (got "relative/path/IMPL-foo.yaml")`
-	if err.Error() != want {
-		t.Errorf("unexpected error message:\ngot:  %s\nwant: %s", err.Error(), want)
+	if r.Errors[0].Message != want {
+		t.Errorf("unexpected error message:\ngot:  %s\nwant: %s", r.Errors[0].Message, want)
 	}
 }
 
 // TestRunCritic_NonExistentPathRejected verifies that a non-existent IMPL path is rejected.
 func TestRunCritic_NonExistentPathRejected(t *testing.T) {
-	_, err := RunCritic(context.Background(), RunCriticOpts{
+	r := RunCritic(context.Background(), RunCriticOpts{
 		IMPLPath: "/nonexistent/path/IMPL-foo.yaml",
 	}, nil)
-	if err == nil {
-		t.Fatal("expected error for non-existent impl-path")
+	if !r.IsFatal() {
+		t.Fatal("expected fatal result for non-existent impl-path")
 	}
 }
 
