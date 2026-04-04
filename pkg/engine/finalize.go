@@ -78,6 +78,12 @@ type FinalizeWaveResult struct {
 	WiringReport              *protocol.WiringValidationData        `json:"wiring_report,omitempty"`
 	IntegrationActionRequired bool                                  `json:"integration_action_required"`
 	WiringGaps                []string                              `json:"wiring_gaps,omitempty"`
+	// CallerCascadeErrors is non-empty when verify-build fails exclusively due to
+	// cascade errors in future-wave or unowned files.
+	CallerCascadeErrors []CallerCascadeError `json:"caller_cascade_errors,omitempty"`
+	// CallerCascadeOnly is true when ALL verify-build errors are caller cascades
+	// (no errors in current-wave-owned files). Hotfix step runs automatically.
+	CallerCascadeOnly bool `json:"caller_cascade_only,omitempty"`
 	BuildPassed               bool                                  `json:"build_passed"`
 	Success                   bool                                  `json:"success"`
 }
@@ -584,6 +590,16 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 							res.BuildDiagnosis[repoKey] = diagnosis
 						}
 					}
+				}
+			}
+			// Step 5.1: Classify caller cascade errors when verify-build fails.
+			// Non-fatal: populates CallerCascadeErrors / CallerCascadeOnly if
+			// the failure is exclusively future-wave caller cascades.
+			if verifyData != nil && (!verifyData.TestPassed || !verifyData.LintPassed) {
+				_, cascadeClassification := StepClassifyCallerCascade(ctx, repoOpts, verifyData, manifest, onEvent)
+				if cascadeClassification != nil && cascadeClassification.AllAreCascades {
+					res.CallerCascadeErrors = append(res.CallerCascadeErrors, cascadeClassification.Errors...)
+					res.CallerCascadeOnly = true
 				}
 			}
 			// Still run cleanup before returning

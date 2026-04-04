@@ -13,6 +13,7 @@ func newFinalizeWaveCmd() *cobra.Command {
 	var waveNum int
 	var mergeTarget string
 	var skipMerge bool
+	var dryRun bool
 
 	cmd := &cobra.Command{
 		Use:   "finalize-wave <manifest-path>",
@@ -65,6 +66,63 @@ All pipeline steps are handled by the engine. The engine supports:
 			})
 			out, _ := json.MarshalIndent(r.Data, "", "  ")
 			fmt.Println(string(out))
+
+			// apply-cascade-hotfix step: runs when verify-build fails exclusively
+			// due to caller cascade errors in future-wave files.
+			if r.Data.CallerCascadeOnly && len(r.Data.CallerCascadeErrors) > 0 {
+				if dryRun {
+					// --dry-run: describe what would be fixed, exit 0.
+					dryRunResult := map[string]interface{}{
+						"step":        "apply-cascade-hotfix",
+						"dry_run":     true,
+						"error_count": len(r.Data.CallerCascadeErrors),
+						"files":       uniqueFiles(r.Data.CallerCascadeErrors),
+						"errors":      r.Data.CallerCascadeErrors,
+					}
+					dryOut, _ := json.MarshalIndent(dryRunResult, "", "  ")
+					fmt.Fprintln(cmd.OutOrStdout(), string(dryOut))
+					return nil
+				}
+
+				fmt.Fprintf(os.Stderr, "finalize-wave: apply-cascade-hotfix: %d error(s) in future-wave files — launching hotfix agent\n",
+					len(r.Data.CallerCascadeErrors))
+				hotfixRes := engine.RunHotfixAgent(cmd.Context(), engine.RunHotfixAgentOpts{
+					IMPLPath: manifestPath,
+					RepoPath: defaultRepoPath,
+					WaveNum:  waveNum,
+					Errors:   r.Data.CallerCascadeErrors,
+					Logger:   newSawLogger(),
+				}, func(ev engine.Event) {
+					if ev.Event == "hotfix_agent_output" {
+						if data, ok := ev.Data.(map[string]string); ok {
+							fmt.Fprint(os.Stderr, data["chunk"])
+						}
+					}
+				})
+				if hotfixRes.IsFatal() {
+					errMsg := "hotfix agent failed"
+					if len(hotfixRes.Errors) > 0 {
+						errMsg = hotfixRes.Errors[0].Message
+					}
+					return fmt.Errorf("finalize-wave: apply-cascade-hotfix failed: %s", errMsg)
+				}
+				hotfixData := hotfixRes.GetData()
+				if !hotfixData.BuildPassed {
+					return fmt.Errorf("finalize-wave: apply-cascade-hotfix: build still fails after hotfix")
+				}
+				hotfixStepResult := map[string]interface{}{
+					"step":         "apply-cascade-hotfix",
+					"status":       "success",
+					"files_fixed":  hotfixData.FilesFixed,
+					"commit":       hotfixData.Commit,
+					"build_passed": hotfixData.BuildPassed,
+				}
+				hotfixOut, _ := json.MarshalIndent(hotfixStepResult, "", "  ")
+				fmt.Fprintln(cmd.OutOrStdout(), string(hotfixOut))
+				fmt.Fprintf(os.Stderr, "finalize-wave: apply-cascade-hotfix complete — build passes\n")
+				return nil
+			}
+
 			if r.IsFatal() {
 				if len(r.Errors) > 0 {
 					return fmt.Errorf("finalize-wave: [%s] %s", r.Errors[0].Code, r.Errors[0].Message)
@@ -78,5 +136,20 @@ All pipeline steps are handled by the engine. The engine supports:
 	_ = cmd.MarkFlagRequired("wave")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Target branch for merge (default: current HEAD)")
 	cmd.Flags().BoolVar(&skipMerge, "skip-merge", false, "Skip merge step (merge already done manually); start from verify-build")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+		"Show what cascade errors would be hotfixed without running the agent")
 	return cmd
+}
+
+// uniqueFiles returns a deduplicated list of file paths from caller cascade errors.
+func uniqueFiles(errors []engine.CallerCascadeError) []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, e := range errors {
+		if !seen[e.File] {
+			seen[e.File] = true
+			files = append(files, e.File)
+		}
+	}
+	return files
 }
