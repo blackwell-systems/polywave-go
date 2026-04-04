@@ -354,3 +354,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-observability-review-fixes.yaml
 - **analyzer-review-fixes**: completed 2026-04-03, 4 waves, 10 agents
   - IMPL doc: docs/IMPL/complete/IMPL-analyzer-review-fixes.yaml
+- **between-wave-integration-hotfix**: completed 2026-04-03, 3 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-between-wave-integration-hotfix.yaml
