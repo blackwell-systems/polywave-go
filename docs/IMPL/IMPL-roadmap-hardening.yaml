@@ -498,7 +498,7 @@ waves:
           files:
             - implementations/claude-code/prompts/agents/wave-agent.md
             - implementations/claude-code/hooks/auto_commit_on_write
-            - implementations/claude-code/hooks/install.sh
+            - install.sh
     - number: 2
       agents:
         - id: D
