@@ -34,8 +34,7 @@ func Query(ctx context.Context, store Store, filters QueryFilters) result.Result
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
 		return result.NewFailure[QueryData]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	if events == nil {
@@ -85,8 +84,7 @@ func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int
 	rawEvents, err := store.QueryEvents(ctx, filters)
 	if err != nil {
 		return result.NewFailure[AgentHistoryData]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 
@@ -118,8 +116,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 	})
 	if err != nil {
 		return result.NewFailure[IMPLMetrics]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	for _, e := range costEvents {
@@ -136,8 +133,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 	})
 	if err != nil {
 		return result.NewFailure[IMPLMetrics]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	var successCount int
@@ -163,8 +159,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 	})
 	if err != nil {
 		return result.NewFailure[IMPLMetrics]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	for _, e := range actEvents {
@@ -191,8 +186,7 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) res
 	})
 	if err != nil {
 		return result.NewFailure[ProgramSummary]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	for _, e := range costEvents {
@@ -209,8 +203,7 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) res
 	})
 	if err != nil {
 		return result.NewFailure[ProgramSummary]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 	var successCount int
@@ -243,8 +236,7 @@ func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.
 	})
 	if err != nil {
 		return result.NewFailure[CostBreakdownData]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 
@@ -268,8 +260,7 @@ func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) 
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
 		return result.NewFailure[FailurePatternsData]([]result.SAWError{
-			// TODO: replace string literal with result.CodeObsQueryFailed once Agent A's codes.go change is merged
-			result.NewFatal("O002_OBS_QUERY_FAILED", err.Error()).WithCause(err),
+			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
 

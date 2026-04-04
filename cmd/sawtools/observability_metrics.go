@@ -42,10 +42,11 @@ func newMetricsCmd() *cobra.Command {
 				return showProgramSummary(ctx, store, programSlug)
 			}
 
-			metrics, err := obs.GetIMPLMetrics(ctx, store, implSlug)
-			if err != nil {
-				return fmt.Errorf("get metrics: %w", err)
+			metricsRes := obs.GetIMPLMetrics(ctx, store, implSlug)
+			if metricsRes.IsFatal() {
+				return fmt.Errorf("get metrics: %s", metricsRes.Errors[0].Message)
 			}
+			metrics := metricsRes.GetData()
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 			fmt.Fprintf(w, "IMPL\t%s\n", implSlug)
@@ -57,10 +58,11 @@ func newMetricsCmd() *cobra.Command {
 			w.Flush()
 
 			if breakdown {
-				bd, err := obs.GetCostBreakdown(ctx, store, implSlug)
-				if err != nil {
-					return fmt.Errorf("get cost breakdown: %w", err)
+				bdRes := obs.GetCostBreakdown(ctx, store, implSlug)
+				if bdRes.IsFatal() {
+					return fmt.Errorf("get cost breakdown: %s", bdRes.Errors[0].Message)
 				}
+				bd := bdRes.GetData().PerAgent
 				if len(bd) > 0 {
 					fmt.Println()
 					fmt.Println("Cost Breakdown by Agent:")
@@ -91,10 +93,11 @@ func newMetricsCmd() *cobra.Command {
 }
 
 func showProgramSummary(ctx context.Context, store obs.Store, programSlug string) error {
-	summary, err := obs.GetProgramSummary(ctx, store, programSlug)
-	if err != nil {
-		return fmt.Errorf("get program summary: %w", err)
+	summaryRes := obs.GetProgramSummary(ctx, store, programSlug)
+	if summaryRes.IsFatal() {
+		return fmt.Errorf("get program summary: %s", summaryRes.Errors[0].Message)
 	}
+	summary := summaryRes.GetData()
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
 	fmt.Fprintf(w, "Program\t%s\n", programSlug)

@@ -274,8 +274,8 @@ func TestEmitSyncStoreErrorReturnsFatal(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
-	if res.Errors[0].Code != "EVENT_EMIT_FAILED" {
-		t.Errorf("error code = %q, want EVENT_EMIT_FAILED", res.Errors[0].Code)
+	if res.Errors[0].Code != "O001_OBS_EMIT_FAILED" {
+		t.Errorf("error code = %q, want O001_OBS_EMIT_FAILED", res.Errors[0].Code)
 	}
 }
 

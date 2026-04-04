@@ -141,10 +141,11 @@ func TestQueryGetAgentHistory(t *testing.T) {
 		Status:  "success",
 	})
 
-	result, err := GetAgentHistory(ctx, store, "A", 10)
-	if err != nil {
-		t.Fatalf("GetAgentHistory returned error: %v", err)
+	histRes := GetAgentHistory(ctx, store, "A", 10)
+	if histRes.IsFatal() {
+		t.Fatalf("GetAgentHistory returned error: %s", histRes.Errors[0].Message)
 	}
+	result := histRes.GetData().Events
 	if len(result) != 5 {
 		t.Fatalf("expected 5 events, got %d", len(result))
 	}
@@ -195,10 +196,11 @@ func TestQueryGetIMPLMetrics(t *testing.T) {
 		ActivityType: "wave_merge", IMPLSlug: "impl-1", WaveNumber: 2,
 	})
 
-	metrics, err := GetIMPLMetrics(ctx, store, "impl-1")
-	if err != nil {
-		t.Fatalf("GetIMPLMetrics returned error: %v", err)
+	metricsRes := GetIMPLMetrics(ctx, store, "impl-1")
+	if metricsRes.IsFatal() {
+		t.Fatalf("GetIMPLMetrics returned error: %s", metricsRes.Errors[0].Message)
 	}
+	metrics := metricsRes.GetData()
 	if metrics.TotalCost != 0.80 {
 		t.Errorf("TotalCost = %f, want 0.80", metrics.TotalCost)
 	}
@@ -222,10 +224,11 @@ func TestQueryGetIMPLMetricsEmpty(t *testing.T) {
 	store := &mockStore{}
 	ctx := context.Background()
 
-	metrics, err := GetIMPLMetrics(ctx, store, "nonexistent")
-	if err != nil {
-		t.Fatalf("GetIMPLMetrics returned error: %v", err)
+	metricsRes2 := GetIMPLMetrics(ctx, store, "nonexistent")
+	if metricsRes2.IsFatal() {
+		t.Fatalf("GetIMPLMetrics returned error: %s", metricsRes2.Errors[0].Message)
 	}
+	metrics := metricsRes2.GetData()
 	if metrics.TotalCost != 0 || metrics.SuccessRate != 0 || metrics.AgentsFailed != 0 {
 		t.Error("expected zero metrics for missing IMPL")
 	}
@@ -255,10 +258,11 @@ func TestQueryGetProgramSummary(t *testing.T) {
 		IMPLSlug: "impl-2", ProgramSlug: "prog-1", Status: "failed", DurationSeconds: 120,
 	})
 
-	summary, err := GetProgramSummary(ctx, store, "prog-1")
-	if err != nil {
-		t.Fatalf("GetProgramSummary returned error: %v", err)
+	summaryRes := GetProgramSummary(ctx, store, "prog-1")
+	if summaryRes.IsFatal() {
+		t.Fatalf("GetProgramSummary returned error: %s", summaryRes.Errors[0].Message)
 	}
+	summary := summaryRes.GetData()
 	if summary.TotalCost != 3.00 {
 		t.Errorf("TotalCost = %f, want 3.00", summary.TotalCost)
 	}
@@ -292,10 +296,11 @@ func TestQueryGetCostBreakdown(t *testing.T) {
 		IMPLSlug: "impl-1", CostUSD: 0.50,
 	})
 
-	breakdown, err := GetCostBreakdown(ctx, store, "impl-1")
-	if err != nil {
-		t.Fatalf("GetCostBreakdown returned error: %v", err)
+	bdRes := GetCostBreakdown(ctx, store, "impl-1")
+	if bdRes.IsFatal() {
+		t.Fatalf("GetCostBreakdown returned error: %s", bdRes.Errors[0].Message)
 	}
+	breakdown := bdRes.GetData().PerAgent
 	if len(breakdown) != 2 {
 		t.Fatalf("expected 2 agents, got %d", len(breakdown))
 	}
@@ -370,8 +375,8 @@ func TestQueryFunctionStoreErrorReturnsFatal(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
-	if res.Errors[0].Code != "EVENT_QUERY_FAILED" {
-		t.Errorf("error code = %q, want EVENT_QUERY_FAILED", res.Errors[0].Code)
+	if res.Errors[0].Code != "O002_OBS_QUERY_FAILED" {
+		t.Errorf("error code = %q, want O002_OBS_QUERY_FAILED", res.Errors[0].Code)
 	}
 }
 
@@ -415,10 +420,11 @@ func TestQueryGetFailurePatterns(t *testing.T) {
 		IMPLSlug: "impl-1", Status: "success",
 	})
 
-	patterns, err := GetFailurePatterns(ctx, store, QueryFilters{})
-	if err != nil {
-		t.Fatalf("GetFailurePatterns returned error: %v", err)
+	pattRes := GetFailurePatterns(ctx, store, QueryFilters{})
+	if pattRes.IsFatal() {
+		t.Fatalf("GetFailurePatterns returned error: %s", pattRes.Errors[0].Message)
 	}
+	patterns := pattRes.GetData().Patterns
 	if len(patterns) != 2 {
 		t.Fatalf("expected 2 failure patterns, got %d", len(patterns))
 	}
