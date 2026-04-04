@@ -2,7 +2,7 @@
 
 > **Note:** The HTTP API is implemented in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web), which imports the engine (`scout-and-wave-go`) as a library. This document describes the full API surface.
 >
-> **Endpoint count:** 110 registered routes (verified 2026-03-24 against `scout-and-wave-web` source).
+> **Endpoint count:** 115 registered routes (verified 2026-04-04 against `scout-and-wave-web` source).
 
 ## Base URL
 
@@ -1046,6 +1046,31 @@ Get git status for all files in a repository.
 ```
 
 Status codes: `"M"` (modified), `"A"` (added), `"U"` (untracked), `"D"` (deleted).
+
+---
+
+### `GET /api/files/resolve`
+
+Resolve a relative file path to its containing repo. Searches all configured repos and returns the first match.
+
+**Query params:**
+- `path` (string, required) — Relative file path to resolve
+
+**Response:** `200 OK`
+```json
+{
+  "repo": "my-project",
+  "path": "src/main.go",
+  "found": true
+}
+```
+
+Or if not found in any repo:
+```json
+{ "found": false }
+```
+
+**Errors:** `400` missing path query param.
 
 ---
 
@@ -2113,4 +2138,4 @@ Model names support provider-prefix routing:
 
 ---
 
-Last reviewed: 2026-03-28
+Last reviewed: 2026-04-04
