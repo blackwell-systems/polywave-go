@@ -23,7 +23,7 @@ This is distinct from branch-based coordination. Branches prevent concurrent wri
 - **Merge-conflict-free by construction** — file ownership is partitioned and locked before execution begins; conflicts on agent-owned files are structurally impossible
 - **Runs on any LLM: Anthropic, OpenAI, Ollama, or any OpenAI-compatible endpoint. Mix providers per-agent within the same wave.**
 - **Full protocol SDK** — importable Go module, no LLM dependencies, deterministic for all inputs
-- **60+ CLI commands** — single-purpose with structured JSON output, covering the full wave lifecycle
+- **75+ CLI commands** — single-purpose with structured JSON output, covering the full wave lifecycle
 - **Program layer** — tier-gated execution of multiple IMPLs with shared contract freezing
 
 ---
@@ -154,6 +154,10 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | `freeze-check` | Interface contract freeze enforcement (E2) |
 | `scan-stubs` | E20 stub detection across agent-owned files |
 | `run-gates` | E21/E21A quality gate verification (concurrent, E21B) |
+| `predict-conflicts` | E11 hunk-level conflict prediction before merge |
+| `check-type-collisions` | Detect duplicate type/const definitions across agent branches |
+| `pre-wave-validate` | Combined E16 + E35 + test cascade + wave structure check |
+| `finalize-scout` | Consolidates Scout validation: validate + pre-wave-validate + validate-briefs + set-injection-method |
 | `validate-integration` | E25 integration gap detection; E35 wiring obligation verification |
 | `verify-isolation` | Verify agent is in correct worktree before execution begins |
 | `analyze-suitability` | Pre-implementation scanning gate (H1a) |
@@ -167,6 +171,9 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | `prepare-agent` | Extract brief + init journal for a single agent |
 | `extract-context` | E23 per-agent context extraction from IMPL doc |
 | `set-completion` | Register agent completion report |
+| `set-critic-verdict` | Set critic report verdict (PASS/ISSUES) without duplicate key risk |
+| `set-impl-state` | Atomically transition IMPL state (protocol state machine) |
+| `set-injection-method` | Record how Scout received reference files (hook/manual-fallback) |
 | `update-status` | Update agent/wave status in manifest |
 | `update-agent-prompt` | E8 downstream prompt update after contract revision |
 | `build-retry-context` | Structured failure context for agent retry (E19) |
@@ -196,6 +203,7 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | Command | What it does |
 |---------|-------------|
 | `amend-impl` | E36 IMPL amendment: add-wave, redirect-agent, extend-scope |
+| `close-impl` | Atomic: E15 SAW:COMPLETE + archive + update CONTEXT.md + git commit |
 | `mark-complete` | E15 write SAW:COMPLETE marker + archive to `docs/IMPL/complete/` |
 | `update-context` | E18 update `docs/CONTEXT.md` after feature completion |
 | `list-impls` | Discover IMPL docs (active and archived) |
@@ -235,7 +243,7 @@ The `pkg/protocol` package is the importable core: pure Go, no LLM dependencies,
 import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 
 // Load and validate a manifest
-manifest, err := protocol.Load("docs/IMPL/IMPL-feature.yaml")
+manifest, err := protocol.Load(ctx, "docs/IMPL/IMPL-feature.yaml")
 errs := protocol.Validate(manifest)
 
 // I1 check: will any agents in wave 1 conflict?
@@ -251,7 +259,7 @@ protocol.SetCompletionReport(manifest, "A", protocol.CompletionReport{
     Branch: "saw/my-feature/wave1-agent-A",
     FilesCreated: []string{"pkg/cache/cache.go"},
 })
-protocol.Save(manifest, "docs/IMPL/IMPL-feature.yaml")
+protocol.Save(ctx, manifest, "docs/IMPL/IMPL-feature.yaml")
 ```
 
 ### Invariant enforcement
@@ -269,26 +277,25 @@ Validation errors are structured (`ValidationError` with code, message, field) �
 
 ### Package structure
 
+See [`pkg/README.md`](pkg/README.md) for the full package map (27 packages) with dependency hierarchy and entry points.
+
+Key packages:
+
 ```
 pkg/
-├── protocol/       # Protocol SDK — types, validation, manifest I/O
-├── engine/         # High-level entrypoints: RunScout, RunWave, Chat
-├── orchestrator/   # Wave orchestration, SSE events, verification
+├── protocol/       # Protocol SDK — types, validation, manifest I/O, baseline gates
+├── engine/         # High-level entrypoints: RunScout, FinalizeWave, RunReview
+├── orchestrator/   # Wave orchestration, SSE events, journal integration
 ├── agent/          # Agent execution runtime, tool dispatch, LLM backends
-├── autonomy/       # Autonomy level config (gated / supervised / autonomous)
-├── codereview/     # AI code review gate (post-merge diff scoring)
-├── builddiag/      # AI-assisted build failure diagnosis
+├── result/         # result.Result[T] — canonical return type for fallible functions
+├── collision/      # Type/const collision detection across agent branches
+├── gatecache/      # Baseline gate result caching (E38)
+├── observability/  # Event store, metrics rollups, query engine
 ├── journal/        # Tool journal: append-only execution trace, context recovery
-├── resume/         # Interrupted session detection and recovery
-├── retry/          # Retry loop with structured failure context
 ├── pipeline/       # Atomic batching pipeline (prepare-wave, finalize-wave)
-├── suitability/    # Pre-implementation scanning gate
-├── analyzer/       # Cross-package cascade detection
-├── scaffoldval/    # Scaffold commit status verification
 ├── solver/         # Constraint solver for file ownership optimization
-├── deps/           # Dependency conflict detection
 ├── worktree/       # Git worktree management
-└── hooks/          # Pre-commit hook management
+└── ...             # 15 more — see pkg/README.md
 
 internal/
 └── git/            # Git operations (commit, branch, merge)
@@ -349,7 +356,7 @@ Three repositories with separation of concerns:
 
 | Repository | Purpose |
 |-----------|---------|
-| [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) | Protocol specification: invariants (I1–I6), execution rules (E1–E36), agent prompts, `/saw` skill |
+| [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) | Protocol specification: invariants (I1–I6), execution rules (E1–E47), agent prompts, `/saw` skill |
 | **scout-and-wave-go** (this repo) | Go engine + Protocol SDK + `sawtools` CLI |
 | [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) | Web UI + HTTP/SSE server (imports this engine) |
 
