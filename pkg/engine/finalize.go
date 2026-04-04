@@ -436,29 +436,31 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 									break
 								}
 							}
-							for _, ag := range waveAgents {
-								branch := protocol.BranchName(manifest.FeatureSlug, opts.WaveNum, ag.ID)
-								wtPath := protocol.ResolveWorktreePath(repoPath, branch)
-								retryOpts := ClosedLoopRetryOpts{
-									IMPLPath:     opts.IMPLPath,
-									RepoPath:     repoPath,
-									WaveNum:      opts.WaveNum,
-									AgentID:      ag.ID,
-									GateType:     gate.Type,
-									GateCommand:  gate.Command,
-									GateOutput:   gate.Stdout + "\n" + gate.Stderr,
-									WorktreePath: wtPath,
-									MaxRetries:   2,
-								}
-								retryRes := ClosedLoopGateRetry(ctx, retryOpts)
-								if retryRes.IsFatal() {
-									loggerFrom(opts.Logger).Warn("engine.FinalizeWave: closed-loop retry error",
-										"agent", ag.ID, "errors", retryRes.Errors)
-								} else if retryRes.GetData().Fixed {
-									retryFixed = true
-								}
-								// Only retry with the first agent — the gate is repo-scoped.
-								break
+							// Only retry with the first agent — the gate is repo-scoped.
+							if len(waveAgents) > 0 {
+								ag := waveAgents[0]
+							branch := protocol.BranchName(manifest.FeatureSlug, opts.WaveNum, ag.ID)
+							wtPath := protocol.ResolveWorktreePath(repoPath, branch)
+							retryOpts := ClosedLoopRetryOpts{
+								IMPLPath:     opts.IMPLPath,
+								RepoPath:     repoPath,
+								WaveNum:      opts.WaveNum,
+								AgentID:      ag.ID,
+								GateType:     gate.Type,
+								GateCommand:  gate.Command,
+								GateOutput:   gate.Stdout + "\n" + gate.Stderr,
+								WorktreePath: wtPath,
+								MaxRetries:   2,
+							}
+							retryRes := ClosedLoopGateRetry(ctx, retryOpts)
+							if retryRes.IsFatal() {
+								loggerFrom(opts.Logger).Warn("engine.FinalizeWave: closed-loop retry error",
+									"agent", ag.ID, "errors", retryRes.Errors)
+							} else if retryRes.GetData().Fixed {
+								retryFixed = true
+							}
+							// Only retry with the first agent — the gate is repo-scoped.
+							break
 							}
 							if retryFixed {
 								// Gate was fixed by the retry agent; re-run gates to confirm.
