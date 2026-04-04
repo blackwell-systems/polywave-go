@@ -52,10 +52,11 @@ Exit code 1 if IMPL doc is malformed or repo root cannot be determined.`,
 			}
 
 			// Call DetectWiring
-			declarations, err := analyzer.DetectWiring(manifest, repoRoot)
-			if err != nil {
-				return fmt.Errorf("error: detection failed: %w", err)
+			wiringResult := analyzer.DetectWiring(cmd.Context(), manifest, repoRoot)
+			if wiringResult.IsFatal() {
+				return fmt.Errorf("error: detection failed: %s", wiringResult.Errors[0].Message)
 			}
+			declarations := wiringResult.GetData()
 
 			// Prepare output structure
 			output := map[string]interface{}{

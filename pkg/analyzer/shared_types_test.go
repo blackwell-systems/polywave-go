@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -43,8 +44,9 @@ func TestDetectSharedTypes_BasicCase(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1)
 
 	assert.Equal(t, "PreviewData", candidates[0].TypeName)
@@ -80,8 +82,9 @@ func TestDetectSharedTypes_NoSharing(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	assert.Empty(t, candidates, "No shared types should be detected when agents only import from external packages")
 }
 
@@ -117,8 +120,9 @@ func TestDetectSharedTypes_MultipleRefs(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1)
 
 	assert.Equal(t, "Config", candidates[0].TypeName)
@@ -166,8 +170,9 @@ func TestDetectSharedTypes_TypeExistsInCodebase(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, tmpDir)
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, tmpDir)
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1)
 
 	assert.Equal(t, "Config", candidates[0].TypeName)
@@ -203,17 +208,19 @@ func TestDetectSharedTypes_CircularDep(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "circular dependency")
-	assert.Nil(t, candidates)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsFatal())
+	require.True(t, res.HasErrors())
+	assert.Equal(t, result.CodeAnalyzeCircularAgentDep, res.Errors[0].Code)
+	assert.Contains(t, res.Errors[0].Message, "circular dependency")
 }
 
 func TestDetectSharedTypes_NilManifest(t *testing.T) {
-	candidates, err := DetectSharedTypes(context.Background(), nil, "")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "manifest cannot be nil")
-	assert.Empty(t, candidates)
+	res := DetectSharedTypes(context.Background(), nil, "")
+	require.True(t, res.IsFatal())
+	require.True(t, res.HasErrors())
+	assert.Equal(t, result.CodeAnalyzeManifestNil, res.Errors[0].Code)
+	assert.Contains(t, res.Errors[0].Message, "manifest cannot be nil")
 }
 
 func TestDetectSharedTypes_EmptyManifest(t *testing.T) {
@@ -222,8 +229,9 @@ func TestDetectSharedTypes_EmptyManifest(t *testing.T) {
 		Waves:         []protocol.Wave{},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	assert.Empty(t, candidates)
 }
 
@@ -253,8 +261,9 @@ func TestDetectSharedTypes_SingleReference(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	assert.Empty(t, candidates, "Should not detect types referenced by only one agent")
 }
 
@@ -290,8 +299,9 @@ func TestDetectSharedTypes_TypeScriptImports(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1)
 	assert.Equal(t, "User", candidates[0].TypeName)
 	assert.ElementsMatch(t, []string{"B", "C"}, candidates[0].ReferencingAgents)
@@ -329,8 +339,9 @@ func TestDetectSharedTypes_PythonImports(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1)
 	assert.Equal(t, "User", candidates[0].TypeName)
 	assert.Equal(t, "models/user.py", candidates[0].DefiningFile)
@@ -369,8 +380,9 @@ func TestDetectSharedTypes_MultipleTypesFromSameFile(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	require.Len(t, candidates, 1, "Only Config should be detected as shared (State only referenced by B)")
 	assert.Equal(t, "Config", candidates[0].TypeName)
 	assert.ElementsMatch(t, []string{"B", "C"}, candidates[0].ReferencingAgents)
@@ -402,7 +414,8 @@ func TestDetectSharedTypes_NotOwnedByAnyAgent(t *testing.T) {
 		},
 	}
 
-	candidates, err := DetectSharedTypes(context.Background(), manifest, "")
-	require.NoError(t, err)
+	res := DetectSharedTypes(context.Background(), manifest, "")
+	require.True(t, res.IsSuccess())
+	candidates := res.GetData()
 	assert.Empty(t, candidates, "Should not detect types from files not owned by any agent")
 }
