@@ -77,163 +77,7 @@ waves:
     - number: 1
       agents:
         - id: A
-          task: |
-            ## Context
-            You are implementing the `sawtools set-critic-verdict` command in the
-            scout-and-wave-go repository at `/Users/dayna.blackwell/code/scout-and-wave-go`.
-
-            ## What to implement
-
-            ### 1. New file: `cmd/sawtools/set_critic_verdict_cmd.go`
-
-            Create a new file `cmd/sawtools/set_critic_verdict_cmd.go` (package main)
-            implementing `newSetCriticVerdictCmd()`. Follow the exact patterns from
-            `cmd/sawtools/set_injection_method_cmd.go` and `cmd/sawtools/set_impl_state_cmd.go`.
-
-            Command spec:
-            ```
-            sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
-            ```
-
-            Behavior:
-            - Accepts one positional argument: the absolute path to the IMPL YAML file
-            - Requires `--verdict` flag with values: `pass`, `issues`
-              (case-insensitive; normalize to uppercase for storage: PASS, ISSUES)
-            - Use `context.TODO()` for the context parameter
-            - Load the manifest using `protocol.Load(ctx, implPath)`
-            - If `manifest.CriticReport == nil`, return error:
-              `"set-critic-verdict: critic_report does not exist in IMPL doc"`
-            - Otherwise: record old verdict, set `manifest.CriticReport.Verdict` to
-              the uppercase normalized new verdict, save with `protocol.Save(ctx, manifest, implPath)`
-            - On save failure, return the error
-            - On success, print JSON to stdout:
-              `{"impl_path": "...", "old_verdict": "ISSUES", "new_verdict": "PASS"}`
-            - Exit 0 on success, exit 1 on error (cobra handles this via RunE returning error)
-
-            Valid verdict values (case-insensitive input, uppercase stored):
-            - `pass` -> `"PASS"`
-            - `issues` -> `"ISSUES"`
-            - 
-
-            Validation logic:
-            ```go
-            normalized := strings.ToUpper(verdict)
-            switch normalized {
-            case "PASS", "ISSUES":
-                // valid
-            default:
-                return fmt.Errorf("set-critic-verdict: invalid --verdict %q: must be one of pass, issues", verdict)
-            }
-            ```
-
-            JSON output uses `fmt.Println(string(out))` with `json.Marshal` (not
-            `json.MarshalIndent`), matching the pattern in `set_injection_method_cmd.go`.
-
-            Complete implementation sketch:
-            ```go
-            package main
-
-            import (
-                "context"
-                "encoding/json"
-                "fmt"
-                "strings"
-
-                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-                "github.com/spf13/cobra"
-            )
-
-            func newSetCriticVerdictCmd() *cobra.Command {
-                var verdict string
-
-                cmd := &cobra.Command{
-                    Use:   "set-critic-verdict <impl-path>",
-                    Short: "Update critic_report.verdict in an IMPL doc",
-                    Long: `Atomically updates critic_report.verdict in an existing IMPL doc.
-            Use after the Orchestrator corrects IMPL issues flagged by the critic, to
-            transition the verdict from ISSUES to PASS without manually editing YAML.
-
-            Exits 1 if critic_report does not exist in the IMPL doc.
-
-            Example:
-              sawtools set-critic-verdict /path/to/IMPL-feature.yaml --verdict pass`,
-                    Args: cobra.ExactArgs(1),
-                    RunE: func(cmd *cobra.Command, args []string) error {
-                        implPath := args[0]
-
-                        normalized := strings.ToUpper(verdict)
-                        switch normalized {
-                        case "PASS", "ISSUES":
-                            // valid
-                        default:
-                            return fmt.Errorf("set-critic-verdict: invalid --verdict %q: must be one of pass, issues", verdict)
-                        }
-
-                        doc, err := protocol.Load(context.TODO(), implPath)
-                        if err != nil {
-                            return fmt.Errorf("set-critic-verdict: failed to load IMPL doc: %w", err)
-                        }
-
-                        if doc.CriticReport == nil {
-                            return fmt.Errorf("set-critic-verdict: critic_report does not exist in IMPL doc")
-                        }
-
-                        oldVerdict := doc.CriticReport.Verdict
-                        doc.CriticReport.Verdict = normalized
-
-                        if saveRes := protocol.Save(context.TODO(), doc, implPath); saveRes.IsFatal() {
-                            saveErrMsg := "save failed"
-                            if len(saveRes.Errors) > 0 {
-                                saveErrMsg = saveRes.Errors[0].Message
-                            }
-                            return fmt.Errorf("set-critic-verdict: failed to save IMPL doc: %s", saveErrMsg)
-                        }
-
-                        out, _ := json.Marshal(map[string]interface{}{
-                            "impl_path":   implPath,
-                            "old_verdict": oldVerdict,
-                            "new_verdict": normalized,
-                        })
-                        fmt.Println(string(out))
-                        return nil
-                    },
-                }
-
-                cmd.Flags().StringVar(&verdict, "verdict", "", "New verdict: pass or issues (required)")
-                _ = cmd.MarkFlagRequired("verdict")
-
-                return cmd
-            }
-            ```
-
-            ### 2. Register in `cmd/sawtools/main.go`
-
-            In `main.go`, add `newSetCriticVerdictCmd()` to the `rootCmd.AddCommand(...)` call.
-            Place it immediately after the existing `newSetCriticReviewCmd()` line (currently
-            around line 80 in the AddCommand block):
-            ```go
-            newSetCriticReviewCmd(), // E37: Used by critic agents to write results
-            newSetCriticVerdictCmd(), // E37: Update verdict after Orchestrator corrections
-            ```
-
-            ## Verification gate
-            ```
-            cd /Users/dayna.blackwell/code/scout-and-wave-go
-            go build ./cmd/sawtools/...
-            go vet ./cmd/sawtools/...
-            go test ./cmd/sawtools/... -v 2>&1 | tail -20
-            ```
-
-            The build must pass. There are no existing tests for set-critic-verdict,
-            so just confirm the build compiles cleanly.
-
-            ## Constraints
-            - Modify ONLY `cmd/sawtools/set_critic_verdict_cmd.go` (new) and `cmd/sawtools/main.go`
-            - Do NOT modify any files in `pkg/`
-            - Follow existing patterns exactly: cobra RunE, context.TODO(), json.Marshal, fmt.Println
-            - The `--verdict` flag is required (use `cmd.MarkFlagRequired("verdict")`)
-            - File must be in `package main`
-            - No new dependencies beyond what is already in go.mod
+          task: "## Context\nYou are implementing the `sawtools set-critic-verdict` command in the\nscout-and-wave-go repository at `/Users/dayna.blackwell/code/scout-and-wave-go`.\n\n## What to implement\n\n### 1. New file: `cmd/sawtools/set_critic_verdict_cmd.go`\n\nCreate a new file `cmd/sawtools/set_critic_verdict_cmd.go` (package main)\nimplementing `newSetCriticVerdictCmd()`. Follow the exact patterns from\n`cmd/sawtools/set_injection_method_cmd.go` and `cmd/sawtools/set_impl_state_cmd.go`.\n\nCommand spec:\n```\nsawtools set-critic-verdict <impl-path> --verdict <pass|issues>\n```\n\nBehavior:\n- Accepts one positional argument: the absolute path to the IMPL YAML file\n- Requires `--verdict` flag with values: `pass`, `issues`\n  (case-insensitive; normalize to uppercase for storage: PASS, ISSUES)\n- Use `context.TODO()` for the context parameter\n- Load the manifest using `protocol.Load(ctx, implPath)`\n- If `manifest.CriticReport == nil`, return error:\n  `\"set-critic-verdict: critic_report does not exist in IMPL doc\"`\n- Otherwise: record old verdict, set `manifest.CriticReport.Verdict` to\n  the uppercase normalized new verdict, save with `protocol.Save(ctx, manifest, implPath)`\n- On save failure, return the error\n- On success, print JSON to stdout:\n  `{\"impl_path\": \"...\", \"old_verdict\": \"ISSUES\", \"new_verdict\": \"PASS\"}`\n- Exit 0 on success, exit 1 on error (cobra handles this via RunE returning error)\n\nValid verdict values (case-insensitive input, uppercase stored):\n- `pass` -> `\"PASS\"`\n- `issues` -> `\"ISSUES\"`\n- \n\nValidation logic:\n```go\nnormalized := strings.ToUpper(verdict)\nswitch normalized {\ncase \"PASS\", \"ISSUES\":\n    // valid\ndefault:\n    return fmt.Errorf(\"set-critic-verdict: invalid --verdict %q: must be one of pass, issues\", verdict)\n}\n```\n\nJSON output uses `fmt.Println(string(out))` with `json.Marshal` (not\n`json.MarshalIndent`), matching the pattern in `set_injection_method_cmd.go`.\n\nComplete implementation sketch:\n```go\npackage main\n\nimport (\n    \"context\"\n    \"encoding/json\"\n    \"fmt\"\n    \"strings\"\n\n    \"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol\"\n    \"github.com/spf13/cobra\"\n)\n\nfunc newSetCriticVerdictCmd() *cobra.Command {\n    var verdict string\n\n    cmd := &cobra.Command{\n        Use:   \"set-critic-verdict <impl-path>\",\n        Short: \"Update critic_report.verdict in an IMPL doc\",\n        Long: `Atomically updates critic_report.verdict in an existing IMPL doc.\nUse after the Orchestrator corrects IMPL issues flagged by the critic, to\ntransition the verdict from ISSUES to PASS without manually editing YAML.\n\nExits 1 if critic_report does not exist in the IMPL doc.\n\nExample:\n  sawtools set-critic-verdict /path/to/IMPL-feature.yaml --verdict pass`,\n        Args: cobra.ExactArgs(1),\n        RunE: func(cmd *cobra.Command, args []string) error {\n            implPath := args[0]\n\n            normalized := strings.ToUpper(verdict)\n            switch normalized {\n            case \"PASS\", \"ISSUES\":\n                // valid\n            default:\n                return fmt.Errorf(\"set-critic-verdict: invalid --verdict %q: must be one of pass, issues\", verdict)\n            }\n\n            doc, err := protocol.Load(context.TODO(), implPath)\n            if err != nil {\n                return fmt.Errorf(\"set-critic-verdict: failed to load IMPL doc: %w\", err)\n            }\n\n            if doc.CriticReport == nil {\n                return fmt.Errorf(\"set-critic-verdict: critic_report does not exist in IMPL doc\")\n            }\n\n            oldVerdict := doc.CriticReport.Verdict\n            doc.CriticReport.Verdict = normalized\n\n            if saveRes := protocol.Save(context.TODO(), doc, implPath); saveRes.IsFatal() {\n                saveErrMsg := \"save failed\"\n                if len(saveRes.Errors) > 0 {\n                    saveErrMsg = saveRes.Errors[0].Message\n                }\n                return fmt.Errorf(\"set-critic-verdict: failed to save IMPL doc: %s\", saveErrMsg)\n            }\n\n            out, _ := json.Marshal(map[string]interface{}{\n                \"impl_path\":   implPath,\n                \"old_verdict\": oldVerdict,\n                \"new_verdict\": normalized,\n            })\n            fmt.Println(string(out))\n            return nil\n        },\n    }\n\n    cmd.Flags().StringVar(&verdict, \"verdict\", \"\", \"New verdict: pass or issues (required)\")\n    _ = cmd.MarkFlagRequired(\"verdict\")\n\n    return cmd\n}\n```\n\n### 2. Register in `cmd/sawtools/main.go`\n\nIn `main.go`, add `newSetCriticVerdictCmd()` to the `rootCmd.AddCommand(...)` call.\nPlace it immediately after the existing `newSetCriticReviewCmd()` line (currently\naround line 80 in the AddCommand block):\n```go\nnewSetCriticReviewCmd(), // E37: Used by critic agents to write results\nnewSetCriticVerdictCmd(), // E37: Update verdict after Orchestrator corrections\n```\n\n## Verification gate\n```\ncd /Users/dayna.blackwell/code/scout-and-wave-go\ngo build ./cmd/sawtools/...\ngo vet ./cmd/sawtools/...\ngo test ./cmd/sawtools/... -v 2>&1 | tail -20\n```\n\nThe build must pass. There are no existing tests for set-critic-verdict,\nso just confirm the build compiles cleanly.\n\n## Constraints\n- Modify ONLY `cmd/sawtools/set_critic_verdict_cmd.go` (new) and `cmd/sawtools/main.go`\n- Do NOT modify any files in `pkg/`\n- Follow existing patterns exactly: cobra RunE, context.TODO(), json.Marshal, fmt.Println\n- The `--verdict` flag is required (use `cmd.MarkFlagRequired(\"verdict\")`)\n- File must be in `package main`\n- No new dependencies beyond what is already in go.mod\n"
           files:
             - cmd/sawtools/set_critic_verdict_cmd.go
             - cmd/sawtools/main.go
@@ -369,6 +213,7 @@ waves:
             - pkg/protocol/types.go
             - pkg/protocol/complexity.go
             - pkg/protocol/complexity_test.go
+      base_commit: dd9ac1e91fd9334a79d5d45c78f386d09e323401
     - number: 2
       agents:
         - id: C
@@ -470,6 +315,31 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/sawtools-ux-improvements/wave1-agent-A
+        commit: b3efb0f
+        files_changed:
+            - cmd/sawtools/set_critic_verdict_cmd.go
+            - cmd/sawtools/main.go
+        files_created:
+            - cmd/sawtools/set_critic_verdict_cmd.go
+        verification: PASS
+        notes: Implemented set-critic-verdict command. Build, vet, and all tests pass.
+    B:
+        status: complete
+        branch: saw/sawtools-ux-improvements/wave1-agent-B
+        commit: 08a2c73
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+        tests_added:
+            - TestCheckAgentLOCBudget/v048_exempt=true_skips_file_even_if_over_2000_lines
+            - TestCheckAgentLOCBudget/v048_exempt=false_behaves_normally_(over_budget_still_errors)
+        verification: PASS
+        notes: V048Exempt field added to FileOwnership with omitempty tags. Exemption check inserted before file open in CheckAgentLOCBudget. All 8 TestCheckAgentLOCBudget sub-tests pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -531,5 +401,5 @@ critic_report:
     summary: 'Agent A and B briefs are accurate against the codebase. One error: Agent A''s brief specifies ''WARNING'' as a valid --verdict value for set-critic-verdict, but critic.go defines only PASS, ISSUES, and SKIPPED as recognized verdict constants — WARNING is not a valid CriticData verdict value. One error: Agent C''s file_ownership entry marks docs/reference/cli-reference.md as action:new but the file already exists at that path — it should be action:modify. One warning for Agent C: the brief instructs searching for a file_ownership schema section with action:/depends_on:/repo: field descriptions to anchor the v048_exempt entry, but no such dedicated schema section exists in cli-reference.md; the fallback instruction (find run-critic and add adjacent) is valid and sufficient.'
     reviewed_at: "2026-04-04T06:46:57Z"
     issue_count: 2
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
