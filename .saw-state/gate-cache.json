@@ -372,6 +372,18 @@
         "cached_at": "2026-03-26T10:16:39.156542-07:00"
       }
     },
+    "0e58b76f139b818db2736d7d0085d985": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:04:40.179206-07:00"
+      }
+    },
     "0e634028d87cbb7dad66975a0ce7bb21": {
       "lint": {
         "gate_type": "lint",
@@ -1152,6 +1164,18 @@
         "cached_at": "2026-03-25T13:17:46.122574-07:00"
       }
     },
+    "29dab0a584a972c9eab011e68b32980f": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:02:04.176002-07:00"
+      }
+    },
     "29f20c8ad139f5acd814a7eb2572610b": {
       "build": {
         "gate_type": "build",
@@ -1258,6 +1282,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T01:39:50.92069-07:00"
+      }
+    },
+    "2c1df37b12bafa98b3e5da3c1e8753bf": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:02:04.797576-07:00"
       }
     },
     "2c557c1021faaa47b0cc99405815465a": {
@@ -4018,6 +4054,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T00:39:44.644492-07:00"
+      }
+    },
+    "7bbbbc058e256aad120d476696b53a95": {
+      "test": {
+        "gate_type": "test",
+        "command": "go test ./pkg/observability/... ./pkg/observability/sqlite/... ./cmd/sawtools/...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "ok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/pkg/observability/sqlite\t(cached)\nok  \tgithub.com/blackwell-systems/scout-and-wave-go/cmd/sawtools\t(cached)\n",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:02:05.406109-07:00"
       }
     },
     "7bc110d63ecca4418d29a89b3b6e5804": {
@@ -7068,6 +7116,18 @@
         "cached_at": "2026-03-30T22:04:29.942687-07:00"
       }
     },
+    "d1298a120efb9770d536647134144b82": {
+      "build": {
+        "gate_type": "build",
+        "command": "go build ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:04:38.896468-07:00"
+      }
+    },
     "d13af50e655c84314960613584ae39ec": {
       "build": {
         "gate_type": "build",
@@ -8410,6 +8470,18 @@
         "stderr": "",
         "from_cache": true,
         "cached_at": "2026-04-01T13:27:38.986068-07:00"
+      }
+    },
+    "fa8e0bccb27a731480f96aa7a15dac7c": {
+      "lint": {
+        "gate_type": "lint",
+        "command": "go vet ./...",
+        "passed": true,
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": "",
+        "from_cache": true,
+        "cached_at": "2026-04-03T17:04:39.576323-07:00"
       }
     },
     "fad25a761330ad181a5655c174958f5e": {

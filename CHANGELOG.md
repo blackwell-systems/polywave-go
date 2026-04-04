@@ -6,6 +6,50 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (observability-review-fixes)
+- `O001_OBS_EMIT_FAILED`, `O002_OBS_QUERY_FAILED`: first O-series observability error code domain in `pkg/result/codes.go`
+- `AgentHistoryData`, `CostBreakdownData`, `FailurePatternsData` wrapper types in `pkg/observability/query.go`
+
+### Changed (observability-review-fixes)
+- `pkg/observability`: `GetAgentHistory`, `GetIMPLMetrics`, `GetProgramSummary`, `GetCostBreakdown`, `GetFailurePatterns` migrated from `(T, error)` to `result.Result[T]`
+- `pkg/observability`: `ComputeCostRollup`, `ComputeSuccessRateRollup`, `ComputeRetryRollup`, `ComputeTrend` migrated from `(*T, error)` to `result.Result[T]`; `ComputeTrend` ctx promoted from embedded `ComputeTrendOpts.Ctx` to explicit first parameter
+- `pkg/observability/emitter.go`: inline `"EVENT_EMIT_FAILED"` replaced with `result.CodeObsEmitFailed`
+- `pkg/observability/query.go`: inline `"EVENT_QUERY_FAILED"` replaced with `result.CodeObsQueryFailed`
+- `pkg/observability/sqlite/sqlite.go`: `GetRollup` bridge adapter replaced with clean single-unwrap pattern
+- `cmd/sawtools/observability_metrics.go`: callers updated to `result.Result[T]` pattern
+
+### Added (pipeline-review-fixes)
+- `N096_PIPELINE_RUN_FAILED`, `N097_STEP_EXECUTION_FAILED`, `N098_REQUIRED_KEY_MISSING` constants in `pkg/result/codes.go`
+
+### Changed (pipeline-review-fixes)
+- `pkg/pipeline/pipeline.go`: 6 inline error code strings replaced with canonical constants
+- `pkg/pipeline/saw_steps.go`: inline `"REQUIRED_KEY_MISSING"` replaced with `result.CodeRequiredKeyMissing`; `requiredKeyErr` now returns `SAWError` directly instead of wrapping via `fmt.Errorf`, preserving the `Code` field for `errors.As` callers
+- `pkg/pipeline/types.go`: `StepFunc` doc comment corrected (removed false "stages may run in parallel" claim); unused `State.RepoPath`, `State.IMPLPath`, `State.WaveNum` typed fields annotated as API-promise hazards
+
+### Added (protocol-review-fixes)
+- `StateInterviewing ProtocolState = "INTERVIEWING"` — was missing from implementation; manifests with `state: INTERVIEWING` previously failed validation (P0 spec gap)
+- `StateInterviewing` wired into `allowedTransitions`, `IMPLStateToStatus`, `validateSM01StateValid`
+- `P011_WAVE_NOT_FOUND`, `P012_UNKNOWN_AGENT_IN_OWNERSHIP`, `P013_AMEND_BLOCKED`, `N094_MANIFEST_SAVE_FAILED`, `N095_REPORT_SET_FAILED` added to `pkg/result/codes.go`
+- `ArchiveData` type in `pkg/protocol/discovery.go` holding `NewPath string`
+
+### Changed (protocol-review-fixes)
+- `pkg/protocol/parser.go`: `ValidateInvariants` return type `error` → `[]result.SAWError`; doc comment corrected to I1-only coverage
+- `pkg/protocol/merge_agents.go`: `MergeAgents` dual-return `(result.Result[T], error)` → `result.Result[T]`
+- `pkg/protocol/cleanup.go`: `Cleanup` dual-return → `result.Result[CleanupData]`; `CleanupAllStale` `(*StaleCleanupData, error)` → `result.Result[*StaleCleanupData]`
+- `pkg/protocol/discovery.go`: `ArchiveIMPL`, `ArchiveProgram` `(string, error)` → `result.Result[ArchiveData]`
+- `pkg/protocol/memory.go`: `LoadProjectMemory` gains `ctx context.Context` first param; returns `result.Result[*ProjectMemory]`
+- `pkg/protocol/program_tier_finalize.go`: `FinalizeTier` dual-return → `result.Result[FinalizeTierData]`
+- `pkg/protocol/program_tier_gate.go`: `RunTierGate` gains `ctx context.Context` first param; internal timeout derives from ctx
+- `pkg/protocol/program_tier_prepare.go`: `PrepareTier` `(*PrepareTierResult, error)` → `result.Result[*PrepareTierResult]`
+- `pkg/protocol/critic_gate.go`: `SkipCriticForIMPL` `(bool, error)` → `result.Result[bool]`; uses `WriteCriticReviewResult` (replaces deprecated `WriteCriticReview`)
+- `pkg/protocol/full_validate.go`: `FullValidateProgram` gains `ctx context.Context` first param; fixes internal `context.TODO()` at `CheckAgentLOCBudget`
+- 7 inline error code strings across `manifest.go`, `updater.go`, `freeze.go`, `gates.go`, `amend.go` replaced with canonical constants
+- All cross-package callers in `pkg/engine` and `cmd/sawtools` updated
+
+### Added (orchestrator-review-fixes)
+- `pkg/orchestrator`: `New` migrated to `result.Result[*Orchestrator]`; `NewBackendFromModel` migrated to `result.Result[backend.Backend]`
+- `implSlug(ctx)` ctx threading throughout orchestrator
+
 ### Added (engine-review-fixes + analyzer-review-fixes)
 - 7 new error code constants: `N091_ENGINE_INIT_FAILED`, `N092_ENGINE_ALREADY_INITIALIZED`, `N093_FINALIZE_STEP_FAILED`, `B009_GATE_VALIDATION_FAILED`, `P008_TYPE_COLLISION_FATAL`, `P009_CRITIC_GATE_FAILED`, `P010_TIER_CONFLICT_DETECTED`
 - `Z001–Z013` analyzer error code domain added to `pkg/result/codes.go`
