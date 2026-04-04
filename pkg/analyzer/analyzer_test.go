@@ -29,11 +29,12 @@ func main() {
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	res := a.ParseFile(context.Background(), testFile)
+	if !res.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", res.Errors)
 	}
 
+	file := res.GetData()
 	if file == nil {
 		t.Fatal("ParseFile() returned nil file")
 	}
@@ -63,9 +64,9 @@ func main() {}
 	}
 
 	a := New()
-	_, err := a.ParseFile(context.Background(), testFile)
-	if err == nil {
-		t.Fatal("ParseFile() expected error for syntax error, got nil")
+	res := a.ParseFile(context.Background(), testFile)
+	if res.IsSuccess() {
+		t.Fatal("ParseFile() expected failure for syntax error, got success")
 	}
 }
 
@@ -103,15 +104,17 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	fileRes := a.ParseFile(context.Background(), testFile)
+	if !fileRes.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", fileRes.Errors)
 	}
 
-	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
-	if err != nil {
-		t.Fatalf("ExtractImports() error = %v", err)
+	importsRes := a.ExtractImports(context.Background(), fileRes.GetData(), tmpDir)
+	if !importsRes.IsSuccess() {
+		t.Fatalf("ExtractImports() failed: %v", importsRes.Errors)
 	}
+
+	imports := importsRes.GetData()
 
 	// Should only have local import, stdlib filtered
 	if len(imports) != 1 {
@@ -146,16 +149,17 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	fileRes := a.ParseFile(context.Background(), testFile)
+	if !fileRes.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", fileRes.Errors)
 	}
 
-	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
-	if err != nil {
-		t.Fatalf("ExtractImports() error = %v", err)
+	importsRes := a.ExtractImports(context.Background(), fileRes.GetData(), tmpDir)
+	if !importsRes.IsSuccess() {
+		t.Fatalf("ExtractImports() failed: %v", importsRes.Errors)
 	}
 
+	imports := importsRes.GetData()
 	if len(imports) != 0 {
 		t.Errorf("expected 0 imports, got %d: %v", len(imports), imports)
 	}
@@ -173,6 +177,7 @@ func TestIsStdlib_StdlibPackages(t *testing.T) {
 		{"crypto package", "crypto/sha256", true},
 		{"go package", "go/ast", true},
 		{"testing package", "testing", true},
+		{"os package", "os", true},
 	}
 
 	for _, tt := range tests {
@@ -195,6 +200,30 @@ func TestIsStdlib_LocalPackages(t *testing.T) {
 		{"gitlab package", "gitlab.com/user/repo", false},
 		{"custom domain", "example.com/pkg/foo", false},
 		{"local relative", "./pkg/local", false},
+		{"gopkg.in", "gopkg.in/yaml.v3", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := IsStdlib(tt.importPath)
+			if got != tt.want {
+				t.Errorf("IsStdlib(%q) = %v, want %v", tt.importPath, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsStdlib_Heuristic(t *testing.T) {
+	tests := []struct {
+		name       string
+		importPath string
+		want       bool
+	}{
+		{"fmt stdlib", "fmt", true},
+		{"os stdlib", "os", true},
+		{"go/ast stdlib", "go/ast", true},
+		{"github.com not stdlib", "github.com/foo/bar", false},
+		{"gopkg.in not stdlib", "gopkg.in/yaml.v3", false},
 	}
 
 	for _, tt := range tests {
@@ -217,11 +246,12 @@ func TestResolveImportPath_Success(t *testing.T) {
 	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
 	importPath := "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 
-	resolved, err := ResolveImportPath(importPath, tmpDir, modulePath)
-	if err != nil {
-		t.Fatalf("ResolveImportPath() error = %v", err)
+	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
+	if !res.IsSuccess() {
+		t.Fatalf("ResolveImportPath() failed: %v", res.Errors)
 	}
 
+	resolved := res.GetData()
 	expectedPath := pkgDir
 	if resolved != expectedPath {
 		t.Errorf("ResolveImportPath() = %q, want %q", resolved, expectedPath)
@@ -233,13 +263,17 @@ func TestResolveImportPath_NonExistentDir(t *testing.T) {
 	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
 	importPath := "github.com/blackwell-systems/scout-and-wave-go/pkg/nonexistent"
 
-	_, err := ResolveImportPath(importPath, tmpDir, modulePath)
-	if err == nil {
-		t.Fatal("ResolveImportPath() expected error for non-existent directory, got nil")
+	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
+	if res.IsSuccess() {
+		t.Fatal("ResolveImportPath() expected failure for non-existent directory, got success")
 	}
 
-	if !strings.Contains(err.Error(), "non-existent directory") {
-		t.Errorf("expected 'non-existent directory' in error, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("ResolveImportPath() expected errors, got none")
+	}
+
+	if !strings.Contains(res.Errors[0].Message, "non-existent directory") {
+		t.Errorf("expected 'non-existent directory' in error message, got: %v", res.Errors[0].Message)
 	}
 }
 
@@ -248,13 +282,17 @@ func TestResolveImportPath_WrongModule(t *testing.T) {
 	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
 	importPath := "github.com/other/repo/pkg/foo"
 
-	_, err := ResolveImportPath(importPath, tmpDir, modulePath)
-	if err == nil {
-		t.Fatal("ResolveImportPath() expected error for wrong module, got nil")
+	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
+	if res.IsSuccess() {
+		t.Fatal("ResolveImportPath() expected failure for wrong module, got success")
 	}
 
-	if !strings.Contains(err.Error(), "does not start with module path") {
-		t.Errorf("expected 'does not start with module path' in error, got: %v", err)
+	if len(res.Errors) == 0 {
+		t.Fatal("ResolveImportPath() expected errors, got none")
+	}
+
+	if !strings.Contains(res.Errors[0].Message, "does not start with module path") {
+		t.Errorf("expected 'does not start with module path' in error message, got: %v", res.Errors[0].Message)
 	}
 }
 
@@ -311,11 +349,12 @@ import (
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	res := a.ParseFile(context.Background(), testFile)
+	if !res.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", res.Errors)
 	}
 
+	file := res.GetData()
 	// Verify import structure
 	for _, imp := range file.Imports {
 		if imp.Path == nil {
@@ -355,16 +394,17 @@ func main() {}
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	fileRes := a.ParseFile(context.Background(), testFile)
+	if !fileRes.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", fileRes.Errors)
 	}
 
-	imports, err := a.ExtractImports(context.Background(), file, tmpDir)
-	if err != nil {
-		t.Fatalf("ExtractImports() error = %v", err)
+	importsRes := a.ExtractImports(context.Background(), fileRes.GetData(), tmpDir)
+	if !importsRes.IsSuccess() {
+		t.Fatalf("ExtractImports() failed: %v", importsRes.Errors)
 	}
 
+	imports := importsRes.GetData()
 	// C import should be filtered as stdlib
 	if len(imports) != 0 {
 		t.Errorf("expected 0 imports (C filtered), got %d: %v", len(imports), imports)
@@ -387,9 +427,9 @@ func main() {}
 	cancel() // cancel before calling ParseFile
 
 	a := New()
-	_, err := a.ParseFile(ctx, testFile)
-	if err == nil {
-		t.Fatal("ParseFile() expected error for cancelled context, got nil")
+	res := a.ParseFile(ctx, testFile)
+	if res.IsSuccess() {
+		t.Fatal("ParseFile() expected failure for cancelled context, got success")
 	}
 }
 
@@ -420,16 +460,16 @@ func main() { _ = fmt.Sprintf("") }
 	}
 
 	a := New()
-	file, err := a.ParseFile(context.Background(), testFile)
-	if err != nil {
-		t.Fatalf("ParseFile() error = %v", err)
+	fileRes := a.ParseFile(context.Background(), testFile)
+	if !fileRes.IsSuccess() {
+		t.Fatalf("ParseFile() failed: %v", fileRes.Errors)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before calling ExtractImports
 
-	_, err = a.ExtractImports(ctx, file, tmpDir)
-	if err == nil {
-		t.Fatal("ExtractImports() expected error for cancelled context, got nil")
+	res := a.ExtractImports(ctx, fileRes.GetData(), tmpDir)
+	if res.IsSuccess() {
+		t.Fatal("ExtractImports() expected failure for cancelled context, got success")
 	}
 }
