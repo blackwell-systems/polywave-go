@@ -32,7 +32,7 @@ Each reviewed package gets scouted → IMPL'd → closed before being marked don
 | interview | ✅ | ✅ | ✅ |
 | journal | ✅ | ✅ | ✅ |
 | notify | ✅ | ✅ | ✅ |
-| observability | | | |
+| observability | ✅ | ✅ | ✅ |
 | orchestrator | ✅ | ✅ | ✅ |
 | pipeline | ✅ | ✅ | ✅ |
 | protocol | ✅ | ✅ | ✅ |
