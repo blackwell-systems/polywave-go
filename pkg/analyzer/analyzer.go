@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // Analyzer parses Go source files and extracts import dependencies.
@@ -22,31 +24,43 @@ func New() *Analyzer {
 }
 
 // ParseFile parses a Go source file at the given path and returns its AST.
-// Returns error if file cannot be read or contains syntax errors.
+// Returns result.Result failure if file cannot be read or contains syntax errors.
 // Respects context cancellation before performing I/O.
-func (a *Analyzer) ParseFile(ctx context.Context, path string) (*ast.File, error) {
+func (a *Analyzer) ParseFile(ctx context.Context, path string) result.Result[*ast.File] {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return result.NewFailure[*ast.File]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
+		})
 	}
-	return parser.ParseFile(a.fset, path, nil, parser.ImportsOnly)
+	file, err := parser.ParseFile(a.fset, path, nil, parser.ImportsOnly)
+	if err != nil {
+		return result.NewFailure[*ast.File]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeParseFailed, fmt.Sprintf("failed to parse %s: %s", path, err.Error())),
+		})
+	}
+	return result.NewSuccess(file)
 }
 
 // ExtractImports returns all local import paths from a parsed AST.
-// Filters out stdlib imports (no slash in path, or starts with known stdlib prefix).
+// Filters out stdlib imports (no dot in first path element).
 // For local imports like "github.com/user/repo/pkg/foo", resolves to absolute file path.
 // Respects context cancellation before performing I/O.
-func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) ([]string, error) {
+func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) result.Result[[]string] {
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return result.NewFailure[[]string]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
+		})
 	}
-	var imports []string
 
 	// Get module path from go.mod
 	modulePath, err := getModulePath(ctx, repoRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get module path: %w", err)
+		return result.NewFailure[[]string]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeGomodReadFailed, fmt.Sprintf("failed to get module path: %s", err.Error())),
+		})
 	}
 
+	var imports []string
 	for _, imp := range file.Imports {
 		// Remove quotes from import path
 		importPath := strings.Trim(imp.Path.Value, `"`)
@@ -62,91 +76,35 @@ func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot 
 		}
 
 		// Resolve to absolute path
-		resolved, err := ResolveImportPath(importPath, repoRoot, modulePath)
-		if err != nil {
-			return nil, err
+		resolved := ResolveImportPath(ctx, importPath, repoRoot, modulePath)
+		if !resolved.IsSuccess() {
+			return result.NewFailure[[]string](resolved.Errors)
 		}
 
-		imports = append(imports, resolved)
+		imports = append(imports, resolved.GetData())
 	}
 
-	return imports, nil
+	return result.NewSuccess(imports)
 }
 
 // IsStdlib returns true if the import path is a Go stdlib package.
-// Heuristic: no slash OR starts with known stdlib prefix (encoding/, net/, etc).
+// Heuristic: first path element has no dot (e.g. "fmt", "os", "go/ast").
 func IsStdlib(importPath string) bool {
-	// No slash means it's a stdlib package (e.g., "fmt", "os")
-	if !strings.Contains(importPath, "/") {
-		return true
-	}
-
-	// Known stdlib prefixes
-	stdlibPrefixes := []string{
-		"archive/",
-		"bufio/",
-		"builtin/",
-		"bytes/",
-		"cmp/",
-		"compress/",
-		"container/",
-		"context/",
-		"crypto/",
-		"database/",
-		"debug/",
-		"embed/",
-		"encoding/",
-		"errors/",
-		"expvar/",
-		"flag/",
-		"fmt/",
-		"go/",
-		"hash/",
-		"html/",
-		"image/",
-		"index/",
-		"io/",
-		"iter/",
-		"log/",
-		"maps/",
-		"math/",
-		"mime/",
-		"net/",
-		"os/",
-		"path/",
-		"plugin/",
-		"reflect/",
-		"regexp/",
-		"runtime/",
-		"slices/",
-		"sort/",
-		"strconv/",
-		"strings/",
-		"sync/",
-		"syscall/",
-		"testing/",
-		"text/",
-		"time/",
-		"unicode/",
-		"unsafe/",
-	}
-
-	for _, prefix := range stdlibPrefixes {
-		if strings.HasPrefix(importPath, prefix) {
-			return true
-		}
-	}
-
-	return false
+	// New: first path element has no dot = stdlib
+	parts := strings.SplitN(importPath, "/", 2)
+	return !strings.Contains(parts[0], ".")
 }
 
 // ResolveImportPath converts a local import path to an absolute file path.
 // Example: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 // -> "/Users/.../scout-and-wave-go/pkg/protocol" (directory, not file — caller scans .go files)
-func ResolveImportPath(importPath, repoRoot, modulePath string) (string, error) {
+func ResolveImportPath(ctx context.Context, importPath, repoRoot, modulePath string) result.Result[string] {
 	// Strip the module prefix
 	if !strings.HasPrefix(importPath, modulePath) {
-		return "", fmt.Errorf("import path %q does not start with module path %q", importPath, modulePath)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
+				fmt.Sprintf("import path %q does not start with module path %q", importPath, modulePath)),
+		})
 	}
 
 	relPath := strings.TrimPrefix(importPath, modulePath)
@@ -158,14 +116,20 @@ func ResolveImportPath(importPath, repoRoot, modulePath string) (string, error) 
 	// Verify directory exists
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return "", fmt.Errorf("import path resolves to non-existent directory: %w", err)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
+				fmt.Sprintf("import path resolves to non-existent directory: %s", err.Error())),
+		})
 	}
 
 	if !info.IsDir() {
-		return "", fmt.Errorf("import path resolves to file, not directory: %s", absPath)
+		return result.NewFailure[string]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
+				fmt.Sprintf("import path resolves to file, not directory: %s", absPath)),
+		})
 	}
 
-	return absPath, nil
+	return result.NewSuccess(absPath)
 }
 
 // getModulePath reads the go.mod file and extracts the module path.
