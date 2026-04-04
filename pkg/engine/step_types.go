@@ -116,4 +116,10 @@ type AgentBriefInfo struct {
 	Repo string `json:"repo,omitempty"`
 	// MergeTarget is the branch agents merge into. Empty string means HEAD.
 	MergeTarget string `json:"merge_target,omitempty"`
+	// JournalContextAvailable is true when the agent has prior session history
+	// that was successfully synced and serialized into JournalContextFile.
+	JournalContextAvailable bool `json:"journal_context_available,omitempty"`
+	// JournalContextFile is the absolute path to context.md when
+	// JournalContextAvailable is true; empty otherwise.
+	JournalContextFile string `json:"journal_context_file,omitempty"`
 }

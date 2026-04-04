@@ -37,6 +37,12 @@ type PrepareAgentResult struct {
 	Wave          int    `json:"wave"`
 	FilesOwned    int    `json:"files_owned"`
 	ContextSource string `json:"context_source"`
+	// JournalContextAvailable is true when the agent has prior session history
+	// that was successfully synced and serialized into JournalContextFile.
+	JournalContextAvailable bool `json:"journal_context_available"`
+	// JournalContextFile is the absolute path to context.md when
+	// JournalContextAvailable is true; empty otherwise.
+	JournalContextFile string `json:"journal_context_file"`
 }
 
 // PrepareAgent performs all prepare-agent work: parse IMPL doc, find agent task,
@@ -272,17 +278,36 @@ saw_name: %s
 		}
 	}
 
+	// Sync journal and surface context availability for the LLM orchestrator.
+	// Non-fatal: fresh agents have no session history; errors are silently skipped.
+	journalContextAvailable := false
+	journalContextFile := ""
+	if syncRes := observer.Sync(); syncRes.IsSuccess() {
+		sr := syncRes.GetData()
+		if sr != nil && sr.NewToolUses > 0 {
+			if ctxRes := observer.GenerateContext(); ctxRes.IsSuccess() {
+				contextFile := filepath.Join(observer.JournalDir, "context.md")
+				if writeErr := os.WriteFile(contextFile, []byte(ctxRes.GetData()), 0644); writeErr == nil {
+					journalContextAvailable = true
+					journalContextFile = contextFile
+				}
+			}
+		}
+	}
+
 	res = PrepareAgentResult{
-		BriefPath:     briefPath,
-		BriefLength:   len(brief),
-		JournalDir:    observer.JournalDir,
-		CursorPath:    observer.CursorPath,
-		IndexPath:     observer.IndexPath,
-		ResultsDir:    observer.ResultsDir,
-		AgentID:       opts.AgentID,
-		Wave:          opts.WaveNum,
-		FilesOwned:    len(ownedSet),
-		ContextSource: string(contextSource),
+		BriefPath:               briefPath,
+		BriefLength:             len(brief),
+		JournalDir:              observer.JournalDir,
+		CursorPath:              observer.CursorPath,
+		IndexPath:               observer.IndexPath,
+		ResultsDir:              observer.ResultsDir,
+		AgentID:                 opts.AgentID,
+		Wave:                    opts.WaveNum,
+		FilesOwned:              len(ownedSet),
+		ContextSource:           string(contextSource),
+		JournalContextAvailable: journalContextAvailable,
+		JournalContextFile:      journalContextFile,
 	}
 
 	return result.NewSuccess(res)
