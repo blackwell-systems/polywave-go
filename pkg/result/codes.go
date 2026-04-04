@@ -21,6 +21,7 @@
 //	Q001-Q099: Queue errors
 //	R001-R099: Retry errors
 //	J001-J099: Journal errors (archive, checkpoint, observer operations)
+//	Z001-Z099: Analyzer errors (dependency graph, cascade, shared types, wiring)
 //	B009: gate validation failed (closed-loop gate retry input validation)
 //	N091-N098: engine init, pipeline, and step failures
 //	P008-P013: type collision fatal, critic gate failed, tier conflict detected, wave not found, unknown agent in ownership, amend blocked
@@ -436,3 +437,32 @@ const (
 	CodeObsQueryFailed = "O002_OBS_QUERY_FAILED"
 )
 
+// Analyzer error codes (Z001-Z099)
+const (
+	// CodeAnalyzeParseFailed is emitted when a Go source file cannot be parsed.
+	CodeAnalyzeParseFailed = "Z001_PARSE_FAILED"
+	// CodeAnalyzeGomodReadFailed is emitted when go.mod cannot be read.
+	CodeAnalyzeGomodReadFailed = "Z002_GOMOD_READ_FAILED"
+	// CodeAnalyzeModuleNotFound is emitted when the module path cannot be resolved.
+	CodeAnalyzeModuleNotFound = "Z003_MODULE_NOT_FOUND"
+	// CodeAnalyzeImportResolveFailed is emitted when an import path cannot be resolved to a file.
+	CodeAnalyzeImportResolveFailed = "Z004_IMPORT_RESOLVE_FAILED"
+	// CodeAnalyzeCycleDetected is emitted when a dependency cycle is found.
+	CodeAnalyzeCycleDetected = "Z005_CYCLE_DETECTED"
+	// CodeAnalyzeUnsupportedLang is emitted when the file language is not supported.
+	CodeAnalyzeUnsupportedLang = "Z006_UNSUPPORTED_LANGUAGE"
+	// CodeAnalyzeNodeMissing is emitted when a referenced file node is absent from the graph.
+	CodeAnalyzeNodeMissing = "Z007_NODE_MISSING"
+	// CodeAnalyzeJSParserMissing is emitted when the js-parser.js helper script cannot be found.
+	CodeAnalyzeJSParserMissing = "Z008_JS_PARSER_MISSING"
+	// CodeAnalyzePythonMissing is emitted when the python parser script cannot be found.
+	CodeAnalyzePythonMissing = "Z009_PYTHON_MISSING"
+	// CodeAnalyzeRustParserMissing is emitted when the rust-parser helper binary cannot be found.
+	CodeAnalyzeRustParserMissing = "Z010_RUST_PARSER_MISSING"
+	// CodeAnalyzeManifestNil is emitted when a nil manifest is passed to DetectSharedTypes or DetectWiring.
+	CodeAnalyzeManifestNil = "Z011_MANIFEST_NIL"
+	// CodeAnalyzeCircularAgentDep is emitted when a circular agent dependency is detected.
+	CodeAnalyzeCircularAgentDep = "Z012_CIRCULAR_AGENT_DEP"
+	// CodeAnalyzeWalkFailed is emitted when filepath.Walk fails during cascade detection.
+	CodeAnalyzeWalkFailed = "Z013_WALK_FAILED"
+)
