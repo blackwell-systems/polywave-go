@@ -1,11 +1,12 @@
 package analyzer
 
 import (
-	"fmt"
+	"context"
 	"regexp"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // DetectWiring analyzes an IMPL manifest's agent task prompts for cross-agent
@@ -16,13 +17,24 @@ import (
 // - "invokes `FunctionName`"
 // Cross-references function names against file_ownership to find defining agent.
 // Only emits wiring declarations when caller agent ≠ definer agent.
-func DetectWiring(manifest *protocol.IMPLManifest, repoRoot string) ([]protocol.WiringDeclaration, error) {
+func DetectWiring(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]protocol.WiringDeclaration] {
+	// Check context cancellation first
+	if ctx.Err() != nil {
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
+		})
+	}
+
 	if manifest == nil {
-		return nil, fmt.Errorf("manifest is nil")
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest is nil"),
+		})
 	}
 
 	if len(manifest.FileOwnership) == 0 {
-		return nil, fmt.Errorf("manifest file_ownership is empty")
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest file_ownership is empty"),
+		})
 	}
 
 	// Build a map of function names to their definitions from interface contracts
@@ -103,7 +115,7 @@ func DetectWiring(manifest *protocol.IMPLManifest, repoRoot string) ([]protocol.
 		}
 	}
 
-	return declarations, nil
+	return result.NewSuccess(declarations)
 }
 
 // extractFunctionName strips package prefixes, backticks, and trailing parens
@@ -126,7 +138,9 @@ func extractFunctionName(raw string) string {
 }
 
 // findDefiningAgent searches for the file that defines a given function.
-// It first checks interface_contracts, then falls back to file_ownership heuristic.
+// It checks interface_contracts only. The old heuristic fallback that returned
+// found=true for any 2+-agent manifest is removed to prevent false-positive
+// wiring declarations for stdlib or external function calls (P1-8 fix).
 // Returns (definedIn file path, defining agent ID, defining wave number, found bool).
 func findDefiningAgent(funcName string, contractMap map[string]*protocol.InterfaceContract, fileOwnership []protocol.FileOwnership, callerAgentID string) (string, string, int, bool) {
 	// Check interface contracts first
@@ -142,29 +156,27 @@ func findDefiningAgent(funcName string, contractMap map[string]*protocol.Interfa
 			// Use location anyway, leave agent empty (will fail validation later)
 			return contract.Location, "", 0, true
 		}
-	}
-
-	// Fallback heuristic: assume function is in the first file owned by
-	// the earliest-wave agent that is NOT the calling agent
-	var earliestAgent string
-	var earliestWave int = 99999
-	var earliestFile string
-
-	for _, fo := range fileOwnership {
-		if fo.Agent == callerAgentID {
-			continue // skip caller's own files
+		// Contract exists but has no location — use heuristic: earliest-wave
+		// agent that is not the calling agent.
+		var earliestAgent string
+		var earliestWave int = 99999
+		var earliestFile string
+		for _, fo := range fileOwnership {
+			if fo.Agent == callerAgentID {
+				continue
+			}
+			if fo.Wave < earliestWave {
+				earliestWave = fo.Wave
+				earliestAgent = fo.Agent
+				earliestFile = fo.File
+			}
 		}
-		if fo.Wave < earliestWave {
-			earliestWave = fo.Wave
-			earliestAgent = fo.Agent
-			earliestFile = fo.File
+		if earliestAgent != "" {
+			return earliestFile, earliestAgent, earliestWave, true
 		}
 	}
 
-	if earliestAgent != "" {
-		return earliestFile, earliestAgent, earliestWave, true
-	}
-
+	// Function not found in any interface contract — skip (likely stdlib/external).
 	return "", "", 0, false
 }
 

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // SharedTypeCandidate represents a type that should be scaffolded because
@@ -34,14 +35,18 @@ type SharedTypeCandidate struct {
 // - Types imported from external packages (stdlib, third-party deps)
 // - Types in files not owned by any agent (existing codebase infrastructure)
 // - Types mentioned in only one agent's task
-func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) ([]SharedTypeCandidate, error) {
+func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]SharedTypeCandidate] {
 	if manifest == nil {
-		return []SharedTypeCandidate{}, fmt.Errorf("manifest cannot be nil")
+		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest cannot be nil"),
+		})
 	}
 
 	// Check for context cancellation before starting work
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
+		})
 	}
 
 	// Build a map of file path -> (agent, wave) ownership
@@ -162,10 +167,13 @@ func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, rep
 	// Check for circular dependencies
 	circularDeps := detectCircularDeps(manifest)
 	if len(circularDeps) > 0 {
-		return nil, fmt.Errorf("circular dependency detected: %s", strings.Join(circularDeps, "; "))
+		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeCircularAgentDep,
+				fmt.Sprintf("circular dependency detected: %s", strings.Join(circularDeps, "; "))),
+		})
 	}
 
-	return candidates, nil
+	return result.NewSuccess(candidates)
 }
 
 type typeRefData struct {
@@ -180,83 +188,119 @@ type importRef struct {
 	importedFile string
 }
 
-// extractTypeReferences parses agent task text for import patterns
+// langPattern associates a file extension with a compiled regex for import detection.
+type langPattern struct {
+	ext     string
+	pattern *regexp.Regexp
+}
+
+// typeRefExtractor defines how to extract a typeName and importedFile from a regex match.
+type typeRefExtractor func(match []string) (typeName, importedFile string, ok bool)
+
+// langPatternEntry combines a pattern with its extraction logic.
+type langPatternEntry struct {
+	pattern   *regexp.Regexp
+	extractor typeRefExtractor
+}
+
+// extractTypeReferences parses agent task text for import patterns using a
+// table-driven approach: one entry per language/pattern combination.
 func extractTypeReferences(taskText, agentID string) []importRef {
-	var refs []importRef
+	_ = agentID // parameter kept for interface compatibility
 
-	// Go: import "path/to/package" or import Type from "path"
-	goImportPattern := regexp.MustCompile(`import\s+(?:"([^"]+)"|(\w+)\s+from\s+"([^"]+)")`)
-	matches := goImportPattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 1 && match[1] != "" {
-			// Simple import "path"
-			refs = append(refs, importRef{typeName: "", importedFile: match[1]})
-		} else if len(match) > 3 && match[2] != "" && match[3] != "" {
-			// import Type from "path"
-			refs = append(refs, importRef{typeName: match[2], importedFile: match[3]})
-		}
-	}
-
-	// Rust: use crate::module::Type or import Type from crate::module
-	rustUsePattern := regexp.MustCompile(`(?:use|import)\s+(?:crate::)?([a-zA-Z0-9_/:]+)(?:::(\w+))?`)
-	rustFromPattern := regexp.MustCompile(`(?:import|use)\s+(\w+)\s+from\s+crate::([a-zA-Z0-9_:]+)`)
-
-	matches = rustUsePattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 2 && match[2] != "" {
-			// use crate::module::Type
-			modulePath := strings.ReplaceAll(match[1], "::", "/")
-			refs = append(refs, importRef{typeName: match[2], importedFile: "src/" + modulePath + ".rs"})
-		}
-	}
-
-	matches = rustFromPattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 2 {
-			// import Type from crate::module
-			modulePath := strings.ReplaceAll(match[2], "::", "/")
-			refs = append(refs, importRef{typeName: match[1], importedFile: "src/" + modulePath + ".rs"})
-		}
-	}
-
-	// TypeScript: import { Type } from "./module"
-	tsImportPattern := regexp.MustCompile(`import\s+\{\s*(\w+)\s*\}\s+from\s+["']([^"']+)["']`)
-	matches = tsImportPattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 2 {
-			filePath := match[2]
-			// Normalize TypeScript paths: "./types" -> need to add .ts extension
-			// and resolve relative paths if possible
-			if strings.HasPrefix(filePath, "./") || strings.HasPrefix(filePath, "../") {
-				// Relative import - strip leading ./ and add .ts if no extension
-				filePath = strings.TrimPrefix(filePath, "./")
-				if !strings.Contains(filePath, ".") {
-					filePath += ".ts"
+	patternTable := []langPatternEntry{
+		// Go: import "path/to/package"
+		{
+			pattern: regexp.MustCompile(`import\s+"([^"]+)"`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 1 && m[1] != "" {
+					return "", m[1], true
 				}
+				return "", "", false
+			},
+		},
+		// Go/JS: import Type from "path"
+		{
+			pattern: regexp.MustCompile(`import\s+(\w+)\s+from\s+"([^"]+)"`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 && m[1] != "" && m[2] != "" {
+					return m[1], m[2], true
+				}
+				return "", "", false
+			},
+		},
+		// Rust: use crate::module::Type
+		{
+			pattern: regexp.MustCompile(`(?:use|import)\s+(?:crate::)?([a-zA-Z0-9_/:]+)::(\w+)`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 && m[2] != "" {
+					modulePath := strings.ReplaceAll(m[1], "::", "/")
+					return m[2], "src/" + modulePath + ".rs", true
+				}
+				return "", "", false
+			},
+		},
+		// Rust: import Type from crate::module
+		{
+			pattern: regexp.MustCompile(`(?:import|use)\s+(\w+)\s+from\s+crate::([a-zA-Z0-9_:]+)`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 {
+					modulePath := strings.ReplaceAll(m[2], "::", "/")
+					return m[1], "src/" + modulePath + ".rs", true
+				}
+				return "", "", false
+			},
+		},
+		// TypeScript: import { Type } from "./module" or './module'
+		{
+			pattern: regexp.MustCompile(`import\s+\{\s*(\w+)\s*\}\s+from\s+["']([^"']+)["']`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 {
+					filePath := m[2]
+					if strings.HasPrefix(filePath, "./") || strings.HasPrefix(filePath, "../") {
+						filePath = strings.TrimPrefix(filePath, "./")
+						if !strings.Contains(filePath, ".") {
+							filePath += ".ts"
+						}
+					}
+					return m[1], filePath, true
+				}
+				return "", "", false
+			},
+		},
+		// Python: from module import Type
+		{
+			pattern: regexp.MustCompile(`from\s+([a-zA-Z0-9_.]+)\s+import\s+(\w+)`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 {
+					modulePath := strings.ReplaceAll(m[1], ".", "/")
+					return m[2], modulePath + ".py", true
+				}
+				return "", "", false
+			},
+		},
+		// Generic: "reference|import|use Type from ..."
+		{
+			pattern: regexp.MustCompile(`(?:reference|import|use)\s+(\w+)\s+from\s+(?:crate::|package::|module::)?([a-zA-Z0-9_/.:-]+)`),
+			extractor: func(m []string) (string, string, bool) {
+				if len(m) > 2 {
+					return m[1], m[2], true
+				}
+				return "", "", false
+			},
+		},
+	}
+
+	var refs []importRef
+	for _, entry := range patternTable {
+		matches := entry.pattern.FindAllStringSubmatch(taskText, -1)
+		for _, match := range matches {
+			typeName, importedFile, ok := entry.extractor(match)
+			if ok {
+				refs = append(refs, importRef{typeName: typeName, importedFile: importedFile})
 			}
-			refs = append(refs, importRef{typeName: match[1], importedFile: filePath})
 		}
 	}
-
-	// Python: from module import Type
-	pyImportPattern := regexp.MustCompile(`from\s+([a-zA-Z0-9_.]+)\s+import\s+(\w+)`)
-	matches = pyImportPattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 2 {
-			modulePath := strings.ReplaceAll(match[1], ".", "/")
-			refs = append(refs, importRef{typeName: match[2], importedFile: modulePath + ".py"})
-		}
-	}
-
-	// Generic pattern: "reference Type from file.ext"
-	genericPattern := regexp.MustCompile(`(?:reference|import|use)\s+(\w+)\s+from\s+(?:crate::|package::|module::)?([a-zA-Z0-9_/.:-]+)`)
-	matches = genericPattern.FindAllStringSubmatch(taskText, -1)
-	for _, match := range matches {
-		if len(match) > 2 {
-			refs = append(refs, importRef{typeName: match[1], importedFile: match[2]})
-		}
-	}
-
 	return refs
 }
 

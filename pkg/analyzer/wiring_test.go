@@ -1,6 +1,8 @@
 package analyzer
 
 import (
+	"context"
+	"sort"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -37,16 +39,17 @@ func TestDetectWiring_DirectCall(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 1)
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 1)
 
-	assert.Equal(t, "RunScout", result[0].Symbol)
-	assert.Equal(t, "pkg/engine/scout.go", result[0].DefinedIn)
-	assert.Equal(t, "pkg/cli/main.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
-	assert.Equal(t, 2, result[0].Wave)
-	assert.Equal(t, "call", result[0].IntegrationPattern)
+	assert.Equal(t, "RunScout", declarations[0].Symbol)
+	assert.Equal(t, "pkg/engine/scout.go", declarations[0].DefinedIn)
+	assert.Equal(t, "pkg/cli/main.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
+	assert.Equal(t, 2, declarations[0].Wave)
+	assert.Equal(t, "call", declarations[0].IntegrationPattern)
 }
 
 func TestDetectWiring_PackageQualified(t *testing.T) {
@@ -78,15 +81,16 @@ func TestDetectWiring_PackageQualified(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 1)
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 1)
 
-	assert.Equal(t, "RunScout", result[0].Symbol)
-	assert.Equal(t, "pkg/engine/scout.go", result[0].DefinedIn)
-	assert.Equal(t, "pkg/cli/commands.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
-	assert.Equal(t, 2, result[0].Wave)
+	assert.Equal(t, "RunScout", declarations[0].Symbol)
+	assert.Equal(t, "pkg/engine/scout.go", declarations[0].DefinedIn)
+	assert.Equal(t, "pkg/cli/commands.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
+	assert.Equal(t, 2, declarations[0].Wave)
 }
 
 func TestDetectWiring_Delegation(t *testing.T) {
@@ -118,15 +122,16 @@ func TestDetectWiring_Delegation(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 1)
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 1)
 
-	assert.Equal(t, "RunCritic", result[0].Symbol)
-	assert.Equal(t, "pkg/critic/engine.go", result[0].DefinedIn)
-	assert.Equal(t, "pkg/orchestrator/wave.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
-	assert.Equal(t, 2, result[0].Wave)
+	assert.Equal(t, "RunCritic", declarations[0].Symbol)
+	assert.Equal(t, "pkg/critic/engine.go", declarations[0].DefinedIn)
+	assert.Equal(t, "pkg/orchestrator/wave.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
+	assert.Equal(t, 2, declarations[0].Wave)
 }
 
 func TestDetectWiring_Invokes(t *testing.T) {
@@ -158,14 +163,15 @@ func TestDetectWiring_Invokes(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 1)
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 1)
 
-	assert.Equal(t, "ValidateManifest", result[0].Symbol)
-	assert.Equal(t, "pkg/validator/check.go", result[0].DefinedIn)
-	assert.Equal(t, "pkg/cli/verify.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
+	assert.Equal(t, "ValidateManifest", declarations[0].Symbol)
+	assert.Equal(t, "pkg/validator/check.go", declarations[0].DefinedIn)
+	assert.Equal(t, "pkg/cli/verify.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
 }
 
 func TestDetectWiring_SameAgentNoWiring(t *testing.T) {
@@ -191,9 +197,10 @@ func TestDetectWiring_SameAgentNoWiring(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	assert.Len(t, result, 0, "Same agent calling its own function should not emit wiring")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	assert.Len(t, declarations, 0, "Same agent calling its own function should not emit wiring")
 }
 
 func TestDetectWiring_NoInterfaceContract(t *testing.T) {
@@ -212,9 +219,10 @@ func TestDetectWiring_NoInterfaceContract(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	assert.Len(t, result, 0, "External stdlib function should not emit wiring")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	assert.Len(t, declarations, 0, "External stdlib function should not emit wiring")
 }
 
 func TestDetectWiring_MultipleCallers(t *testing.T) {
@@ -248,23 +256,29 @@ func TestDetectWiring_MultipleCallers(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 2, "Two agents calling same function should emit 2 wiring entries")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 2, "Two agents calling same function should emit 2 wiring entries")
+
+	// Sort by Agent field to eliminate map-iteration ordering flakes (P2-5 fix)
+	sort.Slice(declarations, func(i, j int) bool {
+		return declarations[i].Agent < declarations[j].Agent
+	})
 
 	// Check first wiring entry (Agent B)
-	assert.Equal(t, "ValidateIMPL", result[0].Symbol)
-	assert.Equal(t, "pkg/core/validate.go", result[0].DefinedIn)
-	assert.Equal(t, "pkg/cli/scout.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
-	assert.Equal(t, 2, result[0].Wave)
+	assert.Equal(t, "ValidateIMPL", declarations[0].Symbol)
+	assert.Equal(t, "pkg/core/validate.go", declarations[0].DefinedIn)
+	assert.Equal(t, "pkg/cli/scout.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
+	assert.Equal(t, 2, declarations[0].Wave)
 
 	// Check second wiring entry (Agent C)
-	assert.Equal(t, "ValidateIMPL", result[1].Symbol)
-	assert.Equal(t, "pkg/core/validate.go", result[1].DefinedIn)
-	assert.Equal(t, "pkg/cli/wave.go", result[1].MustBeCalledFrom)
-	assert.Equal(t, "C", result[1].Agent)
-	assert.Equal(t, 2, result[1].Wave)
+	assert.Equal(t, "ValidateIMPL", declarations[1].Symbol)
+	assert.Equal(t, "pkg/core/validate.go", declarations[1].DefinedIn)
+	assert.Equal(t, "pkg/cli/wave.go", declarations[1].MustBeCalledFrom)
+	assert.Equal(t, "C", declarations[1].Agent)
+	assert.Equal(t, 2, declarations[1].Wave)
 }
 
 func TestDetectWiring_EmptyManifest(t *testing.T) {
@@ -274,16 +288,17 @@ func TestDetectWiring_EmptyManifest(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	assert.Len(t, result, 0, "Empty waves should return empty result")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	assert.Len(t, declarations, 0, "Empty waves should return empty result")
 }
 
 func TestDetectWiring_NilManifest(t *testing.T) {
-	result, err := DetectWiring(nil, "/repo")
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "manifest is nil")
+	res := DetectWiring(context.Background(), nil, "/repo")
+	assert.True(t, res.IsFatal())
+	assert.True(t, res.HasErrors())
+	assert.Contains(t, res.Errors[0].Message, "manifest is nil")
 }
 
 func TestDetectWiring_EmptyFileOwnership(t *testing.T) {
@@ -293,10 +308,10 @@ func TestDetectWiring_EmptyFileOwnership(t *testing.T) {
 		Waves:              []protocol.Wave{},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	assert.Error(t, err)
-	assert.Nil(t, result)
-	assert.Contains(t, err.Error(), "file_ownership is empty")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	assert.True(t, res.IsFatal())
+	assert.True(t, res.HasErrors())
+	assert.Contains(t, res.Errors[0].Message, "file_ownership is empty")
 }
 
 func TestDetectWiring_MultiplePatternsInOneTask(t *testing.T) {
@@ -334,12 +349,13 @@ func TestDetectWiring_MultiplePatternsInOneTask(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
-	require.Len(t, result, 2, "Should detect multiple function calls in one task")
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
+	require.Len(t, declarations, 2, "Should detect multiple function calls in one task")
 
 	symbols := make(map[string]bool)
-	for _, decl := range result {
+	for _, decl := range declarations {
 		symbols[decl.Symbol] = true
 	}
 	assert.True(t, symbols["RunScout"])
@@ -376,16 +392,17 @@ func TestDetectWiring_ContractWithoutLocation(t *testing.T) {
 		},
 	}
 
-	result, err := DetectWiring(manifest, "/repo")
-	require.NoError(t, err)
+	res := DetectWiring(context.Background(), manifest, "/repo")
+	require.True(t, res.IsSuccess())
+	declarations := res.GetData()
 	// Contract exists but location empty - should use heuristic
-	require.Len(t, result, 1)
+	require.Len(t, declarations, 1)
 
-	assert.Equal(t, "FormatOutput", result[0].Symbol)
-	assert.Equal(t, "pkg/util/helpers.go", result[0].DefinedIn) // A's first file (heuristic)
-	assert.Equal(t, "pkg/cli/main.go", result[0].MustBeCalledFrom)
-	assert.Equal(t, "B", result[0].Agent)
-	assert.Equal(t, 2, result[0].Wave)
+	assert.Equal(t, "FormatOutput", declarations[0].Symbol)
+	assert.Equal(t, "pkg/util/helpers.go", declarations[0].DefinedIn) // A's first file (heuristic)
+	assert.Equal(t, "pkg/cli/main.go", declarations[0].MustBeCalledFrom)
+	assert.Equal(t, "B", declarations[0].Agent)
+	assert.Equal(t, 2, declarations[0].Wave)
 }
 
 func TestExtractFunctionName(t *testing.T) {
