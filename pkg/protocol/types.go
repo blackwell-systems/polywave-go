@@ -67,12 +67,13 @@ type IMPLManifest struct {
 // FileOwnership tracks which agent owns which file in which wave.
 // It includes dependency information and cross-repo tracking.
 type FileOwnership struct {
-	File      string   `yaml:"file" json:"file"`
-	Agent     string   `yaml:"agent" json:"agent"`
-	Wave      int      `yaml:"wave" json:"wave"`
-	Action    string   `yaml:"action,omitempty" json:"action,omitempty"` // "new" | "modify" | "delete"
-	DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
-	Repo      string   `yaml:"repo,omitempty" json:"repo,omitempty"` // For cross-repo waves
+	File       string   `yaml:"file" json:"file"`
+	Agent      string   `yaml:"agent" json:"agent"`
+	Wave       int      `yaml:"wave" json:"wave"`
+	Action     string   `yaml:"action,omitempty" json:"action,omitempty"` // "new" | "modify" | "delete"
+	DependsOn  []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+	Repo       string   `yaml:"repo,omitempty" json:"repo,omitempty"` // For cross-repo waves
+	V048Exempt bool     `yaml:"v048_exempt,omitempty" json:"v048_exempt,omitempty"`
 }
 
 // Wave represents a concurrent execution phase with multiple agents.

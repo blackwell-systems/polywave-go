@@ -108,6 +108,9 @@ func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, 
 		if fo.Action != "modify" {
 			continue
 		}
+		if fo.V048Exempt {
+			continue
+		}
 		absPath := filepath.Join(repoPath, fo.File)
 		f, err := os.Open(absPath)
 		if err != nil {

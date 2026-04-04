@@ -300,4 +300,35 @@ func TestCheckAgentLOCBudget(t *testing.T) {
 			t.Errorf("expected 0 errors for missing file, got %v", got)
 		}
 	})
+
+	t.Run("v048_exempt=true skips file even if over 2000 lines", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "big.go"), 5000)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "big.go", Agent: "A", Wave: 1, Action: "modify", V048Exempt: true},
+			},
+		}
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
+		if len(got) != 0 {
+			t.Errorf("expected 0 errors for v048_exempt file, got %v", got)
+		}
+	})
+
+	t.Run("v048_exempt=false behaves normally (over budget still errors)", func(t *testing.T) {
+		dir := t.TempDir()
+		writeLines(t, filepath.Join(dir, "big2.go"), 3000)
+		m := &IMPLManifest{
+			FileOwnership: []FileOwnership{
+				{File: "big2.go", Agent: "A", Wave: 1, Action: "modify", V048Exempt: false},
+			},
+		}
+		got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
+		if len(got) != 1 {
+			t.Fatalf("expected 1 error for non-exempt file over budget, got %d: %v", len(got), got)
+		}
+		if got[0].Code != "V048_AGENT_LOC_BUDGET" {
+			t.Errorf("code = %q, want V048_AGENT_LOC_BUDGET", got[0].Code)
+		}
+	})
 }
