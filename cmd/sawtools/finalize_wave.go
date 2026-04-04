@@ -14,6 +14,7 @@ func newFinalizeWaveCmd() *cobra.Command {
 	var mergeTarget string
 	var skipMerge bool
 	var dryRun bool
+	var crossRepoVerify bool
 
 	cmd := &cobra.Command{
 		Use:   "finalize-wave <manifest-path>",
@@ -63,6 +64,7 @@ All pipeline steps are handled by the engine. The engine supports:
 				CollisionDetectionEnabled: true,
 				ClosedLoopRetryEnabled:    true,
 				OnEvent:                   onEvent,
+				CrossRepoVerify:           crossRepoVerify,
 			})
 			out, _ := json.MarshalIndent(r.Data, "", "  ")
 			fmt.Println(string(out))
@@ -136,6 +138,8 @@ All pipeline steps are handled by the engine. The engine supports:
 	_ = cmd.MarkFlagRequired("wave")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Target branch for merge (default: current HEAD)")
 	cmd.Flags().BoolVar(&skipMerge, "skip-merge", false, "Skip merge step (merge already done manually); start from verify-build")
+	cmd.Flags().BoolVar(&crossRepoVerify, "cross-repo-verify", false,
+		"After primary repo verification, run baseline gates on all cross-repo dependencies")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Show what cascade errors would be hotfixed without running the agent")
 	return cmd
