@@ -1440,8 +1440,8 @@ sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
 - `impl-path` -- path to IMPL document (required)
 
 **Flags:**
-- `--verdict` (required): New verdict value. Accepted values: `pass`, `issues`,
-  `warning` (case-insensitive; stored as uppercase: PASS, ISSUES, WARNING).
+- `--verdict` (required): New verdict value. Accepted values: `pass`, `issues`
+  (case-insensitive; stored as uppercase: PASS, ISSUES).
 
 **Output:** JSON object:
 ```json
