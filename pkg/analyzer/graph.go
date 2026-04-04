@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // detectLanguage auto-detects the language from file extensions.
@@ -46,17 +48,22 @@ func detectLanguage(files []string) (string, error) {
 
 // parseGoFiles parses Go files and extracts their dependencies.
 // Extracted from BuildGraph Step 1 logic.
-// Uses existing Analyzer.ParseFile() and ExtractImports() methods.
-func parseGoFiles(repoRoot string, files []string) (map[string][]string, error) {
-	analyzer := New()
+// Uses Analyzer.ParseFile() and ExtractImports() with context propagation (P0-3 fix).
+// Agent C migrates ParseFile/ExtractImports to result.Result[T]; after merge the
+// call sites here will use .IsSuccess()/.GetData() unwrap pattern.
+func parseGoFiles(ctx context.Context, repoRoot string, files []string) (map[string][]string, error) {
+	a := New()
 	fileImports := make(map[string][]string)
 
 	for _, f := range files {
-		ast, err := analyzer.ParseFile(context.Background(), f)
+		// P0-3: propagate ctx instead of context.Background()
+		astFile, err := a.ParseFile(ctx, f)
 		if err != nil {
 			return nil, fmt.Errorf("parse %s: %w", f, err)
 		}
-		imports, err := analyzer.ExtractImports(context.Background(), ast, repoRoot)
+
+		// P0-3: propagate ctx instead of context.Background()
+		imports, err := a.ExtractImports(ctx, astFile, repoRoot)
 		if err != nil {
 			return nil, fmt.Errorf("extract imports %s: %w", f, err)
 		}
@@ -82,18 +89,20 @@ func parseGoFiles(repoRoot string, files []string) (map[string][]string, error) 
 // 4. Compute topological sort depth: files with no deps = depth 0, files depending on depth N = depth N+1
 // 5. Assign waves: wave N = all files at depth N
 // 6. Detect cascade candidates: scan repoRoot for files importing modified files but not in files list
-func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
+func BuildGraph(ctx context.Context, repoRoot string, files []string) result.Result[*DepGraph] {
 	// Step 0: Detect language
 	lang, err := detectLanguage(files)
 	if err != nil {
-		return nil, err
+		return result.NewFailure[*DepGraph]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeUnsupportedLang, err.Error()),
+		})
 	}
 
 	// Step 1: Parse files with language-specific parser
 	var fileImports map[string][]string
 	switch lang {
 	case "go":
-		fileImports, err = parseGoFiles(repoRoot, files)
+		fileImports, err = parseGoFiles(ctx, repoRoot, files)
 	case "rust":
 		fileImports, err = parseRustFiles(repoRoot, files)
 	case "javascript":
@@ -101,10 +110,14 @@ func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
 	case "python":
 		fileImports, err = parsePythonFiles(repoRoot, files)
 	default:
-		return nil, fmt.Errorf("unsupported language: %s", lang)
+		return result.NewFailure[*DepGraph]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeUnsupportedLang, fmt.Sprintf("unsupported language: %s", lang)),
+		})
 	}
 	if err != nil {
-		return nil, err
+		return result.NewFailure[*DepGraph]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
+		})
 	}
 
 	// Step 2: Build adjacency map and reverse map
@@ -127,19 +140,24 @@ func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
 
 	// Step 3: Detect cycles
 	if cycles := detectCycles(adj, files); cycles != nil {
-		return nil, fmt.Errorf("circular dependency detected: %s", formatCycle(cycles[0]))
+		return result.NewFailure[*DepGraph]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeCycleDetected, fmt.Sprintf("circular dependency detected: %s", formatCycle(cycles[0]))),
+		})
 	}
 
 	// Step 4: Topological sort depth (Kahn's algorithm)
-	depth := computeDepth(adj, files)
+	// Pass revAdj to avoid O(n²) inner loop recomputation (P2-1 fix)
+	depth := computeDepth(adj, revAdj, files)
 
 	// Step 5: Assign waves
 	waves := assignWaves(depth)
 
 	// Step 6: Detect cascade candidates
-	cascades, err := detectCascades(repoRoot, files, revAdj)
+	cascades, err := detectCascades(ctx, repoRoot, files, revAdj)
 	if err != nil {
-		return nil, fmt.Errorf("detect cascades: %w", err)
+		return result.NewFailure[*DepGraph]([]result.SAWError{
+			result.NewFatal(result.CodeAnalyzeWalkFailed, fmt.Sprintf("detect cascades: %v", err)),
+		})
 	}
 
 	// Step 7: Build DepGraph
@@ -158,11 +176,11 @@ func BuildGraph(repoRoot string, files []string) (*DepGraph, error) {
 		return nodes[i].File < nodes[j].File
 	})
 
-	return &DepGraph{
+	return result.NewSuccess(&DepGraph{
 		Nodes:             nodes,
 		Waves:             waves,
 		CascadeCandidates: cascades,
-	}, nil
+	})
 }
 
 // resolvePackageDeps converts package directories to actual file dependencies.
@@ -261,7 +279,8 @@ func formatCycle(cycle []string) string {
 // computeDepth assigns topological depth to each file.
 // Depth 0 = no dependencies, Depth N = depends on files at depth N-1.
 // Uses Kahn's algorithm for deterministic ordering.
-func computeDepth(adj map[string][]string, files []string) map[string]int {
+// revAdj is passed in to avoid O(n²) inner loop recomputation (P2-1 fix).
+func computeDepth(adj map[string][]string, revAdj map[string][]string, files []string) map[string]int {
 	depth := make(map[string]int)
 	inDegree := make(map[string]int)
 
@@ -280,28 +299,23 @@ func computeDepth(adj map[string][]string, files []string) map[string]int {
 	}
 	sort.Strings(queue)
 
-	// Process in topological order
+	// Process in topological order using revAdj to find dependents
 	for len(queue) > 0 {
 		// Sort for determinism
 		sort.Strings(queue)
 		current := queue[0]
 		queue = queue[1:]
 
-		// For each file that current depends on, we need to update files that depend on current
-		// Build reverse adjacency for dependents
-		for _, f := range files {
-			for _, dep := range adj[f] {
-				if dep == current {
-					// f depends on current, so f's depth = max(f's depth, current's depth + 1)
-					newDepth := depth[current] + 1
-					if newDepth > depth[f] {
-						depth[f] = newDepth
-					}
-					inDegree[f]--
-					if inDegree[f] == 0 {
-						queue = append(queue, f)
-					}
-				}
+		// Use revAdj to find files that depend on current (O(1) lookup vs O(n²) inner loop)
+		for _, dependent := range revAdj[current] {
+			// dependent depends on current, so dependent's depth = max(dependent's depth, current's depth + 1)
+			newDepth := depth[current] + 1
+			if newDepth > depth[dependent] {
+				depth[dependent] = newDepth
+			}
+			inDegree[dependent]--
+			if inDegree[dependent] == 0 {
+				queue = append(queue, dependent)
 			}
 		}
 	}
@@ -328,7 +342,8 @@ func assignWaves(depth map[string]int) map[int][]string {
 
 // detectCascades scans repoRoot for .go files that import modified files
 // but are not in the files list. These are cascade candidates.
-func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][]string) ([]CascadeFile, error) {
+// ctx is propagated to getModulePath and used for cancellation checks.
+func detectCascades(ctx context.Context, repoRoot string, modifiedFiles []string, revAdj map[string][]string) ([]CascadeCandidate, error) {
 	// Build set of modified files for quick lookup
 	modifiedSet := make(map[string]bool)
 	for _, f := range modifiedFiles {
@@ -336,7 +351,7 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 	}
 
 	// Get all .go files that import modified files (from revAdj)
-	var cascades []CascadeFile
+	var cascades []CascadeCandidate
 	seen := make(map[string]bool)
 
 	for modFile := range modifiedSet {
@@ -344,17 +359,21 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 		for _, importer := range importers {
 			if !modifiedSet[importer] && !seen[importer] {
 				seen[importer] = true
-				cascades = append(cascades, CascadeFile{
-					File:   importer,
-					Reason: fmt.Sprintf("imports modified file %s", filepath.Base(modFile)),
-					Type:   "semantic",
+				cascades = append(cascades, CascadeCandidate{
+					File:        importer,
+					Line:        0,
+					Match:       "",
+					CascadeType: "semantic",
+					Severity:    "medium",
+					Reason:      fmt.Sprintf("imports modified file %s", filepath.Base(modFile)),
 				})
 			}
 		}
 	}
 
-	// Also scan for files in the repo that import modified packages but aren't in our graph
-	modulePath, err := getModulePath(context.Background(), repoRoot)
+	// Also scan for files in the repo that import modified packages but aren't in our graph.
+	// P0-4: propagate ctx instead of context.Background()
+	modulePath, err := getModulePath(ctx, repoRoot)
 	if err != nil {
 		return cascades, nil // Non-fatal
 	}
@@ -362,6 +381,11 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 	err = filepath.Walk(repoRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
+		}
+
+		// Check for context cancellation
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
 		// Skip vendor, .git, and hidden directories
@@ -397,7 +421,9 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 				continue
 			}
 
-			// Resolve import to directory
+			// Resolve import to directory.
+			// Agent C migrates ResolveImportPath to accept ctx and return result.Result[string];
+			// after merge, this becomes: ResolveImportPath(ctx, importPath, repoRoot, modulePath)
 			resolved, err := ResolveImportPath(importPath, repoRoot, modulePath)
 			if err != nil {
 				continue
@@ -408,10 +434,13 @@ func detectCascades(repoRoot string, modifiedFiles []string, revAdj map[string][
 				if filepath.Dir(modFile) == resolved {
 					if !seen[path] {
 						seen[path] = true
-						cascades = append(cascades, CascadeFile{
-							File:   path,
-							Reason: fmt.Sprintf("imports package containing modified file %s", filepath.Base(modFile)),
-							Type:   "semantic",
+						cascades = append(cascades, CascadeCandidate{
+							File:        path,
+							Line:        0,
+							Match:       "",
+							CascadeType: "semantic",
+							Severity:    "medium",
+							Reason:      fmt.Sprintf("imports package containing modified file %s", filepath.Base(modFile)),
 						})
 					}
 					break

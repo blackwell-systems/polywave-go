@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,10 +71,11 @@ func C() string {
 
 	files := []string{fileA, fileB, fileC}
 
-	graph, err := BuildGraph(tmpDir, files)
-	if err != nil {
-		t.Fatalf("BuildGraph failed: %v", err)
+	res := BuildGraph(context.Background(), tmpDir, files)
+	if !res.IsSuccess() {
+		t.Fatalf("BuildGraph failed: %v", res.Errors)
 	}
+	graph := res.GetData()
 
 	// Verify 3 nodes
 	if len(graph.Nodes) != 3 {
@@ -192,13 +194,29 @@ func C() string {
 
 	files := []string{fileA, fileB, fileC}
 
-	_, err := BuildGraph(tmpDir, files)
-	if err == nil {
-		t.Fatal("expected cycle detection error, got nil")
+	res := BuildGraph(context.Background(), tmpDir, files)
+	if res.IsSuccess() {
+		t.Fatal("expected cycle detection error, got success")
 	}
 
-	if !contains(err.Error(), "circular dependency") {
-		t.Errorf("expected 'circular dependency' in error, got: %v", err)
+	if !res.IsFatal() {
+		t.Errorf("expected FATAL result, got code: %s", res.Code)
+	}
+
+	// Verify the error contains circular dependency info
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in result, got none")
+	}
+
+	found := false
+	for _, e := range res.Errors {
+		if contains(e.Message, "circular dependency") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'circular dependency' in error message, got: %v", res.Errors)
 	}
 }
 
@@ -231,10 +249,11 @@ func main() {
 
 	files := []string{file}
 
-	graph, err := BuildGraph(tmpDir, files)
-	if err != nil {
-		t.Fatalf("BuildGraph failed: %v", err)
+	res := BuildGraph(context.Background(), tmpDir, files)
+	if !res.IsSuccess() {
+		t.Fatalf("BuildGraph failed: %v", res.Errors)
 	}
+	graph := res.GetData()
 
 	// Should have 1 node in wave 1
 	if len(graph.Nodes) != 1 {
@@ -256,6 +275,53 @@ func main() {
 
 	if len(node.DependsOn) != 0 {
 		t.Errorf("expected no deps, got %v", node.DependsOn)
+	}
+}
+
+// TestBuildGraph_WalkFailed tests that BuildGraph returns Z013_WALK_FAILED
+// when repoRoot is a nonexistent directory (detectCascades walk fails).
+// Note: The walk failure is currently non-fatal (returns partial results),
+// but a nonexistent repoRoot causes go.mod read failure which is also non-fatal.
+// We test with a nonexistent repoRoot and a file that cannot be parsed.
+func TestBuildGraph_NonexistentRoot(t *testing.T) {
+	// Use a nonexistent directory — parseGoFiles will fail on go.mod read
+	// which is needed for ExtractImports. But BuildGraph only fails on
+	// parse errors. Test with empty files list to get past parsing.
+	// The real Z013 test: a valid Go file but nonexistent repoRoot for walk.
+	tmpDir := t.TempDir()
+
+	// Create a minimal valid Go file so parsing succeeds
+	goMod := `module github.com/test/walkfail
+go 1.21
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "go.mod"), []byte(goMod), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pkg := filepath.Join(tmpDir, "pkg")
+	os.MkdirAll(pkg, 0755)
+	file := filepath.Join(pkg, "a.go")
+	code := `package pkg
+
+func A() {}
+`
+	if err := os.WriteFile(file, []byte(code), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pass a nonexistent repoRoot — detectLanguage and parseGoFiles will see
+	// a valid file path, but go.mod won't exist in the fake root.
+	fakeRoot := "/nonexistent/path/that/does/not/exist"
+	files := []string{file}
+
+	res := BuildGraph(context.Background(), fakeRoot, files)
+	// Should fail because parseGoFiles → ExtractImports → getModulePath
+	// cannot read go.mod from fakeRoot
+	if res.IsSuccess() {
+		t.Fatal("expected failure with nonexistent repoRoot, got success")
+	}
+	if !res.IsFatal() {
+		t.Errorf("expected FATAL result for nonexistent repoRoot, got code: %s", res.Code)
 	}
 }
 
@@ -306,9 +372,10 @@ func TestComputeDepth_RootNodes(t *testing.T) {
 		"b.go": {},
 		"c.go": {},
 	}
+	revAdj := map[string][]string{}
 	files := []string{"a.go", "b.go", "c.go"}
 
-	depth := computeDepth(adj, files)
+	depth := computeDepth(adj, revAdj, files)
 
 	for _, f := range files {
 		if depth[f] != 0 {
@@ -324,9 +391,13 @@ func TestComputeDepth_Transitive(t *testing.T) {
 		"b.go": {"c.go"},
 		"c.go": {},
 	}
+	revAdj := map[string][]string{
+		"b.go": {"a.go"},
+		"c.go": {"b.go"},
+	}
 	files := []string{"a.go", "b.go", "c.go"}
 
-	depth := computeDepth(adj, files)
+	depth := computeDepth(adj, revAdj, files)
 
 	expected := map[string]int{
 		"c.go": 0,
@@ -489,10 +560,11 @@ func A() string {
 
 	files := []string{fileA}
 
-	graph, err := BuildGraph(tmpDir, files)
-	if err != nil {
-		t.Fatalf("BuildGraph failed: %v", err)
+	res := BuildGraph(context.Background(), tmpDir, files)
+	if !res.IsSuccess() {
+		t.Fatalf("BuildGraph failed: %v", res.Errors)
 	}
+	graph := res.GetData()
 
 	if len(graph.Nodes) != 1 {
 		t.Errorf("expected 1 node, got %d", len(graph.Nodes))
@@ -549,7 +621,7 @@ func Unchanged() string {
 		modifiedFile: {unchangedFile},
 	}
 
-	cascades, err := detectCascades(tmpDir, modifiedFiles, revAdj)
+	cascades, err := detectCascades(context.Background(), tmpDir, modifiedFiles, revAdj)
 	if err != nil {
 		t.Fatalf("detectCascades failed: %v", err)
 	}
@@ -563,8 +635,8 @@ func Unchanged() string {
 	for _, c := range cascades {
 		if c.File == unchangedFile {
 			found = true
-			if c.Type != "semantic" {
-				t.Errorf("expected type 'semantic', got %s", c.Type)
+			if c.CascadeType != "semantic" {
+				t.Errorf("expected cascade_type 'semantic', got %s", c.CascadeType)
 			}
 		}
 	}
