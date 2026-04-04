@@ -1,3 +1,4 @@
+completion_date: "2026-04-04"
 title: 'Roadmap Hardening: P7 merge ordering, P6 incremental commits, P3 stale briefs, P2 cross-repo verify'
 feature_slug: roadmap-hardening
 verdict: SUITABLE
@@ -652,6 +653,7 @@ waves:
             - cmd/sawtools/finalize_wave.go
           dependencies:
             - A
+      base_commit: fbdbe5db829e1cbfcf411960d8388a018255c15e
 quality_gates:
     level: standard
     gates:
@@ -704,6 +706,19 @@ completion_reports:
             - implementations/claude-code/hooks/auto_commit_on_write
         verification: PASS
         notes: 'All 3 changes complete: wave-agent.md I5 updated with incremental commit instructions, auto_commit_on_write hook created, hook registered in install.sh as async PostToolUse.'
+    D:
+        status: complete
+        branch: saw/roadmap-hardening/wave2-agent-D
+        commit: 0c7b828
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+            - cmd/sawtools/finalize_wave.go
+        tests_added:
+            - TestFinalizeWave_CrossRepoVerifyField
+            - TestFinalizeWave_CrossRepoResultsInitialized
+        verification: PASS
+        notes: Cross-repo baseline verification added to FinalizeWave. Step 5.7 runs after post-merge gates, before cleanup. Informational only (warnings, not fatal). CLI flag --cross-repo-verify wired through.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -758,5 +773,5 @@ critic_report:
     summary: '3 issues found across agents C and D. Agent C: install.sh in file_ownership is a stub that delegates to root install.sh -- the PostToolUse registration section and HOOK_SCRIPTS array are in the root install.sh, not the stub. Agent D: RunBaselineGates call in the brief has wrong arguments (missing waveNumber, includes nonexistent Logger param), and GetData() dereference produces wrong pointer type.'
     reviewed_at: "2026-04-04T09:18:38Z"
     issue_count: 3
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

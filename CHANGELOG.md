@@ -6,6 +6,34 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-04-04)
+- **SA4004:** `finalize.go` closed-loop retry loop unconditionally broke after first agent; restructured to `if len(waveAgents) > 0` index access (semantically identical, lint-clean)
+
+### Added (roadmap-hardening)
+- `sawtools finalize-scout <impl-path>`: consolidates Scout validation steps 16-18 into a single command — runs `validate --fix` → pre-wave-validate (E35 + test cascade + wave structure) → `validate-briefs` → auto-sets `injection_method`; outputs per-step JSON with `failed_step` field; Scout retains fix-between-retries loop
+- `FinalizeWaveOpts.CrossRepoVerify` bool + `--cross-repo-verify` flag: after primary repo merge + verify-build, runs baseline gates on all non-primary repos from IMPL `file_ownership`; informational (warnings, not fatal); Step 5.7 in `FinalizeWave` pipeline
+- `RunScoutFullOpts.RefreshBrief` bool + `sawtools run-scout --refresh-brief` flag: re-runs Scout preserving `file_ownership` and wave structure, only updating agent task descriptions for post-tier-N codebase state
+- `FinalizeWaveResult.CrossRepoResults map[string]*protocol.BaselineData`: holds baseline gate results for non-primary repos; populated by Step 5.7
+
+### Changed (roadmap-hardening)
+- **P7 data-loss fix:** `FinalizeWave` solo-wave detection now checks `AllBranchesAbsent` in addition to `WorktreesAbsent`; when branches exist but worktree directories are gone, pipeline proceeds to full merge instead of skipping (previously caused silent commit loss on cross-repo waves)
+- `TestFinalizeWave_WorktreesGoneBranchesRemain`: new test covering the P7 scenario
+
+### Added (journal-integration)
+- `pkg/orchestrator/orchestrator.go`: calls `journal.Sync()` + `journal.GenerateContext()` on each agent launch to prepend tool journal context to Scout prompts; 30-second periodic goroutine keeps journal in sync during long sessions
+- `pkg/engine/prepare_agent.go`: `PrepareAgentContext` called in `RunSingleAgent` to expose journal context file path
+- `pkg/engine/step_types.go`: `PrepareAgentResult.JournalContextAvailable` (bool) + `JournalContextFile` (string) fields
+
+### Added (sawtools-ux-improvements)
+- `sawtools set-critic-verdict <impl-path> --verdict PASS|ISSUES`: atomically updates critic report verdict; prevents duplicate `critic_report` YAML key that caused `prepare-wave` failures when Orchestrator manually added a second block
+- `FileOwnership.V048Exempt bool` (`v048_exempt: true`): exempts individual files from V048 LOC budget enforcement; validated at write time via `validate_impl_on_write` hook
+
+### Fixed (validate_impl_on_write)
+- Hook matcher changed from `Write` to `Write|Edit`; Edit tool bypassed IMPL validation entirely, allowing invalid YAML sub-keys (e.g. unknown keys in `file_ownership` entries) to persist until `prepare-wave`
+
+### Added (go.work / LSP)
+- `go.work` at module root; `GOWORK` env var in `~/.claude/settings.json` global `env` block — enables full LSP cross-package resolution (findReferences, hover, incomingCalls) for all Claude Code sessions in this module
+
 ### Changed (docs-audit)
 - **README.md:** Added pre-built binary download section (collapsible, curl one-liner with version resolution); 4 platform archives documented (darwin/linux, arm64/amd64)
 

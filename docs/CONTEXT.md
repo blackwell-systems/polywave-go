@@ -360,3 +360,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-journal-integration.yaml
 - **sawtools-ux-improvements**: completed 2026-04-03, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-improvements.yaml
+- **roadmap-hardening**: completed 2026-04-04, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-roadmap-hardening.yaml
