@@ -499,6 +499,7 @@ waves:
             - implementations/claude-code/prompts/agents/wave-agent.md
             - implementations/claude-code/hooks/auto_commit_on_write
             - install.sh
+      base_commit: 51d6b737ab697ad5984d1180d4b89f25fb0b08b3
     - number: 2
       agents:
         - id: D
@@ -666,6 +667,43 @@ quality_gates:
           command: go vet ./...
           required: true
           repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/roadmap-hardening/wave1-agent-A
+        commit: 4e625ad
+        files_changed:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        tests_added:
+            - TestFinalizeWave_WorktreesGoneBranchesRemain
+        verification: PASS
+        notes: Fixed solo-wave detection to also check AllBranchesAbsent. Test verifies pipeline enters full merge path when branches exist but worktrees are gone.
+    B:
+        status: complete
+        branch: saw/roadmap-hardening/wave1-agent-B
+        commit: 02d2082
+        files_changed:
+            - pkg/engine/scout_run.go
+            - pkg/engine/scout_run_test.go
+            - cmd/sawtools/run_scout_cmd.go
+        tests_added:
+            - TestRunScoutFull_RefreshBriefField
+            - TestRunScoutFull_RefreshBriefModifiesFeature
+        verification: PASS
+        notes: RefreshBrief field added to RunScoutFullOpts, state-check bypass implemented, CLI flag wired. All tests pass, vet clean.
+    C:
+        status: complete
+        branch: saw/roadmap-hardening/wave1-agent-C
+        commit: 93d9fdf
+        files_changed:
+            - implementations/claude-code/prompts/agents/wave-agent.md
+            - implementations/claude-code/hooks/auto_commit_on_write
+            - install.sh
+        files_created:
+            - implementations/claude-code/hooks/auto_commit_on_write
+        verification: PASS
+        notes: 'All 3 changes complete: wave-agent.md I5 updated with incremental commit instructions, auto_commit_on_write hook created, hook registered in install.sh as async PostToolUse.'
 pre_mortem:
     overall_risk: medium
     rows:
