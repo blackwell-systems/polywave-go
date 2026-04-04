@@ -534,5 +534,5 @@ critic_report:
     summary: 'Agent A, B, and D briefs are accurate against the codebase. Agent C has a file_ownership error: the brief instructs adding fields to the AgentBriefInfo struct, but that struct is defined in pkg/engine/step_types.go (not in prepare.go), and step_types.go is not listed in Agent C file_ownership. Without ownership of step_types.go, Agent C cannot add the two new fields to AgentBriefInfo. Additionally the IMPL pre-mortem warns of multiple AgentBriefInfo construction sites in prepare.go, but grep shows only one (line 957), making that risk description slightly inaccurate (advisory only).'
     reviewed_at: "2026-04-04T06:09:41Z"
     issue_count: 1
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
