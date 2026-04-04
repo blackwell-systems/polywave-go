@@ -579,6 +579,7 @@ waves:
             - pkg/analyzer/javascript_test.go
             - pkg/analyzer/python_test.go
             - pkg/analyzer/rust_test.go
+      base_commit: 7040e98a53d90da3a86c76be74a556c820e01aa9
     - number: 2
       agents:
         - id: C
@@ -1269,6 +1270,37 @@ quality_gates:
         - type: test
           command: go test ./pkg/analyzer/... ./pkg/result/... ./pkg/engine/... ./cmd/sawtools/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/analyzer-review-fixes/wave1-agent-A
+        commit: 57d9497
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+        tests_added:
+            - TestZCodesHaveCorrectValues
+        verification: PASS
+        notes: Added Z001-Z013 constants and updated package godoc. TestZCodesHaveCorrectValues added; Z codes included in TestAllCodesAreUnique. All gates pass.
+    B:
+        status: complete
+        branch: saw/analyzer-review-fixes/wave1-agent-B
+        commit: be9a85a
+        files_changed:
+            - pkg/analyzer/javascript.go
+            - pkg/analyzer/python.go
+            - pkg/analyzer/javascript_test.go
+            - pkg/analyzer/python_test.go
+            - pkg/analyzer/rust_test.go
+        files_created:
+            - pkg/analyzer/helpers.go
+        tests_added:
+            - TestResolveJSImport_Unresolvable
+            - TestParseJavaScriptFiles_ParserScriptMissing
+            - TestParsePythonFiles_ParserScriptMissing
+            - TestParseRustFiles_BinaryMissingViaPath
+        verification: PASS
+        notes: All P0/P1/P2 bugs fixed. fileExists moved to helpers.go; removed from javascript.go. resolveJSImport now returns error on failure. python.go uses exec.LookPath + os.Stat guard. rust.go unchanged (PATH lookup already in place). All quality gates pass.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1393,5 +1425,5 @@ critic_report:
     summary: 'One error found across 10 agents. Agent C''s interface contract for Analyzer.ResolveImportPath is inaccurate: the actual function in analyzer.go is a package-level function (not a method on *Analyzer), has a different parameter order (importPath, repoRoot, modulePath vs contract''s importPath, modulePath, repoRoot), and takes no context.Context. The interface contract definition published to downstream agents (D, E, F, G, H, I) is wrong and will cause compile errors if those agents reference that signature. Three warnings were also found: Agent F''s brief references a non-existent field CallerAgent on WiringDeclaration (the field is Agent); Agent G''s brief incorrectly attributes runner.go to Agent H instead of Agent I; Agent B''s brief instructs a PATH-lookup fix for rust.go that is already implemented.'
     reviewed_at: "2026-04-03T06:27:38Z"
     issue_count: 4
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
