@@ -225,6 +225,25 @@ go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
 ```
 
 <details>
+<summary>Download pre-built binary (no Go/Homebrew required)</summary>
+
+Pre-built binaries for macOS and Linux are attached to every [GitHub release](https://github.com/blackwell-systems/scout-and-wave-go/releases/latest).
+
+```bash
+# Resolve latest version and download (macOS Apple Silicon shown)
+VERSION=$(curl -sI https://github.com/blackwell-systems/scout-and-wave-go/releases/latest | grep -i location | sed 's|.*/v||;s/\r//')
+curl -sL "https://github.com/blackwell-systems/scout-and-wave-go/releases/download/v${VERSION}/sawtools_${VERSION}_darwin_arm64.tar.gz" | tar xz
+mkdir -p ~/.local/bin && mv sawtools ~/.local/bin/
+
+# Available archives:
+#   sawtools_{version}_darwin_arm64.tar.gz   (macOS Apple Silicon)
+#   sawtools_{version}_darwin_amd64.tar.gz   (macOS Intel)
+#   sawtools_{version}_linux_amd64.tar.gz    (Linux x86_64)
+#   sawtools_{version}_linux_arm64.tar.gz    (Linux ARM64)
+```
+</details>
+
+<details>
 <summary>Build from source (for contributors)</summary>
 
 ```bash

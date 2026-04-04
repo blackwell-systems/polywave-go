@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed (docs-audit)
+- **README.md:** Added pre-built binary download section (collapsible, curl one-liner with version resolution); 4 platform archives documented (darwin/linux, arm64/amd64)
+
 ### Added (between-wave-integration-hotfix)
 - `N099_CALLER_CASCADE_HOTFIX_FAILED` error code constant in `pkg/result/codes.go`
 - `CallerCascadeError` struct: represents a single compiler error in a future-wave-owned file
