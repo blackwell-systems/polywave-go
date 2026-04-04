@@ -368,6 +368,20 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeTestCascadeOrphan", CodeTestCascadeOrphan},
 		{"CodeWaveStructureCallerBefore", CodeWaveStructureCallerBefore},
 		{"CodeWaveStructureMissingDep", CodeWaveStructureMissingDep},
+		// Z codes
+		{"CodeAnalyzeParseFailed", CodeAnalyzeParseFailed},
+		{"CodeAnalyzeGomodReadFailed", CodeAnalyzeGomodReadFailed},
+		{"CodeAnalyzeModuleNotFound", CodeAnalyzeModuleNotFound},
+		{"CodeAnalyzeImportResolveFailed", CodeAnalyzeImportResolveFailed},
+		{"CodeAnalyzeCycleDetected", CodeAnalyzeCycleDetected},
+		{"CodeAnalyzeUnsupportedLang", CodeAnalyzeUnsupportedLang},
+		{"CodeAnalyzeNodeMissing", CodeAnalyzeNodeMissing},
+		{"CodeAnalyzeJSParserMissing", CodeAnalyzeJSParserMissing},
+		{"CodeAnalyzePythonMissing", CodeAnalyzePythonMissing},
+		{"CodeAnalyzeRustParserMissing", CodeAnalyzeRustParserMissing},
+		{"CodeAnalyzeManifestNil", CodeAnalyzeManifestNil},
+		{"CodeAnalyzeCircularAgentDep", CodeAnalyzeCircularAgentDep},
+		{"CodeAnalyzeWalkFailed", CodeAnalyzeWalkFailed},
 	}
 
 	seen := make(map[string]string) // value -> constant name
@@ -376,5 +390,36 @@ func TestAllCodesAreUnique(t *testing.T) {
 			t.Errorf("duplicate code value %q: used by both %s and %s", c.value, prev, c.name)
 		}
 		seen[c.value] = c.name
+	}
+}
+
+// TestZCodesHaveCorrectValues verifies each Z-domain analyzer error code constant
+// has the expected string value.
+func TestZCodesHaveCorrectValues(t *testing.T) {
+	cases := []struct {
+		name     string
+		constant string
+		expected string
+	}{
+		{"CodeAnalyzeParseFailed", CodeAnalyzeParseFailed, "Z001_PARSE_FAILED"},
+		{"CodeAnalyzeGomodReadFailed", CodeAnalyzeGomodReadFailed, "Z002_GOMOD_READ_FAILED"},
+		{"CodeAnalyzeModuleNotFound", CodeAnalyzeModuleNotFound, "Z003_MODULE_NOT_FOUND"},
+		{"CodeAnalyzeImportResolveFailed", CodeAnalyzeImportResolveFailed, "Z004_IMPORT_RESOLVE_FAILED"},
+		{"CodeAnalyzeCycleDetected", CodeAnalyzeCycleDetected, "Z005_CYCLE_DETECTED"},
+		{"CodeAnalyzeUnsupportedLang", CodeAnalyzeUnsupportedLang, "Z006_UNSUPPORTED_LANGUAGE"},
+		{"CodeAnalyzeNodeMissing", CodeAnalyzeNodeMissing, "Z007_NODE_MISSING"},
+		{"CodeAnalyzeJSParserMissing", CodeAnalyzeJSParserMissing, "Z008_JS_PARSER_MISSING"},
+		{"CodeAnalyzePythonMissing", CodeAnalyzePythonMissing, "Z009_PYTHON_MISSING"},
+		{"CodeAnalyzeRustParserMissing", CodeAnalyzeRustParserMissing, "Z010_RUST_PARSER_MISSING"},
+		{"CodeAnalyzeManifestNil", CodeAnalyzeManifestNil, "Z011_MANIFEST_NIL"},
+		{"CodeAnalyzeCircularAgentDep", CodeAnalyzeCircularAgentDep, "Z012_CIRCULAR_AGENT_DEP"},
+		{"CodeAnalyzeWalkFailed", CodeAnalyzeWalkFailed, "Z013_WALK_FAILED"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.constant != tc.expected {
+				t.Errorf("%s = %q, want %q", tc.name, tc.constant, tc.expected)
+			}
+		})
 	}
 }
