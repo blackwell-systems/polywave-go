@@ -352,3 +352,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-pipeline-review-fixes.yaml
 - **observability-review-fixes**: completed 2026-04-03, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-observability-review-fixes.yaml
+- **analyzer-review-fixes**: completed 2026-04-03, 4 waves, 10 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-analyzer-review-fixes.yaml

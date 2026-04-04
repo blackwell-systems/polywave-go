@@ -1,3 +1,4 @@
+completion_date: "2026-04-03"
 title: pkg/analyzer Canonicalization Review Fixes
 feature_slug: analyzer-review-fixes
 verdict: SUITABLE
@@ -1260,6 +1261,7 @@ waves:
             - E
             - F
             - G
+      base_commit: fa9add525362bf2f93115f5a53ea09419df483e3
 quality_gates:
     level: standard
     gates:
@@ -1396,6 +1398,32 @@ completion_reports:
             - TestToOutput_Serialization
         verification: PASS
         notes: 'deps.go replaced with tombstone comment; AnalyzeDeps deleted (P1-7). deps_test.go migrated to 4 substantive BuildGraph tests. types_test.go required no changes (already used CascadeCandidate). Commit used --no-verify: pre-commit hook runs go vet ./... which fails on runner.go:1200 (out-of-scope dep - Agent I Wave 4 will fix). pkg/analyzer build/vet/test all PASS. Out-of-scope dep: pkg/engine/runner.go calls analyzer.AnalyzeDeps - Agent I must migrate to BuildGraph+ToOutput.'
+    H:
+        status: complete
+        branch: saw/analyzer-review-fixes/wave4-agent-H
+        commit: fa9add5
+        files_changed:
+            - cmd/sawtools/analyze_deps_cmd.go
+            - cmd/sawtools/detect_wiring_cmd.go
+            - cmd/sawtools/detect_cascades_cmd.go
+            - cmd/sawtools/detect_shared_types_cmd.go
+            - cmd/sawtools/analyze_deps_cmd_test.go
+        verification: PASS
+        notes: All four cmd/sawtools files already use the correct result.Result[T] API in the wave4 baseline. No changes needed. Build, vet, and tests all pass.
+    I:
+        status: complete
+        branch: saw/analyzer-review-fixes/wave4-agent-I
+        commit: fa9add5
+        files_changed:
+            - pkg/engine/runner.go
+        verification: PASS
+        notes: 'AnalyzeDeps call was already replaced with BuildGraph+ToOutput as a baseline hotfix (commit 939ba81, fixed in fa9add5). Verified: go build ./..., go vet ./..., all tests pass including full quality gate suite.'
+    J:
+        status: complete
+        branch: saw/analyzer-review-fixes/wave4-agent-J
+        commit: fa9add5
+        verification: PASS
+        notes: No changes needed. All three test files exercise commands via cobra (newDetectCascadesCmd, newDetectWiringCmd, newDetectSharedTypesCmd) and do not directly call analyzer functions. Build, vet, and all 20 tests pass without modification.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1520,5 +1548,5 @@ critic_report:
     summary: 'One error found across 10 agents. Agent C''s interface contract for Analyzer.ResolveImportPath is inaccurate: the actual function in analyzer.go is a package-level function (not a method on *Analyzer), has a different parameter order (importPath, repoRoot, modulePath vs contract''s importPath, modulePath, repoRoot), and takes no context.Context. The interface contract definition published to downstream agents (D, E, F, G, H, I) is wrong and will cause compile errors if those agents reference that signature. Three warnings were also found: Agent F''s brief references a non-existent field CallerAgent on WiringDeclaration (the field is Agent); Agent G''s brief incorrectly attributes runner.go to Agent H instead of Agent I; Agent B''s brief instructs a PATH-lookup fix for rust.go that is already implemented.'
     reviewed_at: "2026-04-03T06:27:38Z"
     issue_count: 4
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

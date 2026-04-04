@@ -6,6 +6,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (analyzer-review-fixes)
+- Z-domain error code constants Z001–Z013 in `pkg/result/codes.go` for `pkg/analyzer` operations (parse, gomod, module, import resolution, cycle detection, unsupported language, node missing, JS/Python/Rust parser missing, nil manifest, circular agent dep, walk failed)
+- `pkg/analyzer/helpers.go`: `fileExists` helper extracted from `javascript.go` into a dedicated package-internal file
+
+### Changed (analyzer-review-fixes)
+- `pkg/analyzer/analyzer.go`: `ParseFile`, `ExtractImports`, `ResolveImportPath` migrated from `(T, error)` to `result.Result[T]`; `ResolveImportPath` promoted to package-level function with `ctx` first param; `IsStdlib` simplified from 30-entry prefix list to dot-free heuristic (`!strings.Contains(parts[0], ".")`)
+- `pkg/analyzer/graph.go`: `BuildGraph` migrated to `result.Result[*DepGraph]` with `ctx context.Context` first param; `computeDepth` O(n²) eliminated by passing pre-built `revAdj` map; context propagated throughout `parseGoFiles` and `detectCascades`
+- `pkg/analyzer/types.go`: `DepGraph.CascadeCandidates` changed from `[]CascadeFile` to `[]CascadeCandidate`; `CascadeFile` struct removed
+- `pkg/analyzer/cascade.go`: `DetectCascades` migrated to `result.Result[CascadeResult]`
+- `pkg/analyzer/output.go`: `OutputCascade` struct removed; `Output.CascadeCandidates` changed to `[]CascadeCandidate`; `FormatYAML` and `FormatJSON` migrated to `result.Result[[]byte]`
+- `pkg/analyzer/shared_types.go`: `DetectSharedTypes` migrated to `result.Result[T]`; nil manifest returns `Z011_MANIFEST_NIL` FATAL result; `extractTypeReferences` collapsed from 76-line copy-paste to table-driven `[]langPatternEntry` loop
+- `pkg/analyzer/wiring.go`: `DetectWiring` gains `ctx context.Context` first param; migrated to `result.Result[T]`; `findDefiningAgent` 2+-agent heuristic fallback removed (eliminates stdlib false-positive wiring declarations)
+- `pkg/analyzer/deps.go`: `AnalyzeDeps` deleted (tombstoned); callers updated to use `BuildGraph + ToOutput` directly
+- `pkg/analyzer/javascript.go`: `js-parser.js` lookup uses `exec.LookPath`; `resolveJSImport` returns error instead of synthesized path
+- `pkg/analyzer/python.go`: parser script existence guard replaced with `exec.LookPath` + `os.Stat`
+- `cmd/sawtools`: all analyzer command callers updated to `result.Result[T]` unwrap pattern
+- `pkg/engine/runner.go`: `AnalyzeDeps` call replaced with `BuildGraph + ToOutput`
+
 ### Added (observability-review-fixes)
 - `O001_OBS_EMIT_FAILED`, `O002_OBS_QUERY_FAILED`: first O-series observability error code domain in `pkg/result/codes.go`
 - `AgentHistoryData`, `CostBreakdownData`, `FailurePatternsData` wrapper types in `pkg/observability/query.go`
