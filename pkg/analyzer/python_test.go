@@ -7,17 +7,36 @@ import (
 	"testing"
 )
 
+// setupMockPythonParserOnPath creates a mock python-parser.py in a temp dir and prepends it to PATH.
+// Returns a cleanup function that restores the original PATH.
+func setupMockPythonParserOnPath(t *testing.T, parserContent string) (repoRoot string, cleanup func()) {
+	t.Helper()
+
+	repoRoot = t.TempDir()
+
+	// Create the mock parser in a separate bin dir on PATH.
+	binDir := t.TempDir()
+	mockParser := filepath.Join(binDir, "python-parser.py")
+	if err := os.WriteFile(mockParser, []byte(parserContent), 0755); err != nil {
+		t.Fatalf("failed to create mock parser: %v", err)
+	}
+
+	// Prepend binDir to PATH so exec.LookPath("python-parser.py") finds it.
+	originalPath := os.Getenv("PATH")
+	os.Setenv("PATH", binDir+string(os.PathListSeparator)+originalPath)
+
+	cleanup = func() {
+		os.Setenv("PATH", originalPath)
+	}
+	return repoRoot, cleanup
+}
+
 func TestParsePythonFiles_Simple(t *testing.T) {
 	// Skip if python3 not available
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 not found, skipping test")
 	}
 
-	// Create a temporary directory with test files
-	tmpDir := t.TempDir()
-
-	// Create python-parser.py mock
-	parserScript := filepath.Join(tmpDir, "python-parser.py")
 	parserContent := `#!/usr/bin/env python3
 import sys
 import json
@@ -28,9 +47,8 @@ if "simple.py" in file:
 else:
     print(json.dumps({"file": file, "imports": ["json", "os"]}))
 `
-	if err := os.WriteFile(parserScript, []byte(parserContent), 0755); err != nil {
-		t.Fatalf("failed to create parser script: %v", err)
-	}
+	tmpDir, cleanup := setupMockPythonParserOnPath(t, parserContent)
+	defer cleanup()
 
 	// Create test files
 	simplePy := filepath.Join(tmpDir, "simple.py")
@@ -56,10 +74,6 @@ func TestParsePythonFiles_AbsoluteImports(t *testing.T) {
 		t.Skip("python3 not found, skipping test")
 	}
 
-	tmpDir := t.TempDir()
-
-	// Create python-parser.py mock
-	parserScript := filepath.Join(tmpDir, "python-parser.py")
 	parserContent := `#!/usr/bin/env python3
 import sys
 import json
@@ -71,9 +85,8 @@ elif "internal/utils.py" in file:
 else:
     print(json.dumps({"file": file, "imports": []}))
 `
-	if err := os.WriteFile(parserScript, []byte(parserContent), 0755); err != nil {
-		t.Fatalf("failed to create parser script: %v", err)
-	}
+	tmpDir, cleanup := setupMockPythonParserOnPath(t, parserContent)
+	defer cleanup()
 
 	// Create test files
 	importsPy := filepath.Join(tmpDir, "imports.py")
@@ -117,10 +130,6 @@ func TestParsePythonFiles_RelativeImports(t *testing.T) {
 		t.Skip("python3 not found, skipping test")
 	}
 
-	tmpDir := t.TempDir()
-
-	// Create python-parser.py mock
-	parserScript := filepath.Join(tmpDir, "python-parser.py")
 	parserContent := `#!/usr/bin/env python3
 import sys
 import json
@@ -132,9 +141,8 @@ elif "simple.py" in file:
 else:
     print(json.dumps({"file": file, "imports": []}))
 `
-	if err := os.WriteFile(parserScript, []byte(parserContent), 0755); err != nil {
-		t.Fatalf("failed to create parser script: %v", err)
-	}
+	tmpDir, cleanup := setupMockPythonParserOnPath(t, parserContent)
+	defer cleanup()
 
 	// Create test files in pkg/foo/
 	pkgDir := filepath.Join(tmpDir, "pkg", "foo")
@@ -174,8 +182,6 @@ else:
 
 func TestParsePythonFiles_BinaryMissing(t *testing.T) {
 	// This test verifies that the function returns an error if python3 is not found
-	// We can't actually test this without manipulating PATH, so we'll just document
-	// the expected behavior
 
 	tmpDir := t.TempDir()
 	files := []string{filepath.Join(tmpDir, "test.py")}
@@ -191,20 +197,32 @@ func TestParsePythonFiles_BinaryMissing(t *testing.T) {
 	}
 }
 
+// TestParsePythonFiles_ParserScriptMissing tests that an error is returned
+// when python-parser.py is not found (using os.Stat guard, not subprocess).
 func TestParsePythonFiles_ParserScriptMissing(t *testing.T) {
 	// Skip if python3 not available
-	if _, err := exec.LookPath("python3"); err != nil {
+	python3Path, err := exec.LookPath("python3")
+	if err != nil {
 		t.Skip("python3 not found, skipping test")
 	}
 
-	tmpDir := t.TempDir()
+	// Build a PATH that contains python3 but not python-parser.py.
+	python3Dir := filepath.Dir(python3Path)
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+	os.Setenv("PATH", python3Dir)
 
-	// Don't create python-parser.py
+	tmpDir := t.TempDir()
 	files := []string{filepath.Join(tmpDir, "test.py")}
 
-	_, err := parsePythonFiles(tmpDir, files)
+	_, err = parsePythonFiles(tmpDir, files)
 	if err == nil {
 		t.Error("expected error when python-parser.py is missing, got nil")
+	}
+
+	// Verify the error is from the Go-side PATH-lookup check, not subprocess.
+	if !contains(err.Error(), "python-parser.py not found in PATH") {
+		t.Errorf("expected error about python-parser.py not in PATH, got: %v", err)
 	}
 }
 
