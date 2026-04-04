@@ -59,6 +59,7 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `check-completion` | Status | Check if an agent has a completion report |
 | `set-impl-state` | Status | Atomically transition an IMPL manifest to a new protocol state |
 | `set-critic-review` | Status | Write critic review result to IMPL doc (E37) |
+| `set-critic-verdict` | Status | Update `critic_report.verdict` in an existing IMPL doc |
 | `mark-complete` | Status | Write completion marker and archive IMPL manifest |
 | `program-status` | Status | Display full program status report |
 | `mark-program-complete` | Status | Mark a PROGRAM manifest as complete |
@@ -130,6 +131,21 @@ sawtools validate docs/IMPL/my-feature.yaml
 sawtools validate docs/IMPL/my-feature.yaml --solver
 sawtools validate docs/IMPL/my-feature.yaml --fix
 ```
+
+**`file_ownership` entry fields:**
+
+Each entry in the `file_ownership` array supports the following fields:
+
+- `file` (string, required): File path owned by this agent.
+- `agent` (string, required): Agent ID that owns this file.
+- `wave` (int, required): Wave number in which this file is owned.
+- `action` (string, optional): `new`, `modify`, or `delete`.
+- `depends_on` ([]string, optional): Other files this file depends on.
+- `repo` (string, optional): Repo identifier for cross-repo waves.
+- `v048_exempt` (bool, optional): When `true`, skips the V048_AGENT_LOC_BUDGET
+  line-count check for this file. Use for large documentation files (e.g., files
+  exceeding 2000 lines) that cannot be split. All other validators still apply.
+  Default: `false` (omitted from YAML when false).
 
 ---
 
@@ -1406,6 +1422,37 @@ sawtools set-critic-review docs/IMPL/IMPL-feature.yaml \
   --verdict PASS --summary "All briefs verified" \
   --agent-reviews '[{"agent_id":"A","verdict":"PASS","issues":[]}]'
 ```
+
+---
+
+### set-critic-verdict
+
+Atomically updates `critic_report.verdict` in an existing IMPL doc.
+Use after the Orchestrator corrects IMPL issues flagged by the critic,
+to transition the verdict from `ISSUES` to `PASS` without manually editing YAML.
+This avoids the duplicate-key YAML error that can occur with manual edits.
+
+```
+sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
+```
+
+**Arguments:**
+- `impl-path` -- path to IMPL document (required)
+
+**Flags:**
+- `--verdict` (required): New verdict value. Accepted values: `pass`, `issues`,
+  `warning` (case-insensitive; stored as uppercase: PASS, ISSUES, WARNING).
+
+**Output:** JSON object:
+```json
+{"impl_path": "...", "old_verdict": "ISSUES", "new_verdict": "PASS"}
+```
+
+**Exit codes:** 0 on success. 1 if `critic_report` key does not exist in the IMPL.
+
+**Note:** `set-critic-review` is used by critic agents to write the full structured
+review result. `set-critic-verdict` is a lightweight Orchestrator-facing command
+to update just the verdict field after manual corrections are applied.
 
 ---
 
