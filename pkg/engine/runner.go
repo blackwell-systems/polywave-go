@@ -1197,7 +1197,16 @@ func runScoutAutomation(ctx context.Context, repoPath string, featureDescription
 	}
 
 	// H3: Analyze dependencies
-	depsResult, depsErr := analyzer.AnalyzeDeps(ctx, repoPath, targetFiles)
+	// Baseline hotfix: AnalyzeDeps deleted in analyzer-review-fixes; Agent I (wave 4) owns final form.
+	var depsResult *analyzer.Output
+	var depsErr error
+	graphResult := analyzer.BuildGraph(ctx, repoPath, targetFiles)
+	if graphResult.IsFatal() {
+		depsErr = fmt.Errorf("%s", graphResult.Errors[0].Message)
+	} else {
+		depsResult = analyzer.ToOutput(graphResult.GetData())
+	}
+	_ = depsErr // used below
 	if depsErr != nil {
 		sections = append(sections, fmt.Sprintf("### Dependency Analysis (H3)\nAnalysis failed: %v", depsErr))
 	} else {
