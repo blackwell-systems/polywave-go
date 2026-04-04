@@ -2,7 +2,7 @@
 
 E-rules are numbered execution constraints checked by the engine at specific lifecycle phases. Some are structural (enforced by the YAML validator), some are behavioral (enforced at runtime by `prepare-wave`, `finalize-wave`, or the orchestrator), and some are informational (surfaced as warnings without blocking).
 
-Rules from the I-series (I1–I6) are invariants checked by the manifest validator and are not listed here — see `docs/reference/error-codes.md` for the V-series codes that replace them.
+Rules from the I-series (I1–I6) are invariants summarized at the end of this document. See the canonical `protocol/invariants.md` for full formal statements and enforcement details, and `docs/reference/error-codes.md` for the V-series codes that map to invariant violations.
 
 ---
 
@@ -41,7 +41,12 @@ Rules from the I-series (I1–I6) are invariants checked by the manifest validat
 | E38 | Gate Result Cache | wave / finalize | automatic | Gate results cached by HEAD commit + command hash to avoid redundant re-runs |
 | E40 | Observability Events | scout / tier loop | automatic | Lifecycle events (`scout_launch`, `scout_complete`, `tier_gate_passed/failed`) emitted to observability |
 | E41 | Type Collision Pre-Wave | pre-wave (prepare) | blocking | Type collision check (same as E27) run during `prepare-wave` before worktrees are created |
-| E44 | Agent Brief Naming | pre-wave (prepare) | automatic | `saw_name` YAML frontmatter injected into agent briefs for Orchestrator task naming |
+| E42 | SubagentStop Validation | wave (agent stop) | blocking | Agent protocol obligations verified at session close: I1 ownership, I5 commits, completion report |
+| E43 | Hook-Based Isolation Enforcement | wave (agent lifecycle) | blocking | Four-hook defense-in-depth: env injection, cd auto-injection, write path validation, compliance verification |
+| E44 | Context Injection Observability | scout / pre-wave | non-fatal (warning) | `injection_method` and `context_source` recorded on IMPL doc for observability audit |
+| E45 | Shared Data Structure Scaffold Detection | scout | automatic | Scout detects structs/enums/types referenced by 2+ agents and adds them to Scaffolds section |
+| E46 | Test File Cascade Detection | scout / pre-wave | blocking (pre-wave) | Test files referencing changed interfaces detected and assigned to interface-changing agent |
+| E47 | Between-Wave Caller Cascade Hotfix | finalize-wave | automatic | Caller cascade compile errors from signature changes auto-fixed by hotfix agent inline |
 
 ---
 
@@ -420,16 +425,121 @@ The rationale: detecting collisions before launch is cheaper than discovering th
 
 ---
 
-### E44 — Agent Brief Naming
+### E42 — SubagentStop Validation
 
-Each agent brief (the prompt handed to a wave agent) includes a YAML frontmatter block with a `saw_name` field:
+At the SubagentStop lifecycle event, a hook validates that the completing agent has fulfilled its protocol obligations before the agent session closes. The hook identifies SAW agents by parsing the `[SAW:...]` tag from `agent_description` and runs agent-type-specific checks. Non-SAW agents pass through immediately (exit 0).
 
-```
+Validation matrix by agent type:
+- **Wave agents:** I1 ownership verification (`git diff --name-only` vs `.saw-ownership.json`), I5 commit verification (at least 1 commit ahead of merge base), completion report presence in IMPL doc.
+- **Critic agents:** `critic_report:` field present with `verdict`, `agents_reviewed`, and `issues` keys.
+- **Scout agents:** IMPL doc exists at expected path and passes `sawtools validate`.
+- **Scaffold agents:** All scaffold entries have `status: committed (...)`.
+
+Exit codes: 0 = pass, 2 = block (unfulfilled obligations). The active IMPL path is read from `.saw-state/active-impl` (written by `prepare-wave`), falling back to extraction from `agent_description`.
+
+**Implementation:** Claude Code hook script (`validate_agent_stop`); `pkg/protocol/ownership_check.go`, `pkg/protocol/commit_check.go`.
+
 ---
-saw_name: "[SAW:wave1:agent-A] Implement auth handler"
+
+### E43 — Hook-Based Isolation Enforcement
+
+Orchestrator ensures Claude Code lifecycle hooks are installed and active before launching wave agents. Hook-based enforcement supersedes instruction-based isolation (agents following written protocol).
+
+Four-hook defense-in-depth:
+1. **SubagentStart (`inject_worktree_env`):** Sets `SAW_AGENT_WORKTREE`, `SAW_AGENT_ID`, `SAW_WAVE_NUMBER`, `SAW_IMPL_PATH`, `SAW_BRANCH` environment variables. Non-blocking.
+2. **PreToolUse:Bash (`inject_bash_cd`):** Prepends `cd $SAW_AGENT_WORKTREE &&` to every bash command. Fires only when `SAW_AGENT_WORKTREE` is non-empty (skips solo waves). Non-blocking.
+3. **PreToolUse:Write/Edit (`validate_write_paths`):** Blocks relative paths and paths outside worktree boundaries (exit 2). Fires only when `SAW_AGENT_WORKTREE` is non-empty.
+4. **SubagentStop (`verify_worktree_compliance`):** Checks completion report exists (E42/I4) and commits exist on branch (I5). Non-blocking (warnings logged to stderr for audit trail).
+
+E43 enforces E4 mechanically. Before E43, agents followed written protocol and violations were possible via agent error or context compaction loss. After E43, relative paths and out-of-bounds writes are blocked at the tool boundary.
+
+**Implementation:** Claude Code hook scripts in `implementations/claude-code/hooks/`.
+
 ---
-```
 
-This name is derived from the wave number, agent ID, and a short summary of the agent's task. The orchestrator uses `saw_name` to label task tabs in Claude Code's UI, making multi-agent waves visually distinguishable.
+### E44 — Context Injection Observability
 
-**Implementation:** `pkg/engine/prepare.go` in brief generation (`briefTaskSummary`).
+**Scout obligation:** Before completing, the Scout calls `sawtools set-injection-method <impl-doc-path> --method <value>` to record how reference files were received. Valid values: `hook`, `manual-fallback`, `unknown`.
+
+**Orchestrator obligation:** `sawtools prepare-agent` automatically writes `context_source` to each agent entry when extracting the brief. Valid values: `prepared-brief`, `cross-repo-full`. The orchestrator may write `fallback-full-context` manually when the fallback prompt path was used.
+
+**Enforcement:** `sawtools validate` warns (non-blocking) when `injection_method` is absent on an active IMPL, and warns when `context_source` is absent on wave agents in `WAVE_EXECUTING`/`WAVE_MERGING`/`WAVE_VERIFIED` state.
+
+**Implementation:** `pkg/protocol/fieldvalidation.go` (injection_method/context_source checks); `cmd/sawtools/set_injection_method.go`.
+
+---
+
+### E45 — Shared Data Structure Scaffold Detection
+
+During the Scout phase, after defining agent tasks but before finalizing the IMPL doc, the Scout scans agent task prompts, file_ownership, and interface_contracts to detect data structures (structs, enums, type aliases, traits) referenced by 2+ agents. For each detected shared type, an entry is added to the Scaffolds section of the IMPL doc.
+
+Detection heuristics:
+- Agent A owns file X, Agent B's task says "import TypeName from X"
+- Type appears in interface_contracts AND 2+ agent tasks reference it
+- Same struct/enum name mentioned in multiple agents' "Interfaces to implement"
+
+Does NOT trigger for types from external packages, types in existing codebase files not owned by any agent, or types mentioned in only one agent's task.
+
+**Automated tool:** `sawtools detect-shared-types <impl-doc>` automates this detection. Scout invokes it after writing agent prompts and merges output into the Scaffolds section.
+
+**Implementation:** `pkg/protocol/shared_type_detection.go`; `cmd/sawtools/detect_shared_types.go`.
+
+---
+
+### E46 — Test File Cascade Detection
+
+When an interface contract involves signature changes, test files referencing the interface must be detected and assigned to an agent in the same wave.
+
+Detection layers:
+1. **Scout-time (primary):** During dependency analysis, Scout scans for `*_test.go` files that reference changed interfaces using `sawtools check-callers`. Unowned test files are assigned to the interface-changing agent.
+2. **Pre-wave validation (E35 extension):** `sawtools pre-wave-validate` runs E35 detection including `detectTestCascades()`. Reports orphaned test files as E35Gap entries. Also runs `check-test-cascade` for a whole-repo scan; exits 1 if any orphaned test callers are found.
+
+Rationale: Interface signature changes break test files, but test files are often not included in file_ownership because Scout focuses on implementation files. E46 prevents the 30+ minute manual post-merge fix cycle.
+
+**Implementation:** `pkg/protocol/e35_detection.go` — `detectTestCascades`; `cmd/sawtools/check_test_cascade.go`.
+
+---
+
+### E47 — Between-Wave Caller Cascade Hotfix
+
+When `finalize-wave`'s verify-build step completes with `CallerCascadeOnly=true` — meaning ALL build errors are in future-wave-owned or unowned files (caller cascade side-effects, not genuine wave N failures) — the hotfix step runs automatically.
+
+`finalize-wave` detects `CallerCascadeOnly=true` and runs `apply-cascade-hotfix` inline (step 6a). The hotfix agent is restricted to files in `CallerCascadeErrors` and applies minimal caller fixes: `result.Result[T]` unwrapping, ctx param additions, deleted symbol replacements. Commits as `[SAW:wave{N}:integration-hotfix]`.
+
+**Distinction from E26:** E26 wires unconnected exports (logical gaps, no compile error). E47 fixes compile errors in callers caused by signature changes in the wave that just completed.
+
+**Debugging:** Pass `--dry-run` to `finalize-wave` to see what cascade errors would be hotfixed without running the agent.
+
+**Implementation:** `pkg/engine/finalize.go` — step `apply_cascade_hotfix`; `pkg/engine/cascade_hotfix.go`.
+
+---
+
+## Invariants (I1–I6)
+
+The canonical definitions live in `protocol/invariants.md`. This section summarizes each invariant and its enforcement mechanism for quick reference.
+
+### I1 — Disjoint File Ownership
+
+No two agents in the same wave own the same file. Enforced by six defense-in-depth layers: E43 hooks (Layer 0, primary), E3 pre-launch validation (Layer 1), E37 Critic gate (Layer 2), PrepareWave runtime check (Layer 3), E11 conflict prediction at merge (Layer 4), and E42 SubagentStop ownership audit (Layer 5). Cross-repo scope: I1 applies per-repository.
+
+**Amendments:** Integration Agent (E26) is exempt (runs after merge, sole writer). Identical edits producing byte-identical content are non-blocking at merge time. Post-hoc undeclared-modification detection flags files modified outside declared ownership even when no other agent owns that file.
+
+### I2 — Interface Contracts Precede Parallel Implementation
+
+The Scout defines all interfaces that cross agent boundaries in the IMPL doc, including shared data structures (structs, enums, type aliases, traits) referenced by 2+ agents. The Scaffold Agent materializes them as committed type scaffold files before any Wave Agent launches. Contracts are frozen when worktrees are created (E2). Detection of shared types is covered by E45.
+
+### I3 — Wave Sequencing
+
+Wave N+1 does not launch until Wave N has been merged and post-merge verification has passed. `PrepareWave` enforces this at the execution layer: when `WaveNum > 1`, it verifies all agents in wave `WaveNum - 1` have completion reports with `status: complete` before creating worktrees.
+
+### I4 — IMPL Doc is the Single Source of Truth
+
+Completion reports, interface contract updates, and status are written to the IMPL doc. Chat output is not the record. The tool journal (E23A) complements the IMPL doc for execution history without violating I4. E42 enforces I4 at agent completion time by verifying completion reports exist in the IMPL doc.
+
+### I5 — Agents Commit Before Reporting
+
+Each agent commits its changes to its worktree branch before writing a completion report. Uncommitted state at report time is a protocol deviation. E42 performs post-hoc I5 commit verification at SubagentStop time. E43's `verify_worktree_compliance` hook creates an audit trail. Cross-repo agents may commit directly to the target repo's default branch.
+
+### I6 — Role Separation
+
+The Orchestrator does not perform Scout, Scaffold Agent, Wave Agent, or Integration Agent duties. Enforced via orchestrator prompt instructions and agent type restrictions, not via SDK validators or lifecycle hooks. Solo wave work must still be launched as an asynchronous agent — executing inline violates I6 regardless of wave size.
