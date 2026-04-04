@@ -42,7 +42,7 @@ sawtools --repo-dir /path/to/repo [command] ...
 | `run-integration-agent` | Execution | Launch integration agent to wire integration gaps (E26) |
 | `run-integration-wave` | Execution | Execute planned integration wave (E27) |
 | `pre-wave-validate` | Execution | Run E16 validation + E35 gap detection before wave execution |
-| `finalize-wave` | Execution | Finalize wave: verify, scan, gate, merge, build, cleanup |
+| `finalize-wave` | Execution | Finalize wave: verify, scan, gate, merge, build, apply-cascade-hotfix, cleanup |
 | `finalize-impl` | Execution | Finalize IMPL doc: validate, populate gates, validate again |
 | `close-impl` | Execution | Close an IMPL: mark complete, archive, update context, clean worktrees |
 | `verify-commits` | Execution | Verify agent branches have commits (I5) |
@@ -835,6 +835,7 @@ Execution order:
 4. ValidateIntegration (E25, informational)
 5. MergeAgents
 6. VerifyBuild (test + lint)
+6a. apply-cascade-hotfix (E47): if CallerCascadeOnly, auto-launch hotfix agent
 7. RunPostMergeGates (content/integration gates, E21)
 8. Cleanup
 
@@ -847,8 +848,9 @@ sawtools finalize-wave <manifest-path> --wave <n>
 
 **Flags:**
 - `--wave` -- wave number (required)
+- `--dry-run` -- show what cascade errors would be hotfixed without running the agent; outputs JSON with `step`, `dry_run`, `error_count`, `files`, `errors`; exits 0
 
-**Output:** JSON object with per-step results.
+**Output:** JSON object with per-step results. When CallerCascadeOnly errors are detected and hotfix runs, an additional JSON object appears: `{"step":"apply-cascade-hotfix","status":"success","files_fixed":[...],"commit":"<sha>","build_passed":true}`
 
 **Exit codes:** 0 if all steps succeed, 1 if any step fails.
 
@@ -856,6 +858,36 @@ sawtools finalize-wave <manifest-path> --wave <n>
 ```bash
 sawtools finalize-wave docs/IMPL/my-feature.yaml --wave 1
 ```
+
+---
+
+### apply-cascade-hotfix (finalize-wave step)
+
+Named step within `finalize-wave` (E47). Automatically triggered when
+`VerifyBuild` fails and `CallerCascadeOnly=true` — meaning ALL errors are
+in future-wave-owned or unowned files, not in the current wave's own files.
+
+**When it runs:** Immediately after step 6 (VerifyBuild), before step 7
+(RunPostMergeGates). Not invoked by the Orchestrator directly.
+
+**What it does:**
+1. Launches an integration-style agent restricted to files listed in
+   `CallerCascadeErrors`
+2. Agent applies minimal caller fixes: result.Result[T] unwrapping,
+   ctx param additions, deleted symbol replacements
+3. Agent commits as:
+   `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+4. Re-runs `go build ./... && go vet ./...` to confirm clean
+
+**Output fields:** `step` (string), `status` ("success"), `files_fixed`
+([]string), `commit` (string SHA), `build_passed` (bool).
+
+**Dry-run mode:** Pass `--dry-run` to `finalize-wave` to see what would
+be hotfixed without running the agent.
+
+**Failure:** If the agent cannot fix all errors, `finalize-wave` exits 1
+with `"apply-cascade-hotfix: build still fails after hotfix"`. Route
+through E7/E8 as a genuine build failure.
 
 ---
 
