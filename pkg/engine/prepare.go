@@ -954,14 +954,33 @@ func extractBriefsAndInitJournals(
 			}
 		}
 
+		// Sync journal and surface context availability for the LLM orchestrator.
+		// Non-fatal: fresh agents have no session history; errors are silently skipped.
+		journalContextAvailable := false
+		journalContextFile := ""
+		if syncRes := observer.Sync(); syncRes.IsSuccess() {
+			sr := syncRes.GetData()
+			if sr != nil && sr.NewToolUses > 0 {
+				if ctxRes := observer.GenerateContext(); ctxRes.IsSuccess() {
+					contextFile := filepath.Join(observer.JournalDir, "context.md")
+					if writeErr := os.WriteFile(contextFile, []byte(ctxRes.GetData()), 0644); writeErr == nil {
+						journalContextAvailable = true
+						journalContextFile = contextFile
+					}
+				}
+			}
+		}
+
 		agentBriefs = append(agentBriefs, AgentBriefInfo{
-			Agent:       agentID,
-			BriefPath:   briefPath,
-			BriefLength: len(brief),
-			JournalDir:  observer.JournalDir,
-			FilesOwned:  len(agentFiles),
-			Repo:        agentRepoName,
-			MergeTarget: opts.MergeTarget,
+			Agent:                   agentID,
+			BriefPath:               briefPath,
+			BriefLength:             len(brief),
+			JournalDir:              observer.JournalDir,
+			FilesOwned:              len(agentFiles),
+			Repo:                    agentRepoName,
+			MergeTarget:             opts.MergeTarget,
+			JournalContextAvailable: journalContextAvailable,
+			JournalContextFile:      journalContextFile,
 		})
 	}
 
