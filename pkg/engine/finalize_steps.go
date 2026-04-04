@@ -694,6 +694,63 @@ type AutoMergeData struct {
 	Reason         string
 }
 
+// StepClassifyCallerCascade runs caller cascade classification after a
+// verify-build failure. Non-fatal: always returns success so FinalizeWave
+// can inspect the result and decide whether to trigger a hotfix agent.
+//
+// When verifyData is nil or the build passed, returns success with nil
+// classification.
+func StepClassifyCallerCascade(
+	ctx context.Context,
+	opts FinalizeWaveOpts,
+	verifyData *protocol.VerifyBuildData,
+	manifest *protocol.IMPLManifest,
+	onEvent EventCallback,
+) (*StepResult, *CallerCascadeClassification) {
+	const stepName = "classify-caller-cascade"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if verifyData == nil || (verifyData.TestPassed && verifyData.LintPassed) {
+		emitStepEvent(onEvent, stepName, "complete", "no build failures to classify")
+		return &StepResult{
+			Step:   stepName,
+			Status: "skipped",
+			Detail: "no build failures to classify",
+		}, nil
+	}
+
+	result := ClassifyCallerCascadeErrors(verifyData, manifest, opts.WaveNum)
+
+	if result.AllAreCascades {
+		detail := fmt.Sprintf("%d cascade error(s) in future-wave files; hotfix eligible", len(result.Errors))
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Data:   &result,
+		}, &result
+	}
+
+	if result.MixedErrors {
+		detail := "mixed errors: some in current-wave files; genuine build failure"
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Data:   &result,
+			Detail: detail,
+		}, &result
+	}
+
+	// No cascade errors detected
+	emitStepEvent(onEvent, stepName, "complete", "no cascade patterns detected")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Data:   nil,
+	}, nil
+}
+
 // StepAutoMergeAppendConflicts attempts automatic merge for append-only conflicts.
 // Returns fatal error if merge produces conflicts (fallback to manual).
 func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, conflicts []protocol.ConflictPredictionEnhanced, onEvent EventCallback) (*StepResult, []AutoMergeData, error) {
