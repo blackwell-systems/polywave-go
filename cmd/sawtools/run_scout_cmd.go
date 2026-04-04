@@ -17,6 +17,7 @@ func newRunScoutCmd() *cobra.Command {
 		programManifestPath string // path to PROGRAM manifest
 		noCritic            bool   // --no-critic: skip critic gate even if threshold met
 		criticModel         string // --critic-model: override model for critic agent
+		refreshBrief        bool   // --refresh-brief: re-run Scout preserving structure
 	)
 
 	cmd := &cobra.Command{
@@ -71,6 +72,7 @@ Output:
 				ProgramManifestPath: programManifestPath,
 				NoCritic:            noCritic,
 				CriticModel:         criticModel,
+				RefreshBrief:        refreshBrief,
 				Logger:              newSawLogger(),
 			}
 
@@ -103,6 +105,8 @@ Output:
 	cmd.Flags().StringVar(&programManifestPath, "program", "", "Path to PROGRAM manifest (Scout receives frozen contracts as input)")
 	cmd.Flags().BoolVar(&noCritic, "no-critic", false, "Skip critic gate even if agent count threshold is met")
 	cmd.Flags().StringVar(&criticModel, "critic-model", "", "Model override for critic agent (e.g., claude-opus-4-6)")
+	cmd.Flags().BoolVar(&refreshBrief, "refresh-brief", false,
+		"Re-run Scout preserving file_ownership/wave structure, only refreshing agent task descriptions")
 
 	return cmd
 }
