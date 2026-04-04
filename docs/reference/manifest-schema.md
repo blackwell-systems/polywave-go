@@ -82,6 +82,7 @@ Agents within a wave run in parallel. Waves execute sequentially.
 | Action | `action` | string | no | `new`, `modify`, or `delete` |
 | DependsOn | `depends_on` | []string | no | Other files this file depends on |
 | Repo | `repo` | string | no | Repo identifier for cross-repo waves |
+| V048Exempt | `v048_exempt` | bool | no | When true, skip V048 agent-complexity checks for this file (large legacy files that agents must modify) |
 
 ---
 
@@ -245,6 +246,7 @@ Written by each wave agent after it finishes. Keyed by agent ID in `completion_r
 | Verification | `verification` | string | How the agent verified its work |
 | FailureType | `failure_type` | string | Failure category if status is `partial` or `blocked` |
 | Notes | `notes` | string | Free-form notes |
+| DedupStats | `dedup_stats` | *DedupStats | File-read dedup metrics for the agent's session |
 | Repo | `repo` | string | Repo identifier for cross-repo waves |
 
 ### InterfaceDeviation
@@ -254,6 +256,16 @@ Written by each wave agent after it finishes. Keyed by agent ID in `completion_r
 | Description | `description` | string | What changed from the contract |
 | DownstreamActionRequired | `downstream_action_required` | bool | Whether downstream agents must adapt |
 | Affects | `affects` | []string | Agent IDs affected by the deviation |
+
+### DedupStats
+
+File-read deduplication metrics recorded by the agent's session. Present only when the dedup layer is active.
+
+| Field | YAML Key | Type | Description |
+|-------|----------|------|-------------|
+| Hits | `hits` | int | Number of deduplicated (cached) file reads |
+| Misses | `misses` | int | Number of cache-miss file reads |
+| TokensSavedEstimate | `tokens_saved_estimate` | int | Estimated tokens saved by deduplication |
 
 ---
 
@@ -289,6 +301,19 @@ Values for the `state` field:
 | `BLOCKED` | Wave is blocked; human intervention required |
 | `COMPLETE` | All waves finished successfully |
 | `NOT_SUITABLE` | Scout determined this feature is not suitable for parallel implementation |
+
+---
+
+## Merge States
+
+Values for the `merge_state` field:
+
+| Value | Description |
+|-------|-------------|
+| `idle` | No merge operation in progress (default) |
+| `in_progress` | Merge operation is currently running |
+| `completed` | Merge completed successfully |
+| `failed` | Merge operation failed |
 
 ---
 
