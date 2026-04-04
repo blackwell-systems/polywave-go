@@ -358,3 +358,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-between-wave-integration-hotfix.yaml
 - **journal-integration**: completed 2026-04-03, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-journal-integration.yaml
+- **sawtools-ux-improvements**: completed 2026-04-03, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-improvements.yaml

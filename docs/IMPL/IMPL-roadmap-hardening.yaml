@@ -1,0 +1,724 @@
+title: 'Roadmap Hardening: P7 merge ordering, P6 incremental commits, P3 stale briefs, P2 cross-repo verify'
+feature_slug: roadmap-hardening
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: Four distinct problems touching different packages. P7 touches
+       finalize.go + tests. P2 touches finalize.go + finalize_wave.go CLI.
+       P7 and P2 share finalize.go — sequenced into waves 1 and 2 respectively. P3 touches
+       scout_run.go + run_scout_cmd.go (independent of P7/P2). P6 touches wave-agent.md in the
+       protocol repo (fully independent). Total: 4 agents across 2 waves.
+
+    2. Investigation-first: No. Root causes for all four items are already confirmed.
+
+    3. Interface discoverability: Yes. FinalizeWaveOpts and FinalizeWaveResult are well-defined
+       structs. New fields (CrossRepoVerify, CrossRepoResults) are additive. RunScoutFullOpts
+       addition (RefreshBrief) is additive.
+
+    4. Pre-implementation status: All four are TODO. No prior implementation exists.
+
+    5. Parallelization value: High. Build/test cycle is ~30s (go test ./...). P7+P6+P3 are
+       independent and can execute in parallel in wave 1. P2 depends on P7 completing (shares
+       finalize.go). 4 agents, 3 in wave 1, 1 in wave 2.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (3 parallel agents wave 1 x 8 min + 1 agent wave 2 x 8 min)
+    - Merge and verification: ~4 min
+    Total SAW time: ~24 min
+    Sequential baseline: ~32 min (4 agents x 8 min avg)
+    Time savings: ~8 min (25% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/finalize.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/scout_run.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/scout_run_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/run_scout_cmd.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_steps_step_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_steps_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/auto_remediate_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/daemon_test.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/critic_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: implementations/claude-code/prompts/agents/wave-agent.md
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/hooks/auto_commit_on_write
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave
+    - file: install.sh
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/engine/finalize.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/engine/finalize_test.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/sawtools/finalize_wave.go
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: FinalizeWave_BranchFirstCheck
+      description: |
+        P7 fix: In FinalizeWave, check AllBranchesAbsent in the solo-wave detection logic.
+        If branches exist but worktrees are gone, proceed to full merge pipeline instead
+        of skipping.
+      definition: |
+        // In FinalizeWave, the solo-wave detection block must also check branches:
+        // if waveAgentCount <= 1 {
+        //     isSolo = true
+        //     for _, repoPath := range repos {
+        //         if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+        //             isSolo = false
+        //         }
+        //         if !protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
+        //             isSolo = false
+        //         }
+        //     }
+        // }
+      location: pkg/engine/finalize.go
+    - name: FinalizeWaveOpts_CrossRepoVerify
+      description: |
+        P2: New field on FinalizeWaveOpts to enable cross-repo baseline verification
+        after the primary repo merge succeeds.
+      definition: |
+        CrossRepoVerify bool
+      location: pkg/engine/finalize.go
+    - name: FinalizeWaveResult_CrossRepoResults
+      description: |
+        P2: New field on FinalizeWaveResult to hold cross-repo baseline verification results.
+      definition: |
+        CrossRepoResults map[string]*protocol.BaselineData `json:"cross_repo_results,omitempty"`
+      location: pkg/engine/finalize.go
+    - name: RunScoutFullOpts_RefreshBrief
+      description: |
+        P3: New field on RunScoutFullOpts to enable brief-only refresh mode for stale IMPLs.
+      definition: |
+        RefreshBrief bool
+      location: pkg/engine/scout_run.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## P7: Fix finalize-wave merge ordering bug (data loss prevention)
+
+            ### What to implement
+
+            Fix the merge ordering bug in `FinalizeWave` where worktree cleanup without merging
+            causes commits to be silently lost. The root cause: the solo-wave detection logic checks
+            `WorktreesAbsent()` but not `AllBranchesAbsent()`, so when worktree directories are cleaned
+            but branches remain, the pipeline skips merge.
+
+            ### Files to modify
+
+            **1. `pkg/engine/finalize.go`** — Fix solo-wave detection logic
+
+            The current code at the solo-wave detection block:
+            ```go
+            if waveAgentCount <= 1 {
+            	isSolo = true
+            	for _, repoPath := range repos {
+            		if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+            			isSolo = false
+            		}
+            	}
+            }
+            ```
+
+            Change this to also check for existing branches. If branches exist, the wave is NOT solo
+            regardless of worktree directory state:
+            ```go
+            if waveAgentCount <= 1 {
+            	isSolo = true
+            	for _, repoPath := range repos {
+            		if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
+            			isSolo = false
+            		}
+            		if !protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
+            			isSolo = false
+            		}
+            	}
+            }
+            ```
+
+            **2. `pkg/engine/finalize_test.go`** — Add test for "worktrees gone, branches remain" scenario
+
+            Add a new test function `TestFinalizeWave_WorktreesGoneBranchesRemain` that:
+            - Creates a temp git repo with `git init` and an initial commit
+            - Creates a manifest with 1 agent and a completion report with a commit SHA
+            - Creates an agent branch pointing at a real commit (so `AllBranchesAbsent` returns false)
+            - Does NOT create a worktree directory (so `WorktreesAbsent` returns true)
+            - Calls `FinalizeWave` and verifies it does NOT take the solo-wave shortcut
+            - The expected behavior: FinalizeWave proceeds to the full pipeline (VerifyCommits etc.)
+              rather than skipping to verify-build. It will likely fail at VerifyCommits since
+              the branch has no additional commits, but the key assertion is that it did NOT
+              skip to the solo path (which would populate synthetic MergeResult without merging).
+
+            Test setup details:
+            ```go
+            func TestFinalizeWave_WorktreesGoneBranchesRemain(t *testing.T) {
+                tmpDir := t.TempDir()
+                repoRoot := filepath.Join(tmpDir, "repo")
+                os.MkdirAll(repoRoot, 0755)
+
+                // Initialize git repo with an initial commit
+                git.Run(repoRoot, "init")
+                git.Run(repoRoot, "config", "user.email", "test@test.com")
+                git.Run(repoRoot, "config", "user.name", "Test")
+                os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("init"), 0644)
+                git.Run(repoRoot, "add", ".")
+                git.Run(repoRoot, "commit", "-m", "initial")
+
+                // Create agent branch (so AllBranchesAbsent returns false)
+                git.Run(repoRoot, "branch", "saw/test-wt-gone/wave1-agent-A")
+
+                // Write IMPL with 1 agent, feature_slug matching branch pattern
+                implContent := `feature_slug: test-wt-gone
+            waves:
+              - number: 1
+                agents:
+                  - id: A
+                    files: [pkg/foo.go]
+            `
+                // ... write and call FinalizeWave ...
+                // Assert: result should NOT be success with synthetic merge
+                // Assert: should hit the full pipeline path (verify-commits or similar)
+            }
+            ```
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/engine/...
+            go test ./pkg/engine/ -run "TestFinalizeWave_WorktreesGoneBranchesRemain" -v
+            go vet ./pkg/engine/...
+            ```
+
+            Postcondition checks:
+            ```bash
+            # Solo-wave block now checks AllBranchesAbsent
+            grep -c "AllBranchesAbsent" pkg/engine/finalize.go  # expect: 2 (allGone check + solo check)
+            # Test exists
+            grep -c "TestFinalizeWave_WorktreesGoneBranchesRemain" pkg/engine/finalize_test.go  # expect: >= 1
+            ```
+
+            ### Constraints
+
+            - Do NOT modify the `allGone` check block (the one starting with `allGone := true`) — that logic is correct
+            - Do NOT modify `FinalizeWaveOpts` or `FinalizeWaveResult` struct fields — those are Agent D's scope
+            - Do NOT modify `cmd/sawtools/finalize_wave.go` — that is Agent D's scope
+            - Do NOT modify `pkg/protocol/merge_agents.go` — the existing `AllBranchesAbsent` function is sufficient
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+        - id: B
+          task: |
+            ## P3: Add --refresh-brief flag for stale IMPLs in program mode
+
+            ### What to implement
+
+            Add a `RefreshBrief` option to `RunScoutFullOpts` and wire it through `run-scout` CLI.
+            When true, Scout re-runs in a mode that preserves existing file_ownership and wave
+            structure but updates agent task descriptions to reflect the current codebase state.
+
+            ### Files to modify
+
+            **1. `pkg/engine/scout_run.go`** — Add RefreshBrief to RunScoutFullOpts and adjust RunScoutFull
+
+            Add field to `RunScoutFullOpts` struct. Find this exact text:
+            ```go
+            	CriticModel         string
+            	Logger              *slog.Logger
+            ```
+
+            Insert between those two lines:
+            ```go
+            	RefreshBrief        bool   // When true, re-run Scout preserving structure, refreshing briefs only
+            ```
+
+            In `RunScoutFull`, the early-return state check is this block:
+            ```go
+            	// Check if IMPL doc already exists with advanced state — return early if so.
+            	if existingDoc, loadErr := protocol.Load(ctx, implPath); loadErr == nil {
+            		switch existingDoc.State {
+            		case protocol.StateReviewed,
+            ```
+
+            Add a RefreshBrief bypass BEFORE this block:
+            ```go
+            	// RefreshBrief mode: bypass state check and re-run Scout with preservation directive
+            	if opts.RefreshBrief {
+            		opts.Feature = fmt.Sprintf("[REFRESH-BRIEF] Preserve file_ownership and wave structure from %s. "+
+            			"Only update agent task descriptions to reflect current codebase state. "+
+            			"Do not change agent IDs, wave assignments, or file ownership.\n\n%s",
+            			implPath, opts.Feature)
+            	}
+            ```
+
+            Then wrap the early-return state check with `!opts.RefreshBrief`:
+            ```go
+            	if !opts.RefreshBrief {
+            		if existingDoc, loadErr := protocol.Load(ctx, implPath); loadErr == nil {
+            			// ... existing switch block unchanged ...
+            		}
+            	}
+            ```
+
+            **2. `pkg/engine/scout_run_test.go`** — Add tests for RefreshBrief
+
+            Add `TestRunScoutFull_RefreshBriefField` verifying the struct field exists and can be set.
+            Add `TestRunScoutFull_RefreshBriefModifiesFeature` verifying that when RefreshBrief is true,
+            the feature string is prepended with the [REFRESH-BRIEF] directive.
+
+            **3. `cmd/sawtools/run_scout_cmd.go`** — Add --refresh-brief flag
+
+            Add a `refreshBrief` bool variable in the var block. Find this exact text:
+            ```go
+            		criticModel         string // --critic-model: override model for critic agent
+            ```
+
+            Add after it:
+            ```go
+            		refreshBrief        bool   // --refresh-brief: re-run Scout preserving structure
+            ```
+
+            Wire it into the RunScoutFullOpts construction. Find this exact text:
+            ```go
+            			opts := engine.RunScoutFullOpts{
+            ```
+
+            Add `RefreshBrief: refreshBrief,` to the struct literal.
+
+            Add the flag registration. Find this exact text:
+            ```go
+            	cmd.Flags().StringVar(&criticModel, "critic-model", "", "Model override for critic agent (e.g., claude-opus-4-6)")
+            ```
+
+            Add after it:
+            ```go
+            	cmd.Flags().BoolVar(&refreshBrief, "refresh-brief", false,
+            		"Re-run Scout preserving file_ownership/wave structure, only refreshing agent task descriptions")
+            ```
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/engine/... ./cmd/sawtools/...
+            go test ./pkg/engine/ -run "TestRunScoutFull_RefreshBrief" -v
+            go vet ./pkg/engine/... ./cmd/sawtools/...
+            ```
+
+            Postcondition checks:
+            ```bash
+            # RefreshBrief field exists in RunScoutFullOpts
+            grep -c "RefreshBrief" pkg/engine/scout_run.go  # expect: >= 3
+            # --refresh-brief flag registered in CLI
+            grep -c "refresh-brief" cmd/sawtools/run_scout_cmd.go  # expect: >= 2
+            ```
+
+            ### Constraints
+
+            - Do NOT modify `pkg/engine/finalize.go` — that is Agent A and D's scope
+            - Do NOT modify the ScoutCorrectionLoop or ScoutCorrectionOpts — only modify RunScoutFull
+            - Do NOT change RunScoutOpts (in engine.go) — only change RunScoutFullOpts
+          files:
+            - pkg/engine/scout_run.go
+            - pkg/engine/scout_run_test.go
+            - cmd/sawtools/run_scout_cmd.go
+        - id: C
+          task: |
+            ## P6: Incremental agent commits (rate-limit resilience)
+
+            ### What to implement
+
+            Two changes to prevent work loss when agents are rate-limited:
+            1. Update wave-agent.md to instruct agents to commit incrementally after each file
+            2. Create an auto-commit PostToolUse hook for Write/Edit in worktree context
+
+            ### Files to modify
+
+            **1. `implementations/claude-code/prompts/agents/wave-agent.md`** — Add incremental commit instructions
+
+            Find this exact text:
+            ```
+            **I5: Agents Commit Before Reporting**
+            - Commit all changes to your worktree branch before writing completion report
+            - Use `git -C /full/worktree/path` for all git operations (see Worktree Isolation Protocol above)
+            - Verify you're on the correct branch before committing
+            - Use descriptive commit messages
+            - Push commits if working on remote
+            ```
+
+            Replace with:
+            ```
+            **I5: Agents Commit Incrementally (Rate-Limit Resilience)**
+            - **Commit after completing each file** — do not batch all commits at the end
+            - After implementing and testing changes to a file, immediately commit:
+              ```bash
+              git -C $SAW_AGENT_WORKTREE add <file-path>
+              git -C $SAW_AGENT_WORKTREE commit -m "implement <brief description>"
+              ```
+            - This protects against rate-limit interruptions: if your session is terminated,
+              all previously committed files survive and the retry agent picks up where you left off
+            - Use `git -C /full/worktree/path` for all git operations (see Worktree Isolation Protocol above)
+            - Verify you're on the correct branch before first commit
+            - Final commit before completion report should include any remaining changes
+            ```
+
+            Also find this exact text in the progress tracker:
+            ```
+            - [ ] Field 4: Complete implementation (tests + logic)
+            ```
+
+            Replace with:
+            ```
+            - [ ] Field 4: Complete implementation (tests + logic) — commit after each file
+            ```
+
+            **2. `implementations/claude-code/hooks/auto_commit_on_write`** — NEW FILE
+
+            Create a PostToolUse hook that auto-commits after Write/Edit operations in a SAW
+            worktree context. This is a safety net — even if the agent ignores the prompt
+            instruction to commit incrementally, this hook ensures work is preserved.
+
+            Script:
+            ```bash
+            #!/usr/bin/env bash
+            # PostToolUse hook: Auto-commit after Write/Edit in SAW worktree context
+            # Ensures incremental work preservation against rate-limit interruptions.
+            # async: true — never blocks agent execution
+            set -uo pipefail
+
+            # Only activate in SAW worktree context
+            [[ -z "${SAW_AGENT_WORKTREE:-}" ]] && exit 0
+
+            # Read JSON from stdin
+            input=$(cat)
+            tool_name=$(echo "$input" | jq -r '.tool_name // empty')
+
+            # Only trigger on Write/Edit completions
+            [[ "$tool_name" != "Write" && "$tool_name" != "Edit" ]] && exit 0
+
+            file_path=$(echo "$input" | jq -r '.tool_input.file_path // empty')
+            [[ -z "$file_path" ]] && exit 0
+
+            # Verify file is inside worktree
+            case "$file_path" in
+              "$SAW_AGENT_WORKTREE"/*) ;;
+              *) exit 0 ;;
+            esac
+
+            # Auto-commit (silent failures — this is a safety net, not a requirement)
+            filename=$(basename "$file_path")
+            git -C "$SAW_AGENT_WORKTREE" add "$file_path" 2>/dev/null || exit 0
+            git -C "$SAW_AGENT_WORKTREE" commit --no-verify -m "auto-save: $filename" 2>/dev/null || exit 0
+            exit 0
+            ```
+
+            Make the file executable (chmod +x).
+
+            **3. `install.sh`** (root of scout-and-wave repo) — Register the new hook
+
+            This is the root `install.sh`, NOT `implementations/claude-code/hooks/install.sh` (which
+            is a 6-line stub that delegates to root). Find the PostToolUse hook registration section
+            (look for `add_hook "PostToolUse"` calls) and add a registration entry for
+            `auto_commit_on_write` as a PostToolUse hook. The hook must be registered with
+            `async: true` so it never blocks agent execution. Follow the pattern used by
+            other PostToolUse hooks in install.sh.
+
+            ### Verification gate
+
+            ```bash
+            test -f implementations/claude-code/hooks/auto_commit_on_write
+            bash -n implementations/claude-code/hooks/auto_commit_on_write
+            grep -c "Commit after completing each file" implementations/claude-code/prompts/agents/wave-agent.md
+            ```
+
+            ### Constraints
+
+            - Do NOT modify any Go files — this agent only touches the protocol repo
+            - Do NOT modify other hooks — only create the new one and update install.sh
+            - The hook MUST be async (never block agent execution)
+            - The hook MUST exit 0 always, even on errors
+          files:
+            - implementations/claude-code/prompts/agents/wave-agent.md
+            - implementations/claude-code/hooks/auto_commit_on_write
+            - implementations/claude-code/hooks/install.sh
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## P2: Cross-repo build verification in finalize-wave
+
+            ### What to implement
+
+            Add cross-repo baseline verification to `FinalizeWave`. After the primary repo merge
+            and verify-build succeed, optionally run baseline gates on all other repos referenced
+            in the IMPL's file_ownership. This catches cross-repo breakage at finalize time instead
+            of deferring it to the next wave's prepare-wave (E21B).
+
+            ### Files to modify
+
+            **1. `pkg/engine/finalize.go`** — Add CrossRepoVerify field and implementation
+
+            Add field to `FinalizeWaveOpts` struct. Find this exact text:
+            ```go
+            	// SkipMerge: When true, skip steps 1-4 (VerifyCommits, ScanStubs, RunGates, MergeAgents)
+            ```
+
+            Insert before it:
+            ```go
+            	// CrossRepoVerify: When true, after primary repo merge + verify-build,
+            	// run baseline gates on all repos from the IMPL's file_ownership.
+            	CrossRepoVerify bool
+            ```
+
+            Add field to `FinalizeWaveResult` struct. Find this exact text:
+            ```go
+            	// CallerCascadeErrors is non-empty when verify-build fails exclusively due to
+            ```
+
+            Insert before it:
+            ```go
+            	// CrossRepoResults holds baseline gate results for repos outside the primary
+            	// repo. Keys are repo names from file_ownership.
+            	CrossRepoResults map[string]*protocol.BaselineData `json:"cross_repo_results,omitempty"`
+            ```
+
+            Initialize `CrossRepoResults` in the result initialization block. Find this exact text:
+            ```go
+            		CleanupResult:    make(map[string]*protocol.CleanupData),
+            ```
+
+            Add after it:
+            ```go
+            		CrossRepoResults: make(map[string]*protocol.BaselineData),
+            ```
+
+            After the Step 5.5 RunPostMergeGates block and before Step 6 Cleanup, add a new step.
+            Find this exact text:
+            ```go
+            	// Step 6: Cleanup — per repo
+            ```
+
+            Insert before it:
+            ```go
+            	// Step 5.7: CrossRepoVerify — run baseline gates on non-primary repos
+            	if opts.CrossRepoVerify && len(repos) > 1 {
+            		emitStepEvent(onEvent, "cross-repo-verify", "running", "")
+            		for repoKey, repoPath := range repos {
+            			// Skip the primary repo (already verified by Step 5)
+            			if repoKey == "." {
+            				continue
+            			}
+            			cache := gatecache.New(ctx, protocol.SAWStateDir(repoPath), gatecache.DefaultTTL)
+            			baselineRes := protocol.RunBaselineGates(ctx, manifest, opts.WaveNum, repoPath, cache)
+            			if baselineRes.IsSuccess() {
+            				data := baselineRes.GetData()
+            				res.CrossRepoResults[repoKey] = data
+            				if !data.Passed {
+            					emitStepEvent(onEvent, "cross-repo-verify", "warning",
+            						fmt.Sprintf("baseline gates failed in %s", repoKey))
+            				}
+            			} else {
+            				emitStepEvent(onEvent, "cross-repo-verify", "warning",
+            					fmt.Sprintf("baseline gates error in %s: %v", repoKey, baselineRes.Errors))
+            			}
+            		}
+            		emitStepEvent(onEvent, "cross-repo-verify", "complete", "")
+            	}
+
+            ```
+
+            **2. `cmd/sawtools/finalize_wave.go`** — Add --cross-repo-verify CLI flag
+
+            Add a `crossRepoVerify` bool variable. Find this exact text:
+            ```go
+            	var waveNum int
+            	var mergeTarget string
+            	var skipMerge bool
+            	var dryRun bool
+            ```
+
+            Add after it:
+            ```go
+            	var crossRepoVerify bool
+            ```
+
+            Wire it into the `engine.FinalizeWaveOpts` construction. Find this exact text:
+            ```go
+            			r := engine.FinalizeWave(cmd.Context(), engine.FinalizeWaveOpts{
+            ```
+
+            Add `CrossRepoVerify: crossRepoVerify,` to the struct literal after the OnEvent field.
+
+            Add the flag registration. Find this exact text:
+            ```go
+            	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+            ```
+
+            Add before it:
+            ```go
+            	cmd.Flags().BoolVar(&crossRepoVerify, "cross-repo-verify", false,
+            		"After primary repo verification, run baseline gates on all cross-repo dependencies")
+            ```
+
+            **3. `pkg/engine/finalize_test.go`** — Add tests for cross-repo verification
+
+            Add `TestFinalizeWave_CrossRepoVerifyField` verifying the new fields exist on opts
+            and result structs. Add `TestFinalizeWave_CrossRepoResultsInitialized` verifying the
+            CrossRepoResults map is initialized (not nil) when using SkipMerge mode.
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/engine/... ./cmd/sawtools/...
+            go test ./pkg/engine/ -run "TestFinalizeWave_CrossRepo" -v
+            go vet ./pkg/engine/... ./cmd/sawtools/...
+            ```
+
+            Postcondition checks:
+            ```bash
+            grep -c "CrossRepoVerify" pkg/engine/finalize.go  # expect: >= 3
+            grep -c "CrossRepoResults" pkg/engine/finalize.go  # expect: >= 3
+            grep -c "cross-repo-verify" cmd/sawtools/finalize_wave.go  # expect: >= 2
+            ```
+
+            ### Constraints
+
+            - Do NOT modify the solo-wave detection logic — that was fixed by Agent A in wave 1
+            - Cross-repo verify is informational (warning), not fatal — do NOT fail the pipeline
+              on cross-repo gate failures; log warnings and populate the results map
+            - Cross-repo verify only runs when `len(repos) > 1` (multi-repo IMPL)
+          files:
+            - pkg/engine/finalize.go
+            - pkg/engine/finalize_test.go
+            - cmd/sawtools/finalize_wave.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Agent A's solo-wave fix interacts with Agent D's cross-repo additions to finalize.go
+          likelihood: low
+          impact: medium
+          mitigation: Sequenced into waves 1 and 2. Agent D works on the merged result of Agent A.
+        - scenario: Agent C's auto-commit hook creates many small commits, cluttering git history
+          likelihood: medium
+          impact: low
+          mitigation: Hook is async and uses --no-verify. Duplicate commits (agent manual + hook auto) are harmless — git commit with no changes exits cleanly. Squash on merge if needed.
+        - scenario: P3 RefreshBrief prepend to feature description may confuse Scout agent
+          likelihood: medium
+          impact: medium
+          mitigation: The directive is clearly bracketed with [REFRESH-BRIEF]. Scout is instructed to preserve structure. If Scout ignores the directive, the existing validation catches structural drift.
+        - scenario: Cross-repo baseline gates in P2 may be slow, increasing finalize-wave time
+          likelihood: medium
+          impact: low
+          mitigation: CrossRepoVerify is opt-in (false by default). Only activated via --cross-repo-verify flag.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: ISSUES
+            issues:
+                - check: pattern_accuracy
+                  severity: error
+                  description: implementations/claude-code/hooks/install.sh is a 6-line stub that delegates to root install.sh. The PostToolUse hook registration section and HOOK_SCRIPTS array referenced in the brief are in /install.sh (root), not this stub. Agent will not find the described patterns. File ownership should be install.sh (root) instead.
+                  file: implementations/claude-code/hooks/install.sh
+                  symbol: add_hook PostToolUse
+        D:
+            agent_id: D
+            verdict: ISSUES
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: Brief calls protocol.RunBaselineGates(ctx, manifest, repoPath, cache, opts.Logger) but actual signature is RunBaselineGates(ctx, manifest, waveNumber int, repoDir string, cache *gatecache.Cache). Missing waveNumber parameter, includes nonexistent Logger parameter.
+                  file: pkg/engine/finalize.go
+                  symbol: protocol.RunBaselineGates
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief uses data := baselineRes.GetData() then &data to store in CrossRepoResults. Since GetData() returns *BaselineData, &data would be **BaselineData, not matching map[string]*BaselineData. Should assign data directly without &.
+                  file: pkg/engine/finalize.go
+                  symbol: CrossRepoResults
+    summary: '3 issues found across agents C and D. Agent C: install.sh in file_ownership is a stub that delegates to root install.sh -- the PostToolUse registration section and HOOK_SCRIPTS array are in the root install.sh, not the stub. Agent D: RunBaselineGates call in the brief has wrong arguments (missing waveNumber, includes nonexistent Logger param), and GetData() dereference produces wrong pointer type.'
+    reviewed_at: "2026-04-04T09:18:38Z"
+    issue_count: 3
+state: REVIEWED
+injection_method: hook

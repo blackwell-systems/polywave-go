@@ -1,3 +1,4 @@
+completion_date: "2026-04-03"
 title: 'sawtools UX Improvements: set-critic-verdict command and V048 per-file exemption'
 feature_slug: sawtools-ux-improvements
 verdict: SUITABLE
@@ -303,6 +304,7 @@ waves:
           dependencies:
             - A
             - B
+      base_commit: f0ed7b960ff781d4542d7de72620b1f813aa0582
 quality_gates:
     level: standard
     gates:
@@ -340,6 +342,14 @@ completion_reports:
             - TestCheckAgentLOCBudget/v048_exempt=false_behaves_normally_(over_budget_still_errors)
         verification: PASS
         notes: V048Exempt field added to FileOwnership with omitempty tags. Exemption check inserted before file open in CheckAgentLOCBudget. All 8 TestCheckAgentLOCBudget sub-tests pass.
+    C:
+        status: complete
+        branch: saw/sawtools-ux-improvements/wave2-agent-C
+        commit: 6c20f4c
+        files_changed:
+            - docs/reference/cli-reference.md
+        verification: PASS
+        notes: Added set-critic-verdict command entry (Quick Reference table + full section after set-critic-review). Added v048_exempt field documentation in the validate command section under a new file_ownership entry fields block. No field table existed in cli-reference.md for these fields, so a new inline documentation block was added to the validate section as the most natural location for V048 exemption docs.
 pre_mortem:
     overall_risk: low
     rows:
@@ -401,5 +411,5 @@ critic_report:
     summary: 'Agent A and B briefs are accurate against the codebase. One error: Agent A''s brief specifies ''WARNING'' as a valid --verdict value for set-critic-verdict, but critic.go defines only PASS, ISSUES, and SKIPPED as recognized verdict constants — WARNING is not a valid CriticData verdict value. One error: Agent C''s file_ownership entry marks docs/reference/cli-reference.md as action:new but the file already exists at that path — it should be action:modify. One warning for Agent C: the brief instructs searching for a file_ownership schema section with action:/depends_on:/repo: field descriptions to anchor the v048_exempt entry, but no such dedicated schema section exists in cli-reference.md; the fallback instruction (find run-critic and add adjacent) is valid and sufficient.'
     reviewed_at: "2026-04-04T06:46:57Z"
     issue_count: 2
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
