@@ -54,9 +54,9 @@ type HotfixAgentData struct {
 	BuildPassed bool     `json:"build_passed"` // true when go build && go vet clean after fix
 }
 
-// codeCallerCascadeHotfixFailed is the error code for hotfix agent failures.
-// This mirrors codeCallerCascadeHotfixFailed defined by Agent A in pkg/result/codes.go.
-// When Agent A's code is merged, references here may be updated to codeCallerCascadeHotfixFailed.
+
+// codeCallerCascadeHotfixFailed mirrors result.CodeCallerCascadeHotfixFailed (added by wave1-agent-A).
+// Will be replaced with result.CodeCallerCascadeHotfixFailed after wave 1 merge.
 const codeCallerCascadeHotfixFailed = "N099_CALLER_CASCADE_HOTFIX_FAILED"
 
 // cascadePatterns matches compiler errors of the form file.go:line:col: message
