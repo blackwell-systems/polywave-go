@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 )
@@ -181,6 +182,138 @@ func TestCheckConfigFile_WithRepoPath(t *testing.T) {
 	}
 	// path may be empty if not found; check we don't crash
 	_ = path
+}
+
+func TestCheckHooksRegistered_NoSettingsFile(t *testing.T) {
+	// If there's no settings.json at all, should warn (not fail) since
+	// the file might not exist on CI runners or bare environments.
+	t.Setenv("HOME", t.TempDir())
+	check := checkHooksRegistered()
+	if check.Name != "hooks_registered" {
+		t.Errorf("expected name hooks_registered, got %q", check.Name)
+	}
+	if check.Status != "warn" {
+		t.Errorf("expected warn when settings.json absent, got %q (detail: %s)", check.Status, check.Detail)
+	}
+}
+
+func TestCheckHooksRegistered_AllCriticalPresent(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := dir + "/.claude"
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Build a settings.json with all critical hooks present
+	hooks := make(map[string]interface{})
+	var entries []interface{}
+	for _, name := range criticalSAWHooks {
+		entries = append(entries, map[string]interface{}{
+			"hooks": []map[string]string{{"command": "/home/user/.local/bin/" + name}},
+		})
+	}
+	hooks["PreToolUse"] = entries
+
+	settings := map[string]interface{}{
+		"permissions": map[string]interface{}{"allow": []string{"Agent"}},
+		"hooks":       hooks,
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(claudeDir+"/settings.json", data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := checkHooksRegistered()
+	if check.Status != "pass" {
+		t.Errorf("expected pass with all critical hooks present, got %q (detail: %s)", check.Status, check.Detail)
+	}
+}
+
+func TestCheckHooksRegistered_MissingHooks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := dir + "/.claude"
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Only one of the critical hooks present
+	settings := map[string]interface{}{
+		"permissions": map[string]interface{}{"allow": []string{"Agent"}},
+		"hooks": map[string]interface{}{
+			"UserPromptSubmit": []map[string]interface{}{
+				{"hooks": []map[string]string{{"command": "/bin/inject_skill_context"}}},
+			},
+		},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(claudeDir+"/settings.json", data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := checkHooksRegistered()
+	if check.Status != "fail" {
+		t.Errorf("expected fail with missing critical hooks, got %q (detail: %s)", check.Status, check.Detail)
+	}
+	if !strings.Contains(check.Detail, "missing hooks:") {
+		t.Errorf("expected detail to name missing hooks, got: %s", check.Detail)
+	}
+}
+
+func TestCheckAgentPermission_Present(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := dir + "/.claude"
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := map[string]interface{}{
+		"permissions": map[string]interface{}{"allow": []string{"Bash", "Agent", "Read"}},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(claudeDir+"/settings.json", data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := checkAgentPermission()
+	if check.Name != "agent_permission" {
+		t.Errorf("expected name agent_permission, got %q", check.Name)
+	}
+	if check.Status != "pass" {
+		t.Errorf("expected pass when Agent in allow list, got %q (detail: %s)", check.Status, check.Detail)
+	}
+}
+
+func TestCheckAgentPermission_Missing(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", dir)
+	claudeDir := dir + "/.claude"
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	settings := map[string]interface{}{
+		"permissions": map[string]interface{}{"allow": []string{"Bash", "Read"}},
+	}
+	data, _ := json.Marshal(settings)
+	if err := os.WriteFile(claudeDir+"/settings.json", data, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	check := checkAgentPermission()
+	if check.Status != "fail" {
+		t.Errorf("expected fail when Agent absent, got %q (detail: %s)", check.Status, check.Detail)
+	}
+}
+
+func TestCheckAgentPermission_NoSettingsFile(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	check := checkAgentPermission()
+	if check.Status != "warn" {
+		t.Errorf("expected warn when settings.json absent, got %q", check.Status)
+	}
 }
 
 func TestInstallCheckTypes(t *testing.T) {

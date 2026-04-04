@@ -34,7 +34,7 @@ type VerifyInstallOpts struct {
 
 // RunVerifyInstall runs all prerequisite checks and returns a structured result.
 // It checks: sawtools binary, git version, skill directory, skill files,
-// config file, and configured repos.
+// config file, configured repos, Claude Code hook registration, and Agent permission.
 func RunVerifyInstall(opts VerifyInstallOpts) InstallResult {
 	var checks []InstallCheck
 
@@ -73,6 +73,12 @@ func RunVerifyInstall(opts VerifyInstallOpts) InstallResult {
 	} else {
 		checks = append(checks, checkConfiguredRepos(configPath))
 	}
+
+	// 7. Claude Code hook registration
+	checks = append(checks, checkHooksRegistered())
+
+	// 8. Agent tool permission
+	checks = append(checks, checkAgentPermission())
 
 	// Compute verdict
 	var passed, failed, warned, skipped int
@@ -344,6 +350,130 @@ func checkConfiguredRepos(configPath string) InstallCheck {
 		Name:   "configured_repos",
 		Status: "warn",
 		Detail: fmt.Sprintf("%d/%d repos found on disk", found, total),
+	}
+}
+
+// settingsJSON is the minimal shape of ~/.claude/settings.json we need.
+type settingsJSON struct {
+	Permissions struct {
+		Allow []string `json:"allow"`
+	} `json:"permissions"`
+	Hooks map[string][]struct {
+		Hooks []struct {
+			Command string `json:"command"`
+		} `json:"hooks"`
+	} `json:"hooks"`
+}
+
+// readClaudeSettings reads and parses ~/.claude/settings.json.
+// Returns nil if the file doesn't exist or can't be parsed.
+func readClaudeSettings() *settingsJSON {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		return nil
+	}
+	var s settingsJSON
+	if err := json.Unmarshal(data, &s); err != nil {
+		return nil
+	}
+	return &s
+}
+
+// allHookCommands flattens all registered hook commands into a single slice.
+func allHookCommands(s *settingsJSON) []string {
+	var cmds []string
+	for _, entries := range s.Hooks {
+		for _, entry := range entries {
+			for _, h := range entry.Hooks {
+				cmds = append(cmds, h.Command)
+			}
+		}
+	}
+	return cmds
+}
+
+// criticalSAWHooks are the hook script names whose absence breaks core SAW workflows:
+//   - inject_skill_context: without this, /saw doesn't exist as a command
+//   - validate_agent_launch: without this, agent context injection is skipped
+//   - check_wave_ownership: without this, agents write to unowned files silently
+//   - validate_agent_completion: without this, completion reporting is skipped
+var criticalSAWHooks = []string{
+	"inject_skill_context",
+	"validate_agent_launch",
+	"check_wave_ownership",
+	"validate_agent_completion",
+}
+
+// checkHooksRegistered verifies that critical SAW hooks appear in settings.json.
+func checkHooksRegistered() InstallCheck {
+	s := readClaudeSettings()
+	if s == nil {
+		return InstallCheck{
+			Name:   "hooks_registered",
+			Status: "warn",
+			Detail: "~/.claude/settings.json not found or unreadable; run install.sh",
+		}
+	}
+
+	cmds := allHookCommands(s)
+	var missing []string
+	for _, name := range criticalSAWHooks {
+		found := false
+		for _, cmd := range cmds {
+			if strings.Contains(cmd, name) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			missing = append(missing, name)
+		}
+	}
+
+	if len(missing) == 0 {
+		return InstallCheck{
+			Name:   "hooks_registered",
+			Status: "pass",
+			Detail: fmt.Sprintf("all %d critical hooks registered", len(criticalSAWHooks)),
+		}
+	}
+
+	return InstallCheck{
+		Name:   "hooks_registered",
+		Status: "fail",
+		Detail: fmt.Sprintf("missing hooks: %s — run install.sh to register", strings.Join(missing, ", ")),
+	}
+}
+
+// checkAgentPermission verifies that "Agent" appears in permissions.allow in settings.json.
+func checkAgentPermission() InstallCheck {
+	s := readClaudeSettings()
+	if s == nil {
+		return InstallCheck{
+			Name:   "agent_permission",
+			Status: "warn",
+			Detail: "~/.claude/settings.json not found or unreadable; run install.sh",
+		}
+	}
+
+	for _, entry := range s.Permissions.Allow {
+		if entry == "Agent" || strings.HasPrefix(entry, "Agent(") {
+			return InstallCheck{
+				Name:   "agent_permission",
+				Status: "pass",
+				Detail: fmt.Sprintf("Agent tool allowed (%q)", entry),
+			}
+		}
+	}
+
+	return InstallCheck{
+		Name:   "agent_permission",
+		Status: "fail",
+		Detail: `"Agent" not in permissions.allow — wave agents will be blocked; run install.sh`,
 	}
 }
 
