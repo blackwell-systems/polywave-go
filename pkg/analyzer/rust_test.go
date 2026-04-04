@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -135,6 +136,30 @@ func TestParseRustFiles_BinaryMissing(t *testing.T) {
 		}
 	} else {
 		t.Skip("rust-parser binary found, skipping binary-missing test")
+	}
+}
+
+// TestParseRustFiles_BinaryMissingViaPath explicitly sets PATH to simulate
+// missing rust-parser binary and asserts that parseRustFiles returns an error.
+func TestParseRustFiles_BinaryMissingViaPath(t *testing.T) {
+	// Use a temp dir with no executables as PATH.
+	// rust-parser will not be found; other binaries (sh, etc.) are not needed here.
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+
+	emptyDir := t.TempDir()
+	os.Setenv("PATH", emptyDir)
+
+	repoRoot := t.TempDir()
+	files := []string{filepath.Join(repoRoot, "main.rs")}
+
+	_, err := parseRustFiles(repoRoot, files)
+	if err == nil {
+		t.Fatal("expected error when rust-parser binary is not in PATH, got nil")
+	}
+
+	if !contains(err.Error(), "rust-parser binary not found in PATH") {
+		t.Errorf("expected error about rust-parser not in PATH, got: %v", err)
 	}
 }
 

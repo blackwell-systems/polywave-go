@@ -30,11 +30,11 @@ func parseJavaScriptFiles(repoRoot string, files []string) (map[string][]string,
 		return nil, fmt.Errorf("node binary not found: %w (JavaScript parsing requires Node.js)", err)
 	}
 
-	// Locate js-parser.js script
-	// For now, we'll expect it to be in the same directory as this source file
-	// or in a known location. This is a placeholder - in production, this would
-	// be bundled or installed separately.
-	parserScript := "js-parser.js"
+	// Locate js-parser.js script via PATH lookup.
+	parserScript, err := exec.LookPath("js-parser.js")
+	if err != nil {
+		return nil, fmt.Errorf("js-parser.js not found in PATH: required for JavaScript parsing")
+	}
 
 	result := make(map[string][]string)
 
@@ -115,17 +115,7 @@ func resolveJSImport(importer, importPath, repoRoot string) (string, error) {
 		}
 	}
 
-	// If nothing found, return the most likely path (basePath.js)
-	// This allows tests to work even if the actual file doesn't exist
-	return basePath + ".js", nil
+	// Import cannot be resolved to a known file.
+	return "", fmt.Errorf("cannot resolve JS import: %s", importPath)
 }
 
-// fileExists checks if a file exists at the given path
-func fileExists(path string) bool {
-	info, err := filepath.Abs(path)
-	if err != nil {
-		return false
-	}
-	_, err = filepath.EvalSymlinks(info)
-	return err == nil
-}

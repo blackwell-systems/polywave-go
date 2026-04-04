@@ -7,6 +7,28 @@ import (
 	"testing"
 )
 
+// setupMockJSParserOnPath creates a mock js-parser.js in a temp dir and prepends it to PATH.
+// Returns a cleanup function that restores the original PATH.
+func setupMockJSParserOnPath(t *testing.T) (repoRoot string, cleanup func()) {
+	t.Helper()
+
+	repoRoot = t.TempDir()
+
+	// Create the mock parser in a separate bin dir on PATH.
+	binDir := t.TempDir()
+	mockParser := filepath.Join(binDir, "js-parser.js")
+	createMockJSParser(t, mockParser)
+
+	// Prepend binDir to PATH so exec.LookPath("js-parser.js") finds it.
+	originalPath := os.Getenv("PATH")
+	os.Setenv("PATH", binDir+string(os.PathListSeparator)+originalPath)
+
+	cleanup = func() {
+		os.Setenv("PATH", originalPath)
+	}
+	return repoRoot, cleanup
+}
+
 // TestParseJavaScriptFiles_ES6 tests parsing ES6 module syntax
 func TestParseJavaScriptFiles_ES6(t *testing.T) {
 	// Skip if node not found
@@ -14,22 +36,30 @@ func TestParseJavaScriptFiles_ES6(t *testing.T) {
 		t.Skip("node binary not found, skipping JavaScript tests")
 	}
 
-	// Create a mock js-parser.js that returns predictable output
-	repoRoot := t.TempDir()
-	mockParser := filepath.Join(repoRoot, "js-parser.js")
-	createMockJSParser(t, mockParser)
+	repoRoot, cleanup := setupMockJSParserOnPath(t)
+	defer cleanup()
 
-	// Create test file
-	testFile := filepath.Join(repoRoot, "testdata", "javascript", "es6.js")
-	if err := os.MkdirAll(filepath.Dir(testFile), 0755); err != nil {
+	// Create test files including the actual imported files so resolveJSImport can find them.
+	testDir := filepath.Join(repoRoot, "testdata", "javascript")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
+
+	testFile := filepath.Join(testDir, "es6.js")
 	if err := os.WriteFile(testFile, []byte(`
 import { foo, bar } from './utils';
 import { Baz } from '../types';
 import lodash from 'lodash';
 `), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create the files that are imported so resolveJSImport can resolve them.
+	if err := os.WriteFile(filepath.Join(testDir, "utils.js"), []byte("// utils"), 0644); err != nil {
+		t.Fatalf("failed to create utils.js: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "testdata", "types.js"), []byte("// types"), 0644); err != nil {
+		t.Fatalf("failed to create types.js: %v", err)
 	}
 
 	// Test parsing
@@ -64,20 +94,29 @@ func TestParseJavaScriptFiles_CommonJS(t *testing.T) {
 		t.Skip("node binary not found, skipping JavaScript tests")
 	}
 
-	repoRoot := t.TempDir()
-	mockParser := filepath.Join(repoRoot, "js-parser.js")
-	createMockJSParser(t, mockParser)
+	repoRoot, cleanup := setupMockJSParserOnPath(t)
+	defer cleanup()
 
-	testFile := filepath.Join(repoRoot, "testdata", "javascript", "commonjs.js")
-	if err := os.MkdirAll(filepath.Dir(testFile), 0755); err != nil {
+	testDir := filepath.Join(repoRoot, "testdata", "javascript")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
+
+	testFile := filepath.Join(testDir, "commonjs.js")
 	if err := os.WriteFile(testFile, []byte(`
 const utils = require('./utils');
 const types = require('../types');
 const express = require('express');
 `), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create the imported files so resolveJSImport can resolve them.
+	if err := os.WriteFile(filepath.Join(testDir, "utils.js"), []byte("// utils"), 0644); err != nil {
+		t.Fatalf("failed to create utils.js: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "testdata", "types.js"), []byte("// types"), 0644); err != nil {
+		t.Fatalf("failed to create types.js: %v", err)
 	}
 
 	result, err := parseJavaScriptFiles(repoRoot, []string{testFile})
@@ -103,20 +142,26 @@ func TestParseJavaScriptFiles_TypeScript(t *testing.T) {
 		t.Skip("node binary not found, skipping JavaScript tests")
 	}
 
-	repoRoot := t.TempDir()
-	mockParser := filepath.Join(repoRoot, "js-parser.js")
-	createMockJSParser(t, mockParser)
+	repoRoot, cleanup := setupMockJSParserOnPath(t)
+	defer cleanup()
 
-	testFile := filepath.Join(repoRoot, "testdata", "javascript", "typescript.ts")
-	if err := os.MkdirAll(filepath.Dir(testFile), 0755); err != nil {
+	testDir := filepath.Join(repoRoot, "testdata", "javascript")
+	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("failed to create test directory: %v", err)
 	}
+
+	testFile := filepath.Join(testDir, "typescript.ts")
 	if err := os.WriteFile(testFile, []byte(`
 import { foo } from './utils';
 import type { Baz } from './interfaces';
 import { Component } from 'react';
 `), 0644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
+	}
+
+	// Create the imported utils file so resolveJSImport can resolve it.
+	if err := os.WriteFile(filepath.Join(testDir, "utils.js"), []byte("// utils"), 0644); err != nil {
+		t.Fatalf("failed to create utils.js: %v", err)
 	}
 
 	result, err := parseJavaScriptFiles(repoRoot, []string{testFile})
@@ -129,8 +174,7 @@ import { Component } from 'react';
 		t.Fatalf("expected result for %s, got none", testFile)
 	}
 
-	// Should have 1 local import (./utils), react is filtered out
-	// Note: 'import type' is handled by the parser, but may not create runtime deps
+	// Should have 1 local import (./utils), react is filtered out, interfaces not on disk
 	if len(deps) < 1 {
 		t.Errorf("expected at least 1 local dependency, got %d: %v", len(deps), deps)
 	}
@@ -150,10 +194,6 @@ import { Component } from 'react';
 
 // TestParseJavaScriptFiles_BinaryMissing tests behavior when node is not available
 func TestParseJavaScriptFiles_BinaryMissing(t *testing.T) {
-	// This test is tricky because we can't actually remove node from PATH
-	// Instead, we'll test the error path by using a non-existent binary
-	// by temporarily modifying the PATH
-
 	// Save original PATH
 	originalPath := os.Getenv("PATH")
 	defer os.Setenv("PATH", originalPath)
@@ -171,6 +211,34 @@ func TestParseJavaScriptFiles_BinaryMissing(t *testing.T) {
 
 	if !contains(err.Error(), "node binary not found") {
 		t.Errorf("expected error about node binary, got: %v", err)
+	}
+}
+
+// TestParseJavaScriptFiles_ParserScriptMissing tests behavior when js-parser.js is not in PATH
+func TestParseJavaScriptFiles_ParserScriptMissing(t *testing.T) {
+	// Skip if node not found
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node binary not found, skipping JavaScript tests")
+	}
+
+	// Build a PATH that contains node but not js-parser.js.
+	// Use the directory of the node binary so node is still found.
+	nodeDir := filepath.Dir(nodePath)
+	originalPath := os.Getenv("PATH")
+	defer os.Setenv("PATH", originalPath)
+	os.Setenv("PATH", nodeDir)
+
+	repoRoot := t.TempDir()
+	testFile := filepath.Join(repoRoot, "test.js")
+
+	_, err = parseJavaScriptFiles(repoRoot, []string{testFile})
+	if err == nil {
+		t.Fatal("expected error when js-parser.js is not in PATH, got nil")
+	}
+
+	if !contains(err.Error(), "js-parser.js not found in PATH") {
+		t.Errorf("expected error about js-parser.js, got: %v", err)
 	}
 }
 
@@ -236,6 +304,29 @@ func TestResolveJSImport(t *testing.T) {
 	}
 }
 
+// TestResolveJSImport_Unresolvable tests that resolveJSImport returns an error
+// when the import cannot be mapped to a known file on disk.
+func TestResolveJSImport_Unresolvable(t *testing.T) {
+	repoRoot := t.TempDir()
+
+	// No actual files created — import cannot be resolved.
+	importer := filepath.Join(repoRoot, "src", "main.js")
+	importPath := "./nonexistent-module"
+
+	resolved, err := resolveJSImport(importer, importPath, repoRoot)
+	if err == nil {
+		t.Fatalf("expected error for unresolvable import, got resolved path: %q", resolved)
+	}
+
+	if !contains(err.Error(), "cannot resolve JS import") {
+		t.Errorf("expected error to mention 'cannot resolve JS import', got: %v", err)
+	}
+
+	if resolved != "" {
+		t.Errorf("expected empty resolved path on error, got: %q", resolved)
+	}
+}
+
 // createMockJSParser creates a mock js-parser.js that returns predictable output
 func createMockJSParser(t *testing.T, path string) {
 	t.Helper()
@@ -291,9 +382,8 @@ func TestParseJavaScriptFiles_MultipleFiles(t *testing.T) {
 		t.Skip("node binary not found, skipping JavaScript tests")
 	}
 
-	repoRoot := t.TempDir()
-	mockParser := filepath.Join(repoRoot, "js-parser.js")
-	createMockJSParser(t, mockParser)
+	repoRoot, cleanup := setupMockJSParserOnPath(t)
+	defer cleanup()
 
 	// Create test files
 	testDir := filepath.Join(repoRoot, "src")

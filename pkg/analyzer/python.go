@@ -3,6 +3,7 @@ package analyzer
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -18,10 +19,15 @@ func parsePythonFiles(repoRoot string, files []string) (map[string][]string, err
 		return nil, fmt.Errorf("python3 not found: %w (install Python 3 or skip Python analysis)", err)
 	}
 
-	// Check if python-parser.py exists
-	parserScript := filepath.Join(repoRoot, "python-parser.py")
-	if _, err := exec.Command(pythonPath, "-c", "import os; os.path.exists('"+parserScript+"')").Output(); err != nil {
-		return nil, fmt.Errorf("python-parser.py not found at %s", parserScript)
+	// Locate python-parser.py via PATH lookup.
+	parserScript, err := exec.LookPath("python-parser.py")
+	if err != nil {
+		return nil, fmt.Errorf("python-parser.py not found in PATH: required for Python parsing")
+	}
+
+	// Verify the script exists on disk.
+	if _, statErr := os.Stat(parserScript); os.IsNotExist(statErr) {
+		return nil, fmt.Errorf("python parser script not found: %s", parserScript)
 	}
 
 	fileImports := make(map[string][]string)
