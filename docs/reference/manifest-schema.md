@@ -277,6 +277,7 @@ Values for the `state` field:
 
 | Value | Description |
 |-------|-------------|
+| `INTERVIEWING` | A structured requirements interview is in progress for this feature |
 | `SCOUT_PENDING` | Scout has not run yet |
 | `SCOUT_VALIDATING` | Scout output is being validated |
 | `REVIEWED` | Manifest has been reviewed and is ready for wave execution |

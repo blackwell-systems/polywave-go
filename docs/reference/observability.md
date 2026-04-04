@@ -207,11 +207,14 @@ Results are ordered by `time ASC`.
 
 Divides a time range into N equal-width buckets and computes the metric per bucket.
 
-| Parameter | Type | Description |
+Signature: `ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[TrendResult]`
+
+| `ComputeTrendOpts` field | Type | Description |
 |---|---|---|
-| Metric | string | `"cost"`, `"success_rate"`, or `"retry_count"` |
-| TimeRange | time.Duration | Length of the full window (e.g. `7 * 24 * time.Hour`) |
-| Buckets | int | Number of time buckets; defaults to 1 if ≤ 0 |
+| `Store` | `Store` | Observability store to query (required) |
+| `Metric` | string | `"cost"`, `"success_rate"`, or `"retry_count"` |
+| `TimeRange` | time.Duration | Length of the full window (e.g. `7 * 24 * time.Hour`) |
+| `Buckets` | int | Number of time buckets; defaults to 1 if ≤ 0 |
 
 Returns `TrendResult.Buckets` — each `TrendBucket` has `Start`, `End`, `Value` (the
 metric), and `Count` (number of events in that bucket).

@@ -231,9 +231,14 @@ receive read-only tools via namespace filtering; wave agents get the full set.
 Go source file dependency analysis. Parses AST to extract import relationships
 and compute wave structure.
 
-- `analyzer.go` -- `ParseFile`, `ExtractImports` (Go AST-based)
-- `deps.go` -- dependency graph construction
-- `cascade.go` -- detect files affected by type renames
+- `analyzer.go` -- `ParseFile`, `ExtractImports` (Go AST-based); `ResolveImportPath` (package-level function)
+- `graph.go` -- `BuildGraph(ctx, repoRoot, files) result.Result[*DepGraph]` (replaces the deleted `AnalyzeDeps`); `DepGraph` type with `CascadeCandidates []CascadeCandidate`
+- `output.go` -- `ToOutput(graph)` converts `*DepGraph` to CLI `Output` struct; `FormatYAML`, `FormatJSON`
+- `cascade.go` -- `DetectCascades(ctx, repoRoot, renames) result.Result[CascadeResult]`; `CascadeCandidate` is the only cascade type (`CascadeFile` has been removed)
+- `wiring.go` -- `DetectWiring(ctx, manifest, repoRoot) result.Result[[]WiringDeclaration]`
+
+> **Note:** `AnalyzeDeps` was deleted; its tombstone remains in `deps.go`. Callers use
+> `BuildGraph(ctx, repoRoot, files)` followed by `ToOutput(graph)` directly.
 
 #### `pkg/solver`
 
@@ -552,16 +557,16 @@ been fully removed.
 IMPL manifests track lifecycle state via `protocol.ProtocolState`:
 
 ```
-SCOUT_PENDING -> REVIEWED -> SCAFFOLD_PENDING -> WAVE_PENDING -> WAVE_EXECUTING
-                    |                                                |
-                    v                                                v
-              NOT_SUITABLE                                    WAVE_MERGING
+INTERVIEWING -> SCOUT_PENDING -> REVIEWED -> SCAFFOLD_PENDING -> WAVE_PENDING -> WAVE_EXECUTING
+                                    |                                                |
+                                    v                                                v
+                              NOT_SUITABLE                                    WAVE_MERGING
+                                                                                   |
+                                                                                   v
+                                                              WAVE_VERIFIED -> COMPLETE
                                                                    |
                                                                    v
-                                              WAVE_VERIFIED -> COMPLETE
-                                                   |
-                                                   v
-                                            (next wave: WAVE_EXECUTING)
+                                                            (next wave: WAVE_EXECUTING)
 
 Any active state -> BLOCKED (recoverable)
 ```

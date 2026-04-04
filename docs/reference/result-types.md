@@ -139,7 +139,7 @@ err := result.NewError(result.CodeMergeConflict, "conflict in main.go").
 
 ## Error code domains
 
-All `SAWError.Code` values are defined as constants in `pkg/result/codes.go`. Each code begins with a domain prefix and a three-digit number.
+All `SAWError.Code` values are defined as constants in `pkg/result/codes.go`. Each code begins with a domain prefix and a three-digit number. Active domains: V, W, B, G, A, N, O, P, T, Z (plus S, C, K, I, D, E, X, Q, R, J for internal subsystems).
 
 ### V — Validation (V001–V099)
 
@@ -216,7 +216,7 @@ Agent lifecycle and output verification errors.
 
 ### N — Engine (N001–N099)
 
-Orchestration and state-machine errors. Covers prepare/finalize wave, scout/planner/wave execution, merge, verification, configuration, and all other engine subsystems (N018–N084).
+Orchestration and state-machine errors. Covers prepare/finalize wave, scout/planner/wave execution, merge, verification, configuration, and all other engine subsystems (N018–N098).
 
 Selected codes:
 
@@ -232,7 +232,7 @@ Selected codes:
 | `N013_CONFIG_NOT_FOUND` | `CodeConfigNotFound` | Configuration file not found. |
 | `N014_CONFIG_INVALID` | `CodeConfigInvalid` | Configuration file is present but invalid. |
 
-N018–N084 are ad-hoc engine operation codes migrated from internal packages. They use `ENGINE_*` string prefixes (e.g. `ENGINE_SCOUT_FAILED`, `ENGINE_WAVE_FAILED`). Consult `codes.go` for the full list.
+N018–N098 are fine-grained engine operation codes. All follow the `Nxxx_DESCRIPTION` naming pattern (e.g. `N020_SCOUT_RUN_FAILED`, `N025_WAVE_FAILED`, `N094_MANIFEST_SAVE_FAILED`). Consult `pkg/result/codes.go` for the full list.
 
 ### P — Protocol (P001–P099)
 
@@ -248,6 +248,15 @@ Invariant and execution-rule violations detected by the protocol layer.
 | `P006_EXECUTION_RULE` | `CodeExecutionRule` | An execution rule was broken. |
 | `P007_WIRING_GAP` | `CodeWiringGap` | A wiring gap between components was detected. |
 
+### O — Observability (O001–O099)
+
+Errors from `pkg/observability` when recording or querying events.
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `O001_OBS_EMIT_FAILED` | `CodeObsEmitFailed` | `EmitSync` failed to record an event. |
+| `O002_OBS_QUERY_FAILED` | `CodeObsQueryFailed` | An observability query failed. |
+
 ### T — Tool/parse (T001–T099)
 
 Errors from the tool runner and `errparse` subsystem.
@@ -258,6 +267,26 @@ Errors from the tool runner and `errparse` subsystem.
 | `T002_PARSE_PANIC` | `CodeParsePanic` | Parser panicked; recovered but output is invalid. |
 | `T003_TOOL_NOT_FOUND` | `CodeToolNotFound` | Required tool binary is not present on PATH. |
 | `T004_TOOL_TIMEOUT` | `CodeToolTimeout` | Tool execution exceeded its time limit. |
+
+### Z — Analyzer (Z001–Z099)
+
+Errors from `pkg/analyzer` during dependency graph construction, cascade detection, import resolution, and wiring analysis.
+
+| Code | Constant | Meaning |
+|------|----------|---------|
+| `Z001_PARSE_FAILED` | `CodeAnalyzeParseFailed` | A source file could not be parsed. |
+| `Z002_GOMOD_READ_FAILED` | `CodeAnalyzeGomodReadFailed` | `go.mod` could not be read. |
+| `Z003_MODULE_NOT_FOUND` | `CodeAnalyzeModuleNotFound` | Module path could not be resolved. |
+| `Z004_IMPORT_RESOLVE_FAILED` | `CodeAnalyzeImportResolveFailed` | An import path could not be resolved to a directory. |
+| `Z005_CYCLE_DETECTED` | `CodeAnalyzeCycleDetected` | Circular dependency detected in the file graph. |
+| `Z006_UNSUPPORTED_LANGUAGE` | `CodeAnalyzeUnsupportedLang` | File set contains an unsupported language extension. |
+| `Z007_NODE_MISSING` | `CodeAnalyzeNodeMissing` | A referenced file node is absent from the graph. |
+| `Z008_JS_PARSER_MISSING` | `CodeAnalyzeJSParserMissing` | `js-parser.js` helper script not found. |
+| `Z009_PYTHON_MISSING` | `CodeAnalyzePythonMissing` | Python parser script not found. |
+| `Z010_RUST_PARSER_MISSING` | `CodeAnalyzeRustParserMissing` | Rust parser helper binary not found. |
+| `Z011_MANIFEST_NIL` | `CodeAnalyzeManifestNil` | Nil manifest passed to `DetectSharedTypes` or `DetectWiring`. |
+| `Z012_CIRCULAR_AGENT_DEP` | `CodeAnalyzeCircularAgentDep` | Circular agent dependency detected during wiring analysis. |
+| `Z013_WALK_FAILED` | `CodeAnalyzeWalkFailed` | `filepath.Walk` failed during cascade detection. |
 
 ---
 

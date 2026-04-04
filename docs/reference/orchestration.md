@@ -9,13 +9,9 @@ The engine layer (`pkg/engine`) wraps the orchestrator with higher-level
 entrypoints (Scout, Wave, Merge, Finalize, Chat, Daemon) and provides the
 program-level tier loop for multi-IMPL orchestration.
 
-> **Migration note (2026-03):** The orchestrator is being migrated from
-> `types.IMPLDoc` to `protocol.IMPLManifest` (type-unification IMPL). The
-> target state uses `protocol.IMPLManifest` as the canonical type.
-> During migration, the engine layer bridges the two via `manifestToIMPLDoc()`
-> in `pkg/engine/engine.go`. The orchestrator still holds `*types.IMPLDoc`
-> internally; this will be replaced with `*protocol.IMPLManifest` once all
-> callers are migrated. Document below describes the target state.
+> **Note:** The type-unification migration from `types.IMPLDoc` to
+> `protocol.IMPLManifest` is complete. `protocol.IMPLManifest` is now the
+> single canonical type throughout the engine and orchestrator.
 
 ---
 
@@ -52,6 +48,8 @@ The orchestrator tracks an 11-state protocol state machine defined in
 validates the transition against `validTransitions` in `transitions.go`.
 
 ```
+Interviewing ──→ ScoutPending
+                      │
 ScoutPending ──→ ScoutValidating ──→ Reviewed
      │                                   │
      ├──→ Reviewed                        ├──→ ScaffoldPending ──→ WavePending
@@ -74,7 +72,7 @@ ScoutPending ──→ ScoutValidating ──→ Reviewed
     Complete ──→ (terminal)
 ```
 
-States: `ScoutPending`, `ScoutValidating`, `Reviewed`, `ScaffoldPending`,
+States: `Interviewing`, `ScoutPending`, `ScoutValidating`, `Reviewed`, `ScaffoldPending`,
 `WavePending`, `WaveExecuting`, `WaveMerging`, `WaveVerified`, `Blocked`,
 `NotSuitable`, `Complete`.
 

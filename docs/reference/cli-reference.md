@@ -1295,7 +1295,7 @@ sawtools set-impl-state <manifest-path> --state <state> [flags]
 - `manifest-path` -- path to YAML IMPL manifest (required)
 
 **Flags:**
-- `--state` -- target state (required). Valid states: `SCOUT_PENDING`, `SCOUT_VALIDATING`, `REVIEWED`, `SCAFFOLD_PENDING`, `WAVE_PENDING`, `WAVE_EXECUTING`, `WAVE_MERGING`, `WAVE_VERIFIED`, `BLOCKED`, `COMPLETE`, `NOT_SUITABLE`
+- `--state` -- target state (required). Valid states: `INTERVIEWING`, `SCOUT_PENDING`, `SCOUT_VALIDATING`, `REVIEWED`, `SCAFFOLD_PENDING`, `WAVE_PENDING`, `WAVE_EXECUTING`, `WAVE_MERGING`, `WAVE_VERIFIED`, `BLOCKED`, `COMPLETE`, `NOT_SUITABLE`
 - `--commit` -- git commit the state change (default: false)
 - `--commit-msg` -- commit message override
 
