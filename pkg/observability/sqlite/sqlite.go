@@ -10,6 +10,7 @@ import (
 	"time"
 
 	obs "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 
 	_ "modernc.org/sqlite"
 )
@@ -142,34 +143,25 @@ func (s *store) QueryEvents(ctx context.Context, filters obs.QueryFilters) ([]ob
 }
 
 // GetRollup computes aggregated metrics over stored events.
-// Delegates to the existing rollup functions in pkg/observability.
-// TODO(wave2-agent-E): update to result.Result[obs.RollupResult] return type.
+// Delegates to the rollup functions in pkg/observability and unwraps their
+// result.Result[obs.RollupResult] return values to satisfy the Store interface.
 func (s *store) GetRollup(ctx context.Context, req obs.RollupRequest) (*obs.RollupResult, error) {
+	var r result.Result[obs.RollupResult]
 	switch req.Type {
 	case "cost":
-		res := obs.ComputeCostRollup(ctx, s, req)
-		if res.IsFatal() {
-			return nil, fmt.Errorf("%s", res.Errors[0].Message)
-		}
-		data := res.GetData()
-		return &data, nil
+		r = obs.ComputeCostRollup(ctx, s, req)
 	case "success_rate":
-		res := obs.ComputeSuccessRateRollup(ctx, s, req)
-		if res.IsFatal() {
-			return nil, fmt.Errorf("%s", res.Errors[0].Message)
-		}
-		data := res.GetData()
-		return &data, nil
+		r = obs.ComputeSuccessRateRollup(ctx, s, req)
 	case "retry_count":
-		res := obs.ComputeRetryRollup(ctx, s, req)
-		if res.IsFatal() {
-			return nil, fmt.Errorf("%s", res.Errors[0].Message)
-		}
-		data := res.GetData()
-		return &data, nil
+		r = obs.ComputeRetryRollup(ctx, s, req)
 	default:
 		return nil, fmt.Errorf("unsupported rollup type: %s", req.Type)
 	}
+	if !r.IsSuccess() {
+		return nil, fmt.Errorf("%s", r.Errors[0].Message)
+	}
+	data := r.GetData()
+	return &data, nil
 }
 
 // Close releases the database connection.
