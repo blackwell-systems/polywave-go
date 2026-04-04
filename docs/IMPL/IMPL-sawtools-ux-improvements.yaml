@@ -531,5 +531,5 @@ critic_report:
     summary: 'Agent A and B briefs are accurate against the codebase. One error: Agent A''s brief specifies ''WARNING'' as a valid --verdict value for set-critic-verdict, but critic.go defines only PASS, ISSUES, and SKIPPED as recognized verdict constants — WARNING is not a valid CriticData verdict value. One error: Agent C''s file_ownership entry marks docs/reference/cli-reference.md as action:new but the file already exists at that path — it should be action:modify. One warning for Agent C: the brief instructs searching for a file_ownership schema section with action:/depends_on:/repo: field descriptions to anchor the v048_exempt entry, but no such dedicated schema section exists in cli-reference.md; the fallback instruction (find run-critic and add adjacent) is valid and sufficient.'
     reviewed_at: "2026-04-04T06:46:57Z"
     issue_count: 2
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: hook
