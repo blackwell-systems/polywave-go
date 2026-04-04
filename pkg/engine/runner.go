@@ -900,6 +900,18 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		}
 	}
 
+	// Journal context recovery: prepend prior session context if available.
+	// Non-fatal: errors are logged and promptPrefix is used unchanged.
+	ji := NewJournalIntegration(opts.RepoPath, func(msg string, args ...interface{}) {
+		loggerFrom(opts.Logger).Info(msg, args...)
+	})
+	enrichedPrefix, _, jiErr := ji.PrepareAgentContext(waveNum, agentLetter, promptPrefix)
+	if jiErr != nil {
+		loggerFrom(opts.Logger).Debug("engine.RunSingleAgent: journal context skipped", "err", jiErr)
+	} else {
+		promptPrefix = enrichedPrefix
+	}
+
 	if agentRes := orch.RunAgent(ctx, waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
 		if ctx.Err() != nil {
 			return result.NewFailure[AgentData]([]result.SAWError{
