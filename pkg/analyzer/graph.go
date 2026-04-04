@@ -57,16 +57,18 @@ func parseGoFiles(ctx context.Context, repoRoot string, files []string) (map[str
 
 	for _, f := range files {
 		// P0-3: propagate ctx instead of context.Background()
-		astFile, err := a.ParseFile(ctx, f)
-		if err != nil {
-			return nil, fmt.Errorf("parse %s: %w", f, err)
+		parseRes := a.ParseFile(ctx, f)
+		if parseRes.IsFatal() {
+			return nil, fmt.Errorf("parse %s: %s", f, parseRes.Errors[0].Message)
 		}
+		astFile := parseRes.GetData()
 
 		// P0-3: propagate ctx instead of context.Background()
-		imports, err := a.ExtractImports(ctx, astFile, repoRoot)
-		if err != nil {
-			return nil, fmt.Errorf("extract imports %s: %w", f, err)
+		importsRes := a.ExtractImports(ctx, astFile, repoRoot)
+		if importsRes.IsFatal() {
+			return nil, fmt.Errorf("extract imports %s: %s", f, importsRes.Errors[0].Message)
 		}
+		imports := importsRes.GetData()
 
 		// Resolve package directories to actual .go files
 		resolvedImports, err := resolvePackageDeps(f, imports, files)
@@ -422,12 +424,12 @@ func detectCascades(ctx context.Context, repoRoot string, modifiedFiles []string
 			}
 
 			// Resolve import to directory.
-			// Agent C migrates ResolveImportPath to accept ctx and return result.Result[string];
-			// after merge, this becomes: ResolveImportPath(ctx, importPath, repoRoot, modulePath)
-			resolved, err := ResolveImportPath(importPath, repoRoot, modulePath)
-			if err != nil {
+			// ResolveImportPath now takes ctx as first param and returns result.Result[string]
+			resolvedRes := ResolveImportPath(ctx, importPath, repoRoot, modulePath)
+			if resolvedRes.IsFatal() {
 				continue
 			}
+			resolved := resolvedRes.GetData()
 
 			// Check if any modified file is in this package
 			for modFile := range modifiedSet {
