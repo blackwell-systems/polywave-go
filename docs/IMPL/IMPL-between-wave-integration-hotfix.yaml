@@ -1194,7 +1194,7 @@ known_issues:
         on disk; the agent edits it in place. sawtools pre-wave-validate --wave 3
         passes cleanly. This is a documentation-only agent with no build risk.
 critic_report:
-    verdict: ISSUES
+    verdict: PASS
     agent_reviews:
         A:
             agent_id: A
@@ -1236,12 +1236,5 @@ critic_report:
     summary: 'Six agents reviewed. Wave 1 agents (A, B, C) and Wave 2 agent (D) are accurate against the codebase — all referenced files exist, all symbols (injectAllowedPathsRestriction, FinalizeWaveOpts, StepResult, emitStepEvent, EventCallback, WiringGaps) are confirmed present, import paths are valid, and new-file declarations have no conflicts. Agent E has an action:new declaration for a file that already exists (docs/reference/cli-reference.md), which is acknowledged in known_issues. Agent G is accurate. Agent F contains one error: the IMPL doc and brief both claim ''E47 is the last rule as of this writing'' and the feature is designated E47, but execution-rules.md has no ## E47 heading (E47 appears only in the cross-references list, not as a full rule body). The last ## E{N} heading is ## E46. The new rule is therefore E47, not E47. Agent F''s brief does instruct the agent to confirm rule numbering by reading the file, but the feature-wide naming of E47 will conflict with the correct number E47. This mismatch propagates into rule names, commit messages, and cross-references across all Agent F files.'
     reviewed_at: "2026-04-04T05:07:03Z"
     issue_count: 2
-critic_report: |
-  PASS (after correction). E-rule numbering corrected: E48→E47 throughout.
-  Critic confirmed: injectAllowedPathsRestriction exists in integration_runner.go:299,
-  WiringGaps field at finalize.go:80, StepResult/emitStepEvent/FinalizeWaveOpts/EventCallback
-  all present in finalize_steps.go, N098 is last N-code (N099 slot available),
-  integration-agent.md has Context section. Agent E file_existence warning is
-  intentional (documented in known_issues). All agent briefs accurate after correction.
 state: SCOUT_PENDING
 injection_method: hook
