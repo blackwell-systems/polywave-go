@@ -33,27 +33,31 @@ Output format matches Scout IMPL doc dependency graph schema.`,
 			}
 
 			// Build dependency graph
-			graph, err := analyzer.BuildGraph(repoRoot, files)
-			if err != nil {
-				return fmt.Errorf("analyze-deps: %w", err)
+			graphResult := analyzer.BuildGraph(cmd.Context(), repoRoot, files)
+			if graphResult.IsFatal() {
+				return fmt.Errorf("analyze-deps: %s", graphResult.Errors[0].Message)
 			}
 
 			// Convert to output format
-			output := analyzer.ToOutput(graph)
+			output := analyzer.ToOutput(graphResult.GetData())
 
 			// Serialize
 			var data []byte
 			switch formatFlag {
 			case "yaml":
-				data, err = analyzer.FormatYAML(output)
+				fmtResult := analyzer.FormatYAML(output)
+				if fmtResult.IsFatal() {
+					return fmt.Errorf("format output: %s", fmtResult.Errors[0].Message)
+				}
+				data = fmtResult.GetData()
 			case "json":
-				data, err = analyzer.FormatJSON(output)
+				fmtResult := analyzer.FormatJSON(output)
+				if fmtResult.IsFatal() {
+					return fmt.Errorf("format output: %s", fmtResult.Errors[0].Message)
+				}
+				data = fmtResult.GetData()
 			default:
 				return fmt.Errorf("unsupported format: %s (use yaml or json)", formatFlag)
-			}
-
-			if err != nil {
-				return fmt.Errorf("format output: %w", err)
 			}
 
 			fmt.Fprintln(cmd.OutOrStdout(), string(data))

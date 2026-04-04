@@ -22,7 +22,7 @@ func TestDepGraph_EmptyGraph(t *testing.T) {
 	g2 := DepGraph{
 		Nodes:             []FileNode{},
 		Waves:             map[int][]string{},
-		CascadeCandidates: []CascadeFile{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
 	if len(g2.Nodes) != 0 {
@@ -75,33 +75,33 @@ func TestFileNode_ZeroFields(t *testing.T) {
 	}
 }
 
-func TestCascadeFile_TypeValidation(t *testing.T) {
-	// Ensure Type field is "semantic" or empty
+func TestCascadeCandidate_TypeValidation(t *testing.T) {
+	// Ensure CascadeType field is "semantic" or empty
 	tests := []struct {
 		name     string
-		cascade  CascadeFile
+		cascade  CascadeCandidate
 		wantType string
 	}{
 		{
 			name:     "zero value",
-			cascade:  CascadeFile{},
+			cascade:  CascadeCandidate{},
 			wantType: "",
 		},
 		{
 			name: "semantic type",
-			cascade: CascadeFile{
-				File:   "/abs/path/to/cascade.go",
-				Reason: "Imports modified file pkg/foo/bar.go",
-				Type:   "semantic",
+			cascade: CascadeCandidate{
+				File:        "/abs/path/to/cascade.go",
+				Reason:      "Imports modified file pkg/foo/bar.go",
+				CascadeType: "semantic",
 			},
 			wantType: "semantic",
 		},
 		{
 			name: "empty type with reason",
-			cascade: CascadeFile{
-				File:   "/abs/path/to/cascade.go",
-				Reason: "Some reason",
-				Type:   "",
+			cascade: CascadeCandidate{
+				File:        "/abs/path/to/cascade.go",
+				Reason:      "Some reason",
+				CascadeType: "",
 			},
 			wantType: "",
 		},
@@ -109,13 +109,13 @@ func TestCascadeFile_TypeValidation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if tt.cascade.Type != tt.wantType {
-				t.Errorf("expected Type %q, got %q", tt.wantType, tt.cascade.Type)
+			if tt.cascade.CascadeType != tt.wantType {
+				t.Errorf("expected CascadeType %q, got %q", tt.wantType, tt.cascade.CascadeType)
 			}
 
-			// Verify Type is either "semantic" or empty (Phase 1 constraint)
-			if tt.cascade.Type != "" && tt.cascade.Type != "semantic" {
-				t.Errorf("invalid Type value %q, must be \"semantic\" or empty in Phase 1", tt.cascade.Type)
+			// Verify CascadeType is either "semantic" or empty (Phase 1 constraint)
+			if tt.cascade.CascadeType != "" && tt.cascade.CascadeType != "semantic" {
+				t.Errorf("invalid CascadeType value %q, must be \"semantic\" or empty in Phase 1", tt.cascade.CascadeType)
 			}
 		})
 	}

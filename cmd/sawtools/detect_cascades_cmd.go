@@ -43,14 +43,14 @@ Output format is YAML matching the CascadeResult schema.`,
 			}
 
 			// Detect cascades
-			result, err := analyzer.DetectCascades(cmd.Context(), repoRoot, renames)
-			if err != nil {
-				return fmt.Errorf("detect cascades: %w", err)
+			cascadeRes := analyzer.DetectCascades(cmd.Context(), repoRoot, renames)
+			if cascadeRes.IsFatal() {
+				return fmt.Errorf("detect cascades: %s", cascadeRes.Errors[0].Message)
 			}
 
 			// Output YAML.
 			// Cannot use protocol.SaveYAML: marshaling to []byte for stdout, not to a file path.
-			data, err := yaml.Marshal(&result)
+			data, err := yaml.Marshal(cascadeRes.GetData())
 			if err != nil {
 				return fmt.Errorf("marshal YAML: %w", err)
 			}
