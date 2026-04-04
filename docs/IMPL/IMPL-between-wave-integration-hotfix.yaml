@@ -562,6 +562,7 @@ waves:
           files:
             - pkg/engine/finalize_steps.go
             - pkg/engine/finalize_steps_step_test.go
+      base_commit: dcdbd252990e35707c58446db5517d992e0328b1
     - number: 2
       agents:
         - id: D
@@ -755,6 +756,7 @@ waves:
             - A
             - B
             - C
+          context_source: prepared-brief
     - number: 3
       agents:
         - id: E
@@ -1124,6 +1126,62 @@ quality_gates:
           repo: scout-and-wave-go
 post_merge_checklist:
     groups: []
+completion_reports:
+    A:
+        status: complete
+        branch: saw/between-wave-integration-hotfix/wave1-agent-A
+        commit: 71cd7cb
+        files_changed:
+            - pkg/result/codes.go
+            - pkg/result/codes_test.go
+        tests_added:
+            - TestNCodesFollowNamingPattern/CodeCallerCascadeHotfixFailed
+            - TestAllCodesAreUnique/CodeCallerCascadeHotfixFailed
+        verification: PASS
+        notes: Added CodeCallerCascadeHotfixFailed = N099_CALLER_CASCADE_HOTFIX_FAILED to Engine error codes block after CodeRequiredKeyMissing. Added entries to both test tables. Build and tests clean.
+    B:
+        status: complete
+        branch: saw/between-wave-integration-hotfix/wave1-agent-B
+        commit: c206d04
+        files_changed:
+            - pkg/engine/caller_cascade.go
+            - pkg/engine/caller_cascade_test.go
+        files_created:
+            - pkg/engine/caller_cascade.go
+            - pkg/engine/caller_cascade_test.go
+        tests_added:
+            - TestClassifyCallerCascadeErrors_AllCascades
+            - TestClassifyCallerCascadeErrors_MixedErrors
+            - TestClassifyCallerCascadeErrors_NoErrors
+            - TestClassifyCallerCascadeErrors_PatternMatching
+            - TestClassifyCallerCascadeErrors_NilVerifyData
+            - TestClassifyCallerCascadeErrors_FileLineExtraction
+        verification: PASS
+        notes: All 6 tests pass. go build ./... and go vet ./... clean. Used local const codeCallerCascadeHotfixFailed='N099_CALLER_CASCADE_HOTFIX_FAILED' instead of result.CodeCallerCascadeHotfixFailed since Agent A owns pkg/result/codes.go. Integration Agent (wave merge) should update references to result.CodeCallerCascadeHotfixFailed after Agent A's code lands.
+    C:
+        status: complete
+        branch: saw/between-wave-integration-hotfix/wave1-agent-C
+        commit: 08f7e6d
+        files_changed:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_step_test.go
+        files_created:
+            - pkg/engine/finalize_steps_step_test.go
+        tests_added:
+            - TestStepClassifyCallerCascade_SkipsWhenBuildPassed
+            - TestStepClassifyCallerCascade_SkipsWhenNilVerifyData
+            - TestStepClassifyCallerCascade_DetectsAllCascades
+        verification: PASS
+        notes: 'StepClassifyCallerCascade implemented. All 3 tests passing. Added temporary type stubs (CallerCascadeClassification, CallerCascadeError, ClassifyCallerCascadeErrors) in finalize_steps.go to satisfy pre-commit build gate while Agent B''s caller_cascade.go is absent. IMPORTANT: Integration agent must remove these stubs from finalize_steps.go after merging Agent B''s caller_cascade.go to avoid duplicate type declarations.'
+    D:
+        status: complete
+        branch: main
+        commit: b8d6a4b
+        files_changed:
+            - pkg/engine/finalize.go
+            - cmd/sawtools/finalize_wave.go
+        verification: PASS
+        notes: Added CallerCascadeErrors/CallerCascadeOnly to FinalizeWaveResult. Step 5.1 classifies cascade errors after verify-build failure. finalize-wave CLI has apply-cascade-hotfix step with --dry-run flag and uniqueFiles helper. All gates pass.
 pre_mortem:
     overall_risk: medium
     rows:
@@ -1236,5 +1294,16 @@ critic_report:
     summary: 'Six agents reviewed. Wave 1 agents (A, B, C) and Wave 2 agent (D) are accurate against the codebase — all referenced files exist, all symbols (injectAllowedPathsRestriction, FinalizeWaveOpts, StepResult, emitStepEvent, EventCallback, WiringGaps) are confirmed present, import paths are valid, and new-file declarations have no conflicts. Agent E has an action:new declaration for a file that already exists (docs/reference/cli-reference.md), which is acknowledged in known_issues. Agent G is accurate. Agent F contains one error: the IMPL doc and brief both claim ''E47 is the last rule as of this writing'' and the feature is designated E47, but execution-rules.md has no ## E47 heading (E47 appears only in the cross-references list, not as a full rule body). The last ## E{N} heading is ## E46. The new rule is therefore E47, not E47. Agent F''s brief does instruct the agent to confirm rule numbering by reading the file, but the feature-wide naming of E47 will conflict with the correct number E47. This mismatch propagates into rule names, commit messages, and cross-references across all Agent F files.'
     reviewed_at: "2026-04-04T05:07:03Z"
     issue_count: 2
-state: "REVIEWED"
+state: REVIEWED
 injection_method: hook
+integration_reports:
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+wiring_validation_reports:
+    wave2:
+        gaps: []
+        valid: true
+        summary: all 0 wiring declarations satisfied
