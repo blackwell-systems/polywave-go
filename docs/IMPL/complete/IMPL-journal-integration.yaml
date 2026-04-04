@@ -1,3 +1,4 @@
+completion_date: "2026-04-03"
 title: Journal Integration — Wire Context Recovery into Active Wave Execution
 feature_slug: journal-integration
 verdict: SUITABLE
@@ -413,6 +414,7 @@ waves:
               not scout-and-wave-go.
           files:
             - implementations/claude-code/prompts/saw-skill.md
+      base_commit: 59740a8ed2c552c0dd8b8ab9cbd1b3c6868caa72
 quality_gates:
     level: standard
     gates:
@@ -440,6 +442,60 @@ post_merge_checklist:
                 journal_context_file fields in JSON output. See known_issues entry for
                 full details. File excluded from agent ownership due to V048_AGENT_LOC_BUDGET.
               command: grep -n "journal_context_available" /Users/dayna.blackwell/code/scout-and-wave-go/docs/reference/cli-reference.md
+completion_reports:
+    A:
+        status: complete
+        branch: saw/journal-integration/wave1-agent-A
+        commit: 3c1b05b
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/orchestrator_test.go
+        tests_added:
+            - TestLaunchAgent_JournalContextPrepended
+            - TestLaunchAgent_JournalContextSkippedWhenEmpty
+        verification: PASS
+        notes: Added pkg/journal import to orchestrator.go. Wired journal context recovery inline in launchAgent after the retry prefix block. Used journal.NewObserver directly (not pkg/engine.JournalIntegration — circular import avoided). Periodic 30s sync goroutine tied to ctx. Both tests pass.
+    B:
+        status: complete
+        branch: saw/journal-integration/wave1-agent-B
+        commit: b2ad025
+        files_changed:
+            - pkg/engine/runner.go
+            - pkg/engine/runner_test.go
+        tests_added:
+            - TestRunSingleAgent_JournalContextApplied
+        verification: PASS
+        notes: 'Wired PrepareAgentContext into RunSingleAgent after retry context block, before orch.RunAgent. Non-fatal: errors logged at Debug, original prompt used unchanged. Both TestJournalIntegration_PrepareAgentContext and TestRunSingleAgent_JournalContextApplied pass. Periodic sync is NOT started here — RunSingleAgent delegates to launchAgent where Agent A handles it.'
+    C:
+        status: complete
+        branch: saw/journal-integration/wave1-agent-C
+        commit: 0d3e30f
+        files_changed:
+            - pkg/engine/prepare_agent.go
+            - pkg/engine/prepare.go
+            - pkg/engine/step_types.go
+            - pkg/engine/prepare_agent_test.go
+        files_created:
+            - pkg/engine/prepare_agent_test.go
+        tests_added:
+            - TestPrepareAgent_JournalContextAvailable_FalseWhenNoSessionFiles
+            - TestPrepareAgent_JournalContextAvailable_TrueWhenSessionHasToolUses
+        verification: PASS
+        notes: 'Added JournalContextAvailable and JournalContextFile to PrepareAgentResult and AgentBriefInfo. Both prepare_agent.go and prepare.go now sync the journal after cursor init and write context.md if NewToolUses > 0. Non-fatal: any sync/generate/write errors silently leave the fields false/empty. Full engine test suite passes.'
+    D:
+        status: complete
+        branch: saw/journal-integration/wave1-agent-D
+        commit: e47b6cf
+        files_changed:
+            - implementations/claude-code/prompts/saw-skill.md
+        verification: PASS
+        notes: Updated step 6 in saw-skill.md to replace vague 'Prepend journal context if exists' with concrete journal context recovery instructions referencing journal_context_available and journal_context_file fields from prepare-wave/prepare-agent JSON output.
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
 pre_mortem:
     overall_risk: low
     rows:
@@ -534,5 +590,5 @@ critic_report:
     summary: 'Agent A, B, and D briefs are accurate against the codebase. Agent C has a file_ownership error: the brief instructs adding fields to the AgentBriefInfo struct, but that struct is defined in pkg/engine/step_types.go (not in prepare.go), and step_types.go is not listed in Agent C file_ownership. Without ownership of step_types.go, Agent C cannot add the two new fields to AgentBriefInfo. Additionally the IMPL pre-mortem warns of multiple AgentBriefInfo construction sites in prepare.go, but grep shows only one (line 957), making that risk description slightly inaccurate (advisory only).'
     reviewed_at: "2026-04-04T06:09:41Z"
     issue_count: 1
-state: "REVIEWED"
+state: COMPLETE
 injection_method: hook
