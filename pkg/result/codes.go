@@ -264,6 +264,8 @@ const (
 	CodeStepExecutionFailed = "N097_STEP_EXECUTION_FAILED"
 	// N098: required pipeline state key absent or nil
 	CodeRequiredKeyMissing = "N098_REQUIRED_KEY_MISSING"
+	// N099: caller cascade hotfix agent failed (E47)
+	CodeCallerCascadeHotfixFailed = "N099_CALLER_CASCADE_HOTFIX_FAILED"
 )
 
 // Queue error codes (Q001-Q099)

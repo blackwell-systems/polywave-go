@@ -90,6 +90,7 @@ func TestNCodesFollowNamingPattern(t *testing.T) {
 		{"CodeEngineInitFailed", CodeEngineInitFailed},
 		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
 		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
+		{"CodeCallerCascadeHotfixFailed", CodeCallerCascadeHotfixFailed},
 	}
 	for _, tc := range ncodes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -280,6 +281,7 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeEngineInitFailed", CodeEngineInitFailed},
 		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
 		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
+		{"CodeCallerCascadeHotfixFailed", CodeCallerCascadeHotfixFailed},
 		// Q codes
 		{"CodeQueueAddFailed", CodeQueueAddFailed},
 		{"CodeQueueListFailed", CodeQueueListFailed},
