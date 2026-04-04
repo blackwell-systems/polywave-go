@@ -22,7 +22,8 @@ merging agent branches. They are declared in the IMPL manifest under
 11. [Docs-Only Wave Skipping](#docs-only-wave-skipping)
 12. [Build System Skipping](#build-system-skipping)
 13. [Example Configurations](#example-configurations)
-14. [See Also](#see-also)
+14. [CLI: `sawtools run-gates`](#cli-sawtools-run-gates)
+15. [See Also](#see-also)
 
 ---
 
@@ -299,7 +300,8 @@ the later finalize-wave gate run to avoid redundant execution.
 ## Caching
 
 Pre-merge gates use a result cache stored under `.saw/` in the repo directory.
-The cache key combines the HEAD commit SHA and the gate command string.
+The cache key combines the HEAD commit SHA, staged diff stat, unstaged diff
+stat, and the gate command string.
 
 - Cache TTL: 5 minutes (configurable via `gatecache.DefaultTTL`).
 - A cache hit returns the stored `Passed`, `ExitCode`, `Stdout`, and `Stderr`
@@ -315,7 +317,8 @@ The cache key combines the HEAD commit SHA and the gate command string.
 When every file owned by the wave has a documentation or configuration
 extension (`.md`, `.yaml`, `.yml`, `.txt`, `.rst`), the engine automatically
 skips all source-code gate types (`build`, `test`, `tests`, `lint`, `format`)
-with `Skipped: true` and `Passed: true`. Custom gates always run.
+with `Skipped: true` and `Passed: true`. `typecheck` and `custom` gates
+always run regardless of file extensions.
 
 ---
 
@@ -329,7 +332,7 @@ first token of the gate command:
 | `go`, `golangci-lint`, `staticcheck` | go | `go.mod` |
 | `npm`, `yarn`, `pnpm`, `npx`, `node` | node | `package.json` |
 | `cargo` | rust | `Cargo.toml` |
-| `python`, `python3`, `pip`, `pytest`, `ruff`, `mypy`, `uv` | python | `pyproject.toml` or `setup.py` |
+| `python`, `python3`, `pip`, `pip3`, `pytest`, `ruff`, `mypy`, `uv` | python | `pyproject.toml` or `setup.py` |
 | `mvn` | maven | `pom.xml` |
 | `gradle`, `gradlew`, `./gradlew` | gradle | `build.gradle` or `build.gradle.kts` |
 | `custom` type, or unrecognized prefix | — | never skipped |
@@ -435,6 +438,26 @@ quality_gates:
 
 ---
 
+## CLI: `sawtools run-gates`
+
+```
+sawtools run-gates <manifest-path> [flags]
+```
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--wave` | `0` | Wave number to run gates for. |
+| `--no-cache` | `false` | Disable gate result caching (runs every gate unconditionally). |
+
+The command loads the IMPL manifest, runs all quality gates for the specified
+wave via `RunGatesWithCache`, and prints results as JSON. If any required gate
+fails, the command exits with a non-zero status.
+
+When `--no-cache` is omitted, the cache is backed by
+`.saw/gate-cache.json` in the repo directory.
+
+---
+
 ## See Also
 
 - `pkg/protocol/types.go` — `QualityGate`, `QualityGates`, `GatePhase` definitions
@@ -443,4 +466,6 @@ quality_gates:
 - `pkg/engine/finalize.go` — `FinalizeWave` pipeline showing gate placement
 - `pkg/engine/finalize_steps.go` — `StepRunGates` and closed-loop retry integration
 - `pkg/gatecache` — gate result cache implementation
+- `pkg/format/detect.go` — `DetectFormatter` auto-detection logic
+- `cmd/sawtools/run_gates_cmd.go` — `sawtools run-gates` CLI command
 - `docs/reference/orchestration.md` — FinalizeWave pipeline overview
