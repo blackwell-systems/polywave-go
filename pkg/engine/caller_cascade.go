@@ -55,9 +55,6 @@ type HotfixAgentData struct {
 }
 
 
-// codeCallerCascadeHotfixFailed mirrors result.CodeCallerCascadeHotfixFailed (added by wave1-agent-A).
-// Will be replaced with result.CodeCallerCascadeHotfixFailed after wave 1 merge.
-const codeCallerCascadeHotfixFailed = "N099_CALLER_CASCADE_HOTFIX_FAILED"
 
 // cascadePatterns matches compiler errors of the form file.go:line:col: message
 // or file.go:line: message for:
@@ -155,28 +152,28 @@ func RunHotfixAgent(
 	// Step 1: Validate opts.
 	if opts.IMPLPath == "" {
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: IMPLPath is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.RepoPath == "" {
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: RepoPath is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.WaveNum <= 0 {
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: WaveNum must be positive",
 			Severity: "fatal",
 		}})
 	}
 	if len(opts.Errors) == 0 {
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: Errors must be non-empty",
 			Severity: "fatal",
 		}})
@@ -199,7 +196,7 @@ func RunHotfixAgent(
 	if err != nil {
 		publish("hotfix_agent_failed", map[string]string{"error": err.Error()})
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: load manifest: %v", err),
 			Severity: "fatal",
 			Cause:    err,
@@ -221,7 +218,7 @@ func RunHotfixAgent(
 	if bRes.IsFatal() {
 		publish("hotfix_agent_failed", map[string]string{"error": bRes.Errors[0].Message})
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: backend init: %s", bRes.Errors[0].Message),
 			Severity: "fatal",
 		}})
@@ -248,7 +245,7 @@ func RunHotfixAgent(
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
 		publish("hotfix_agent_failed", map[string]string{"error": execErr.Error()})
 		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
-			Code:     codeCallerCascadeHotfixFailed,
+			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: agent execution failed: %v", execErr),
 			Severity: "fatal",
 			Cause:    execErr,
