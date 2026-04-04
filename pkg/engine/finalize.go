@@ -49,6 +49,10 @@ type FinalizeWaveOpts struct {
 	// The CLI sets this to true; web app leaves false (default).
 	ClosedLoopRetryEnabled bool
 
+	// CrossRepoVerify: When true, after primary repo merge + verify-build,
+	// run baseline gates on all repos from the IMPL's file_ownership.
+	CrossRepoVerify bool
+
 	// SkipMerge: When true, skip steps 1-4 (VerifyCommits, ScanStubs, RunGates, MergeAgents)
 	// and start from verify-build. Used for manual merge escape hatch when E11
 	// blocks merge with false positive.
@@ -78,6 +82,9 @@ type FinalizeWaveResult struct {
 	WiringReport              *protocol.WiringValidationData        `json:"wiring_report,omitempty"`
 	IntegrationActionRequired bool                                  `json:"integration_action_required"`
 	WiringGaps                []string                              `json:"wiring_gaps,omitempty"`
+	// CrossRepoResults holds baseline gate results for repos outside the primary
+	// repo. Keys are repo names from file_ownership.
+	CrossRepoResults map[string]*protocol.BaselineData `json:"cross_repo_results,omitempty"`
 	// CallerCascadeErrors is non-empty when verify-build fails exclusively due to
 	// cascade errors in future-wave or unowned files.
 	CallerCascadeErrors []CallerCascadeError `json:"caller_cascade_errors,omitempty"`
@@ -245,6 +252,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 		VerifyBuild:      make(map[string]*protocol.VerifyBuildData),
 		BuildDiagnosis:   make(map[string]*builddiag.Diagnosis),
 		CleanupResult:    make(map[string]*protocol.CleanupData),
+		CrossRepoResults: make(map[string]*protocol.BaselineData),
 	}
 
 	onEvent := opts.OnEvent
@@ -639,6 +647,31 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 				return fatalf("engine.FinalizeWave: required post-merge gate %q failed in %s", gate.Type, repoKey)
 			}
 		}
+	}
+
+	// Step 5.7: CrossRepoVerify — run baseline gates on non-primary repos
+	if opts.CrossRepoVerify && len(repos) > 1 {
+		emitStepEvent(onEvent, "cross-repo-verify", "running", "")
+		for repoKey, repoPath := range repos {
+			// Skip the primary repo (already verified by Step 5)
+			if repoKey == "." {
+				continue
+			}
+			cache := gatecache.New(ctx, protocol.SAWStateDir(repoPath), gatecache.DefaultTTL)
+			baselineRes := protocol.RunBaselineGates(ctx, manifest, opts.WaveNum, repoPath, cache)
+			if baselineRes.IsSuccess() {
+				data := baselineRes.GetData()
+				res.CrossRepoResults[repoKey] = data
+				if !data.Passed {
+					emitStepEvent(onEvent, "cross-repo-verify", "warning",
+						fmt.Sprintf("baseline gates failed in %s", repoKey))
+				}
+			} else {
+				emitStepEvent(onEvent, "cross-repo-verify", "warning",
+					fmt.Sprintf("baseline gates error in %s: %v", repoKey, baselineRes.Errors))
+			}
+		}
+		emitStepEvent(onEvent, "cross-repo-verify", "complete", "")
 	}
 
 	// Step 6: Cleanup — per repo

@@ -928,3 +928,77 @@ func TestFinalizeWave_MultiRepo(t *testing.T) {
 		t.Errorf("expected agentRepos[B]=%q, got %q", repoBeta, agentRepos["B"])
 	}
 }
+
+// TestFinalizeWave_CrossRepoVerifyField verifies that the CrossRepoVerify field
+// exists on FinalizeWaveOpts and CrossRepoResults exists on FinalizeWaveResult.
+func TestFinalizeWave_CrossRepoVerifyField(t *testing.T) {
+	// Verify CrossRepoVerify field on opts
+	opts := FinalizeWaveOpts{
+		IMPLPath:        "/tmp/nonexistent.yaml",
+		RepoPath:        "/tmp/nonexistent-repo",
+		WaveNum:         1,
+		CrossRepoVerify: true,
+	}
+	if !opts.CrossRepoVerify {
+		t.Error("expected CrossRepoVerify=true on FinalizeWaveOpts")
+	}
+
+	// Verify CrossRepoResults field on result
+	res := FinalizeWaveResult{}
+	if res.CrossRepoResults != nil {
+		t.Error("expected CrossRepoResults to be nil on zero-value FinalizeWaveResult")
+	}
+
+	// Verify the field accepts the correct type
+	res.CrossRepoResults = make(map[string]*protocol.BaselineData)
+	res.CrossRepoResults["other-repo"] = &protocol.BaselineData{
+		Passed: true,
+	}
+	if len(res.CrossRepoResults) != 1 {
+		t.Errorf("expected 1 entry in CrossRepoResults, got %d", len(res.CrossRepoResults))
+	}
+	if !res.CrossRepoResults["other-repo"].Passed {
+		t.Error("expected CrossRepoResults['other-repo'].Passed=true")
+	}
+}
+
+// TestFinalizeWave_CrossRepoResultsInitialized verifies that CrossRepoResults
+// map is initialized (not nil) when FinalizeWave runs with SkipMerge mode.
+func TestFinalizeWave_CrossRepoResultsInitialized(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoRoot := filepath.Join(tmpDir, "repo")
+	if err := os.MkdirAll(repoRoot, 0755); err != nil {
+		t.Fatalf("failed to create repo root: %v", err)
+	}
+
+	implContent := `feature: test-cross-repo-init
+repo: ` + repoRoot + `
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: wave1-agent-A
+        files:
+          - pkg/foo/foo.go
+`
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("failed to write IMPL: %v", err)
+	}
+
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
+		IMPLPath:  implPath,
+		RepoPath:  repoRoot,
+		WaveNum:   1,
+		SkipMerge: true,
+	})
+
+	// Whether the pipeline succeeds or fails at verify-build,
+	// the CrossRepoResults map must be initialized (not nil).
+	data := res.GetData()
+	if data.CrossRepoResults == nil {
+		t.Error("expected CrossRepoResults to be initialized (not nil) in SkipMerge mode")
+	}
+}
