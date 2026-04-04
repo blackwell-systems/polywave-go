@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (between-wave-integration-hotfix)
+- `N099_CALLER_CASCADE_HOTFIX_FAILED` error code constant in `pkg/result/codes.go`
+- `CallerCascadeError` struct: represents a single compiler error in a future-wave-owned file
+- `CallerCascadeClassification` struct: result of classifying verify-build errors as cascade vs genuine
+- `ClassifyCallerCascadeErrors` function in `pkg/engine/caller_cascade.go`: parses verify-build output and classifies errors
+- `RunHotfixAgent` / `RunHotfixAgentOpts` / `HotfixAgentData` in `pkg/engine/caller_cascade.go`: E47 hotfix agent runner
+- `StepClassifyCallerCascade` in `pkg/engine/finalize_steps.go`: non-fatal step wrapper for cascade classification
+- `--dry-run` flag on `sawtools finalize-wave`: show what cascade errors would be hotfixed without running the agent
+
+### Changed (between-wave-integration-hotfix)
+- `FinalizeWaveResult` in `pkg/engine/finalize.go`: added `CallerCascadeErrors []CallerCascadeError` and `CallerCascadeOnly bool` fields
+- `finalize-wave` CLI (`cmd/sawtools/finalize_wave.go`): added `apply-cascade-hotfix` step (step 6a) that auto-launches hotfix agent when `CallerCascadeOnly=true` after verify-build failure; step outputs `status`, `files_fixed`, `commit`, `build_passed`; exits 0 when hotfix succeeds and build passes
+
 ### Added (analyzer-review-fixes)
 - Z-domain error code constants Z001–Z013 in `pkg/result/codes.go` for `pkg/analyzer` operations (parse, gomod, module, import resolution, cycle detection, unsupported language, node missing, JS/Python/Rust parser missing, nil manifest, circular agent dep, walk failed)
 - `pkg/analyzer/helpers.go`: `fileExists` helper extracted from `javascript.go` into a dedicated package-internal file
