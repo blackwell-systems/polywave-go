@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // mockStore implements Store for testing query functions.
@@ -375,8 +377,8 @@ func TestQueryFunctionStoreErrorReturnsFatal(t *testing.T) {
 	if len(res.Errors) == 0 {
 		t.Fatal("expected at least one error")
 	}
-	if res.Errors[0].Code != "O002_OBS_QUERY_FAILED" {
-		t.Errorf("error code = %q, want O002_OBS_QUERY_FAILED", res.Errors[0].Code)
+	if res.Errors[0].Code != result.CodeObsQueryFailed {
+		t.Errorf("error code = %q, want %s", res.Errors[0].Code, result.CodeObsQueryFailed)
 	}
 }
 
