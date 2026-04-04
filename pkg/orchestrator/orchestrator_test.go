@@ -2,7 +2,10 @@ package orchestrator
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
@@ -1226,3 +1230,205 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 		t.Errorf("payload.Reason = %q, want %q", payload.Reason, "critical_path_scheduling")
 	}
 }
+
+// makeClaudeSessionFile creates a fake Claude Code session JSONL file in the
+// expected location for the given projectRoot, and returns the session file path.
+// The session file contains one tool_use block so that observer.Sync() returns
+// NewToolUses > 0.
+func makeClaudeSessionFile(t *testing.T, projectRoot string) {
+	t.Helper()
+
+	// Compute the project directory hash the same way JournalObserver does.
+	hash := md5.Sum([]byte(projectRoot))
+	projectHash := fmt.Sprintf("%x", hash)[:16]
+
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+
+	projectDir := filepath.Join(homeDir, ".claude", "projects", projectHash)
+	if err := os.MkdirAll(projectDir, 0755); err != nil {
+		t.Fatalf("failed to create project dir: %v", err)
+	}
+
+	// Write a minimal Claude Code session JSONL file with one tool_use block.
+	sessionEntry := map[string]interface{}{
+		"timestamp": "2024-01-01T00:00:00Z",
+		"content": map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"content": []interface{}{
+						map[string]interface{}{
+							"type":  "tool_use",
+							"id":    "toolu_test_001",
+							"name":  "Read",
+							"input": map[string]interface{}{"file_path": "/test/file.go"},
+						},
+					},
+				},
+			},
+		},
+	}
+	sessionBytes, err := json.Marshal(sessionEntry)
+	if err != nil {
+		t.Fatalf("failed to marshal session entry: %v", err)
+	}
+
+	sessionFile := filepath.Join(projectDir, "test-session.jsonl")
+	if err := os.WriteFile(sessionFile, append(sessionBytes, '\n'), 0644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+
+	// Register cleanup to remove the session file after the test.
+	t.Cleanup(func() {
+		os.Remove(sessionFile)
+	})
+}
+
+// TestLaunchAgent_JournalContextPrepended verifies that launchAgent prepends
+// journal context to the agent prompt when prior session tool uses exist.
+func TestLaunchAgent_JournalContextPrepended(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	// Create a fake Claude session file so Sync() returns NewToolUses > 0.
+	makeClaudeSessionFile(t, projectRoot)
+
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-journal-" + id, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	var capturedPrompt string
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
+		capturedPrompt = systemPrompt
+		return "response", nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
+	const originalTask = "original agent task"
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: originalTask},
+				},
+			},
+		},
+	}
+	// Use a non-existent implDocPath so E23 extraction falls back to original prompt.
+	o := newFromDoc(doc, projectRoot, "/nonexistent/IMPL.md")
+
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
+	}
+
+	// The captured prompt should contain journal context text followed by the original task.
+	if !strings.Contains(capturedPrompt, originalTask) {
+		t.Errorf("prompt does not contain original task %q; got: %q", originalTask, capturedPrompt)
+	}
+
+	// Journal context should be prepended (prompt should start with journal content,
+	// not the original task).
+	if strings.HasPrefix(capturedPrompt, originalTask) {
+		t.Errorf("expected journal context prepended before original task, but prompt starts with original task")
+	}
+
+	// Verify the separator is present between journal context and original task.
+	if !strings.Contains(capturedPrompt, "---") {
+		t.Errorf("expected separator '---' between journal context and task; got: %q", capturedPrompt)
+	}
+}
+
+// TestLaunchAgent_JournalContextSkippedWhenEmpty verifies that when no prior
+// session files exist, the agent prompt is passed unchanged (no journal prepend).
+func TestLaunchAgent_JournalContextSkippedWhenEmpty(t *testing.T) {
+	// Use a fresh temp dir with no Claude session files.
+	projectRoot := t.TempDir()
+
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-nojournal-" + id, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	var capturedPrompt string
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
+		capturedPrompt = systemPrompt
+		return "response", nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
+	const originalTask = "original agent task no journal"
+	doc := &protocol.IMPLManifest{
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: originalTask},
+				},
+			},
+		},
+	}
+	// Use a non-existent implDocPath so E23 extraction falls back to original prompt.
+	o := newFromDoc(doc, projectRoot, "/nonexistent/IMPL.md")
+
+	if res := o.RunWave(context.Background(), 1); res.IsFatal() {
+		t.Fatalf("RunWave returned unexpected failure: %v", res.Errors)
+	}
+
+	// With no session files, Sync() returns NewToolUses=0, so no context prepend.
+	// The prompt should be the original task (unchanged by journal logic).
+	if capturedPrompt != originalTask {
+		// Allow for the task to be the sole content (journal skipped).
+		// Note: E23 context extraction also fails here (non-existent IMPL), so the
+		// fallback is the original task from agentSpec.Task.
+		t.Errorf("expected prompt to equal original task %q, got %q", originalTask, capturedPrompt)
+	}
+
+	// Verify no journal separator was injected.
+	if strings.Contains(capturedPrompt, "---") {
+		t.Errorf("unexpected separator '---' in prompt when journal should be empty; got: %q", capturedPrompt)
+	}
+}
+
+// Compile-time check: journal package is used to verify import is valid.
+var _ = journal.ToolEntry{}

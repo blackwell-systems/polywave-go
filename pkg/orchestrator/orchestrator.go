@@ -27,6 +27,7 @@ import (
 	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
@@ -838,6 +839,38 @@ func (o *Orchestrator) launchAgent(
 			agentSpec.Task = prefixStr + "\n\n" + agentSpec.Task
 			retryPrefixMap.Delete(retryKey) // consume once; recursive retries store fresh
 		}
+	}
+
+	// Journal context recovery: sync and prepend if prior session has entries.
+	// Non-fatal: any error is logged and execution continues with original prompt.
+	fullAgentID := fmt.Sprintf("wave%d-agent-%s", waveNum, agentSpec.ID)
+	if obsRes := journal.NewObserver(o.repoPath, fullAgentID); obsRes.IsSuccess() {
+		observer := obsRes.GetData()
+		if syncRes := observer.Sync(); syncRes.IsSuccess() {
+			sr := syncRes.GetData()
+			if sr != nil && sr.NewToolUses > 0 {
+				if ctxRes := observer.GenerateContext(); ctxRes.IsSuccess() {
+					agentSpec.Task = ctxRes.GetData() + "\n\n---\n\n" + agentSpec.Task
+					o.log().Info("orchestrator: prepended journal context",
+						"agent", agentSpec.ID, "tool_uses", sr.NewToolUses)
+				}
+			}
+		}
+		// Periodic sync: 30s goroutine tied to agent execution context.
+		syncCtx, cancelSync := context.WithCancel(ctx)
+		defer cancelSync()
+		go func() {
+			ticker := time.NewTicker(30 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					observer.Sync() //nolint:errcheck // non-fatal periodic sync
+				case <-syncCtx.Done():
+					return
+				}
+			}
+		}()
 	}
 
 	// b. Execute the agent via the backend, streaming output chunks as SSE events.
