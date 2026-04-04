@@ -4,14 +4,15 @@ import (
 	"encoding/json"
 	"sort"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
 // Output is the CLI output struct matching roadmap YAML schema.
 type Output struct {
-	Nodes             []OutputNode     `yaml:"nodes" json:"nodes"`
-	Waves             map[int][]string `yaml:"waves" json:"waves"`
-	CascadeCandidates []OutputCascade  `yaml:"cascade_candidates,omitempty" json:"cascade_candidates,omitempty"`
+	Nodes             []OutputNode       `yaml:"nodes" json:"nodes"`
+	Waves             map[int][]string   `yaml:"waves" json:"waves"`
+	CascadeCandidates []CascadeCandidate `yaml:"cascade_candidates,omitempty" json:"cascade_candidates,omitempty"`
 }
 
 // OutputNode matches roadmap spec node structure.
@@ -22,15 +23,8 @@ type OutputNode struct {
 	WaveCandidate int      `yaml:"wave_candidate" json:"wave_candidate"`
 }
 
-// OutputCascade matches roadmap spec cascade structure.
-type OutputCascade struct {
-	File   string `yaml:"file" json:"file"`
-	Reason string `yaml:"reason" json:"reason"`
-	Type   string `yaml:"type" json:"type"`
-}
-
 // ToOutput converts DepGraph to Output struct.
-// Maps FileNode -> OutputNode, Waves as-is, CascadeFile -> OutputCascade.
+// Maps FileNode -> OutputNode, Waves as-is, CascadeCandidate -> CascadeCandidate (direct copy).
 // Sorts nodes by file path and wave entries alphabetically for determinism.
 func ToOutput(g *DepGraph) *Output {
 	if g == nil {
@@ -65,15 +59,9 @@ func ToOutput(g *DepGraph) *Output {
 		waves[waveNum] = sortedFiles
 	}
 
-	// Convert CascadeFile -> OutputCascade
-	cascades := make([]OutputCascade, 0, len(g.CascadeCandidates))
-	for _, c := range g.CascadeCandidates {
-		cascades = append(cascades, OutputCascade{
-			File:   c.File,
-			Reason: c.Reason,
-			Type:   c.Type,
-		})
-	}
+	// Copy CascadeCandidates directly (already []CascadeCandidate)
+	cascades := make([]CascadeCandidate, len(g.CascadeCandidates))
+	copy(cascades, g.CascadeCandidates)
 
 	return &Output{
 		Nodes:             nodes,
@@ -84,11 +72,19 @@ func ToOutput(g *DepGraph) *Output {
 
 // FormatYAML serializes Output to YAML bytes.
 // Cannot use protocol.SaveYAML: marshals to []byte for the caller, not to a file path.
-func FormatYAML(o *Output) ([]byte, error) {
-	return yaml.Marshal(o)
+func FormatYAML(o *Output) result.Result[[]byte] {
+	data, err := yaml.Marshal(o)
+	if err != nil {
+		return result.NewFailure[[]byte]([]result.SAWError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
+	}
+	return result.NewSuccess(data)
 }
 
 // FormatJSON serializes Output to indented JSON bytes.
-func FormatJSON(o *Output) ([]byte, error) {
-	return json.MarshalIndent(o, "", "  ")
+func FormatJSON(o *Output) result.Result[[]byte] {
+	data, err := json.MarshalIndent(o, "", "  ")
+	if err != nil {
+		return result.NewFailure[[]byte]([]result.SAWError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
+	}
+	return result.NewSuccess(data)
 }

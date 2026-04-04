@@ -11,7 +11,7 @@ func TestToOutput_EmptyGraph(t *testing.T) {
 	g := &DepGraph{
 		Nodes:             []FileNode{},
 		Waves:             map[int][]string{},
-		CascadeCandidates: []CascadeFile{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
 	out := ToOutput(g)
@@ -62,7 +62,7 @@ func TestToOutput_SingleNode(t *testing.T) {
 		Waves: map[int][]string{
 			1: {"pkg/foo/bar.go"},
 		},
-		CascadeCandidates: []CascadeFile{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
 	out := ToOutput(g)
@@ -121,7 +121,7 @@ func TestToOutput_WithDeps(t *testing.T) {
 			2: {"pkg/b.go"},
 			3: {"pkg/a.go"},
 		},
-		CascadeCandidates: []CascadeFile{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
 	out := ToOutput(g)
@@ -204,16 +204,18 @@ func TestToOutput_Cascades(t *testing.T) {
 		Waves: map[int][]string{
 			1: {"pkg/foo.go"},
 		},
-		CascadeCandidates: []CascadeFile{
+		CascadeCandidates: []CascadeCandidate{
 			{
-				File:   "pkg/bar.go",
-				Reason: "shares type definition with pkg/foo.go",
-				Type:   "semantic",
+				File:        "pkg/bar.go",
+				Reason:      "shares type definition with pkg/foo.go",
+				CascadeType: "semantic",
+				Severity:    "low",
 			},
 			{
-				File:   "pkg/baz.go",
-				Reason: "contains syntax error",
-				Type:   "syntax",
+				File:        "pkg/baz.go",
+				Reason:      "contains syntax error",
+				CascadeType: "syntax",
+				Severity:    "high",
 			},
 		},
 	}
@@ -224,13 +226,13 @@ func TestToOutput_Cascades(t *testing.T) {
 		t.Fatalf("Expected 2 cascade candidates, got %d", len(out.CascadeCandidates))
 	}
 
-	// Verify first cascade
+	// Verify first cascade — ToOutput copies directly, so order is preserved
 	c1 := out.CascadeCandidates[0]
 	if c1.File != "pkg/bar.go" {
 		t.Errorf("Cascade 0: expected file 'pkg/bar.go', got '%s'", c1.File)
 	}
-	if c1.Type != "semantic" {
-		t.Errorf("Cascade 0: expected type 'semantic', got '%s'", c1.Type)
+	if c1.CascadeType != "semantic" {
+		t.Errorf("Cascade 0: expected cascade_type 'semantic', got '%s'", c1.CascadeType)
 	}
 	if c1.Reason != "shares type definition with pkg/foo.go" {
 		t.Errorf("Cascade 0: unexpected reason: %s", c1.Reason)
@@ -241,8 +243,51 @@ func TestToOutput_Cascades(t *testing.T) {
 	if c2.File != "pkg/baz.go" {
 		t.Errorf("Cascade 1: expected file 'pkg/baz.go', got '%s'", c2.File)
 	}
-	if c2.Type != "syntax" {
-		t.Errorf("Cascade 1: expected type 'syntax', got '%s'", c2.Type)
+	if c2.CascadeType != "syntax" {
+		t.Errorf("Cascade 1: expected cascade_type 'syntax', got '%s'", c2.CascadeType)
+	}
+}
+
+// TestToOutput_CascadePassThrough verifies that CascadeCandidate fields are preserved without conversion loss.
+func TestToOutput_CascadePassThrough(t *testing.T) {
+	original := CascadeCandidate{
+		File:        "pkg/example.go",
+		Line:        42,
+		Match:       "AuthToken",
+		CascadeType: "syntax",
+		Severity:    "high",
+		Reason:      "type declaration uses renamed type AuthToken (now SessionToken)",
+	}
+	g := &DepGraph{
+		Nodes:             []FileNode{},
+		Waves:             map[int][]string{},
+		CascadeCandidates: []CascadeCandidate{original},
+	}
+
+	out := ToOutput(g)
+
+	if len(out.CascadeCandidates) != 1 {
+		t.Fatalf("Expected 1 cascade candidate, got %d", len(out.CascadeCandidates))
+	}
+
+	got := out.CascadeCandidates[0]
+	if got.File != original.File {
+		t.Errorf("File: expected %q, got %q", original.File, got.File)
+	}
+	if got.Line != original.Line {
+		t.Errorf("Line: expected %d, got %d", original.Line, got.Line)
+	}
+	if got.Match != original.Match {
+		t.Errorf("Match: expected %q, got %q", original.Match, got.Match)
+	}
+	if got.CascadeType != original.CascadeType {
+		t.Errorf("CascadeType: expected %q, got %q", original.CascadeType, got.CascadeType)
+	}
+	if got.Severity != original.Severity {
+		t.Errorf("Severity: expected %q, got %q", original.Severity, got.Severity)
+	}
+	if got.Reason != original.Reason {
+		t.Errorf("Reason: expected %q, got %q", original.Reason, got.Reason)
 	}
 }
 
@@ -300,19 +345,23 @@ func TestFormatYAML_ValidOutput(t *testing.T) {
 			1: {"pkg/bar.go"},
 			2: {"pkg/foo.go"},
 		},
-		CascadeCandidates: []OutputCascade{
+		CascadeCandidates: []CascadeCandidate{
 			{
-				File:   "pkg/baz.go",
-				Reason: "test reason",
-				Type:   "semantic",
+				File:        "pkg/baz.go",
+				Line:        10,
+				Match:       "OldType",
+				CascadeType: "semantic",
+				Severity:    "low",
+				Reason:      "test reason",
 			},
 		},
 	}
 
-	data, err := FormatYAML(out)
-	if err != nil {
-		t.Fatalf("FormatYAML failed: %v", err)
+	res := FormatYAML(out)
+	if !res.IsSuccess() {
+		t.Fatalf("FormatYAML failed: %v", res.Errors)
 	}
+	data := res.GetData()
 
 	// Verify it's valid YAML
 	var parsed Output
@@ -331,7 +380,6 @@ func TestFormatYAML_ValidOutput(t *testing.T) {
 		"waves:",
 		"cascade_candidates:",
 		"reason:",
-		"type:",
 	}
 
 	for _, field := range requiredFields {
@@ -366,19 +414,23 @@ func TestFormatJSON_ValidOutput(t *testing.T) {
 			1: {"pkg/bar.go"},
 			2: {"pkg/foo.go"},
 		},
-		CascadeCandidates: []OutputCascade{
+		CascadeCandidates: []CascadeCandidate{
 			{
-				File:   "pkg/baz.go",
-				Reason: "test reason",
-				Type:   "semantic",
+				File:        "pkg/baz.go",
+				Line:        10,
+				Match:       "OldType",
+				CascadeType: "semantic",
+				Severity:    "low",
+				Reason:      "test reason",
 			},
 		},
 	}
 
-	data, err := FormatJSON(out)
-	if err != nil {
-		t.Fatalf("FormatJSON failed: %v", err)
+	res := FormatJSON(out)
+	if !res.IsSuccess() {
+		t.Fatalf("FormatJSON failed: %v", res.Errors)
 	}
+	data := res.GetData()
 
 	// Verify it's valid JSON
 	var parsed Output
@@ -397,7 +449,6 @@ func TestFormatJSON_ValidOutput(t *testing.T) {
 		`"waves"`,
 		`"cascade_candidates"`,
 		`"reason"`,
-		`"type"`,
 	}
 
 	for _, field := range requiredFields {
@@ -434,13 +485,14 @@ func TestFormatYAML_OmitEmptyCascades(t *testing.T) {
 		Waves: map[int][]string{
 			1: {"pkg/foo.go"},
 		},
-		CascadeCandidates: []OutputCascade{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
-	data, err := FormatYAML(out)
-	if err != nil {
-		t.Fatalf("FormatYAML failed: %v", err)
+	res := FormatYAML(out)
+	if !res.IsSuccess() {
+		t.Fatalf("FormatYAML failed: %v", res.Errors)
 	}
+	data := res.GetData()
 
 	// cascade_candidates should be omitted when empty (due to omitempty tag)
 	yamlStr := string(data)
@@ -460,13 +512,14 @@ func TestFormatJSON_OmitEmptyCascades(t *testing.T) {
 		Waves: map[int][]string{
 			1: {"pkg/foo.go"},
 		},
-		CascadeCandidates: []OutputCascade{},
+		CascadeCandidates: []CascadeCandidate{},
 	}
 
-	data, err := FormatJSON(out)
-	if err != nil {
-		t.Fatalf("FormatJSON failed: %v", err)
+	res := FormatJSON(out)
+	if !res.IsSuccess() {
+		t.Fatalf("FormatJSON failed: %v", res.Errors)
 	}
+	data := res.GetData()
 
 	// cascade_candidates should be omitted when empty (due to omitempty tag)
 	jsonStr := string(data)
