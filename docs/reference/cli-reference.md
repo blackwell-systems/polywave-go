@@ -1980,7 +1980,7 @@ sawtools journal-init docs/IMPL/my-feature.yaml --wave 1 --agent A
 
 ### journal-context
 
-Sync the journal from Claude Code session logs and generate a markdown summary of the agent's execution history. The generated `context.md` can be prepended to the agent's prompt after context compaction.
+Manually sync the journal from Claude Code session logs and generate a markdown context summary for an agent. As of `journal-integration`, context generation runs **automatically** during `prepare-wave` and `prepare-agent` — this command is now primarily for manual inspection or regeneration.
 
 ```
 sawtools journal-context <manifest-path> --wave <n> --agent <id> [flags]
@@ -1998,6 +1998,12 @@ sawtools journal-context <manifest-path> --wave <n> --agent <id> [flags]
 **Output:** Markdown context file written to disk.
 
 **Exit codes:** 0 on success, 1 on error.
+
+**Automatic context generation:** `prepare-wave` and `prepare-agent` now call `Sync()` + `GenerateContext()` automatically for each agent after cursor initialization. The result is surfaced in their JSON output:
+- `journal_context_available` (bool) — `true` when prior session history exists
+- `journal_context_file` (string) — absolute path to the generated `context.md`
+
+The Orchestrator reads these fields and prepends the context file contents to the agent's launch prompt when `journal_context_available` is `true` (see step 6 in `saw-skill.md`).
 
 **Example:**
 ```bash
