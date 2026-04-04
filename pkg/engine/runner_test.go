@@ -2,6 +2,9 @@ package engine
 
 import (
 	"context"
+	"crypto/md5"
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -441,6 +444,77 @@ func TestPrepareWave_RepoMismatchConstant(t *testing.T) {
 	const expectedValue = "V045_REPO_MISMATCH"
 	if result.CodeRepoMismatch != expectedValue {
 		t.Errorf("result.CodeRepoMismatch = %q, want %q", result.CodeRepoMismatch, expectedValue)
+	}
+}
+
+// TestRunSingleAgent_JournalContextApplied verifies that PrepareAgentContext enriches the prompt
+// when a Claude session file with tool entries exists. This tests the journal wiring added to
+// RunSingleAgent: the journal code path runs after retry context is built, before orch.RunAgent.
+func TestRunSingleAgent_JournalContextApplied(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	// Compute the Claude project dir hash (matches observer.getClaudeProjectDir logic).
+	hash := md5.Sum([]byte(projectRoot))
+	projectHash := fmt.Sprintf("%x", hash)[:16]
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("failed to get home dir: %v", err)
+	}
+	claudeProjectDir := filepath.Join(homeDir, ".claude", "projects", projectHash)
+	if err := os.MkdirAll(claudeProjectDir, 0755); err != nil {
+		t.Fatalf("failed to create claude project dir: %v", err)
+	}
+	// Clean up fake claude project dir after test so we don't pollute real home dir.
+	defer os.RemoveAll(claudeProjectDir)
+
+	// Write a fake Claude session JSONL file with one tool_use entry.
+	sessionEntry := map[string]interface{}{
+		"timestamp": time.Now().Format(time.RFC3339Nano),
+		"content": map[string]interface{}{
+			"messages": []interface{}{
+				map[string]interface{}{
+					"role": "assistant",
+					"content": []interface{}{
+						map[string]interface{}{
+							"type": "tool_use",
+							"id":   "toolu_01",
+							"name": "Read",
+							"input": map[string]interface{}{
+								"file_path": "pkg/engine/runner.go",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	entryBytes, err := json.Marshal(sessionEntry)
+	if err != nil {
+		t.Fatalf("failed to marshal session entry: %v", err)
+	}
+	sessionFile := filepath.Join(claudeProjectDir, "session-test.jsonl")
+	if err := os.WriteFile(sessionFile, append(entryBytes, '\n'), 0644); err != nil {
+		t.Fatalf("failed to write session file: %v", err)
+	}
+
+	// Now exercise the exact code that RunSingleAgent calls after my edit.
+	ji := NewJournalIntegration(projectRoot, nil)
+	enrichedPrompt, observer, jiErr := ji.PrepareAgentContext(1, "B", "original prompt")
+
+	if jiErr != nil {
+		t.Fatalf("PrepareAgentContext returned unexpected error: %v", jiErr)
+	}
+	if observer == nil {
+		t.Fatal("PrepareAgentContext returned nil observer")
+	}
+
+	// With a session file containing a tool_use entry, Sync should find 1 new tool use
+	// and GenerateContext should prepend the session context header to the prompt.
+	if !strings.Contains(enrichedPrompt, "Session Context") {
+		t.Errorf("expected enriched prompt to contain 'Session Context', got: %q", enrichedPrompt)
+	}
+	if !strings.Contains(enrichedPrompt, "original prompt") {
+		t.Errorf("expected enriched prompt to still contain the original prompt, got: %q", enrichedPrompt)
 	}
 }
 
