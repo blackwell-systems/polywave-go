@@ -67,6 +67,7 @@ type RunScoutFullOpts struct {
 	ProgramManifestPath string
 	NoCritic            bool
 	CriticModel         string
+	RefreshBrief        bool   // When true, re-run Scout preserving structure, refreshing briefs only
 	Logger              *slog.Logger
 }
 
@@ -125,25 +126,35 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 
 	log.Debug("RunScoutFull: starting", "feature", opts.Feature, "slug", slug, "impl_path", implPath)
 
+	// RefreshBrief mode: bypass state check and re-run Scout with preservation directive
+	if opts.RefreshBrief {
+		opts.Feature = fmt.Sprintf("[REFRESH-BRIEF] Preserve file_ownership and wave structure from %s. "+
+			"Only update agent task descriptions to reflect current codebase state. "+
+			"Do not change agent IDs, wave assignments, or file ownership.\n\n%s",
+			implPath, opts.Feature)
+	}
+
 	// Check if IMPL doc already exists with advanced state — return early if so.
-	if existingDoc, loadErr := protocol.Load(ctx, implPath); loadErr == nil {
-		switch existingDoc.State {
-		case protocol.StateReviewed,
-			protocol.StateScaffoldPending,
-			protocol.StateWavePending,
-			protocol.StateWaveExecuting,
-			protocol.StateWaveMerging,
-			protocol.StateWaveVerified,
-			protocol.StateComplete,
-			protocol.StateScoutValidating:
-			log.Info("RunScoutFull: IMPL doc already exists with advanced state; skipping Scout",
-				"state", existingDoc.State, "impl_path", implPath)
-			return result.NewSuccess(RunScoutFullResult{
-				IMPLPath: implPath,
-				Slug:     slug,
-			})
+	if !opts.RefreshBrief {
+		if existingDoc, loadErr := protocol.Load(ctx, implPath); loadErr == nil {
+			switch existingDoc.State {
+			case protocol.StateReviewed,
+				protocol.StateScaffoldPending,
+				protocol.StateWavePending,
+				protocol.StateWaveExecuting,
+				protocol.StateWaveMerging,
+				protocol.StateWaveVerified,
+				protocol.StateComplete,
+				protocol.StateScoutValidating:
+				log.Info("RunScoutFull: IMPL doc already exists with advanced state; skipping Scout",
+					"state", existingDoc.State, "impl_path", implPath)
+				return result.NewSuccess(RunScoutFullResult{
+					IMPLPath: implPath,
+					Slug:     slug,
+				})
+			}
+			// StateScoutPending or unknown states: proceed with Scout.
 		}
-		// StateScoutPending or unknown states: proceed with Scout.
 	}
 
 	// Ensure docs/IMPL directory exists.

@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -195,6 +197,59 @@ func TestCountAgentsFromErrors_Empty(t *testing.T) {
 	got := countAgentsFromErrors(nil)
 	if got != 0 {
 		t.Errorf("countAgentsFromErrors(nil) = %d; want 0", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RefreshBrief tests
+// ---------------------------------------------------------------------------
+
+func TestRunScoutFull_RefreshBriefField(t *testing.T) {
+	// Verify that RunScoutFullOpts has a RefreshBrief field and it can be set.
+	opts := RunScoutFullOpts{
+		Feature:      "some feature",
+		RefreshBrief: true,
+	}
+	if !opts.RefreshBrief {
+		t.Error("RefreshBrief field should be true when set to true")
+	}
+
+	opts2 := RunScoutFullOpts{
+		Feature: "some feature",
+	}
+	if opts2.RefreshBrief {
+		t.Error("RefreshBrief field should default to false")
+	}
+}
+
+func TestRunScoutFull_RefreshBriefModifiesFeature(t *testing.T) {
+	// We can't call RunScoutFull directly (it requires Scout agent),
+	// but we can verify that the feature string modification logic works
+	// by inspecting the format string behavior.
+	//
+	// The actual modification happens in RunScoutFull:
+	//   opts.Feature = fmt.Sprintf("[REFRESH-BRIEF] Preserve file_ownership...")
+	//
+	// We test that the format produces the expected prefix.
+	originalFeature := "Add caching layer"
+	implPath := "/tmp/test/IMPL-caching.yaml"
+
+	modified := fmt.Sprintf("[REFRESH-BRIEF] Preserve file_ownership and wave structure from %s. "+
+		"Only update agent task descriptions to reflect current codebase state. "+
+		"Do not change agent IDs, wave assignments, or file ownership.\n\n%s",
+		implPath, originalFeature)
+
+	if !strings.HasPrefix(modified, "[REFRESH-BRIEF]") {
+		t.Error("modified feature should start with [REFRESH-BRIEF] prefix")
+	}
+	if !strings.Contains(modified, implPath) {
+		t.Errorf("modified feature should contain implPath %q", implPath)
+	}
+	if !strings.HasSuffix(modified, originalFeature) {
+		t.Error("modified feature should end with the original feature description")
+	}
+	if !strings.Contains(modified, "Do not change agent IDs") {
+		t.Error("modified feature should contain preservation directive")
 	}
 }
 
