@@ -694,6 +694,63 @@ type AutoMergeData struct {
 	Reason         string
 }
 
+// StepClassifyCallerCascade runs caller cascade classification after a
+// verify-build failure. Non-fatal: always returns success so FinalizeWave
+// can inspect the result and decide whether to trigger a hotfix agent.
+//
+// When verifyData is nil or the build passed, returns success with nil
+// classification.
+func StepClassifyCallerCascade(
+	ctx context.Context,
+	opts FinalizeWaveOpts,
+	verifyData *protocol.VerifyBuildData,
+	manifest *protocol.IMPLManifest,
+	onEvent EventCallback,
+) (*StepResult, *CallerCascadeClassification) {
+	const stepName = "classify-caller-cascade"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	if verifyData == nil || (verifyData.TestPassed && verifyData.LintPassed) {
+		emitStepEvent(onEvent, stepName, "complete", "no build failures to classify")
+		return &StepResult{
+			Step:   stepName,
+			Status: "skipped",
+			Detail: "no build failures to classify",
+		}, nil
+	}
+
+	result := ClassifyCallerCascadeErrors(verifyData, manifest, opts.WaveNum)
+
+	if result.AllAreCascades {
+		detail := fmt.Sprintf("%d cascade error(s) in future-wave files; hotfix eligible", len(result.Errors))
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Data:   &result,
+		}, &result
+	}
+
+	if result.MixedErrors {
+		detail := "mixed errors: some in current-wave files; genuine build failure"
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Data:   &result,
+			Detail: detail,
+		}, &result
+	}
+
+	// No cascade errors detected
+	emitStepEvent(onEvent, stepName, "complete", "no cascade patterns detected")
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Data:   nil,
+	}, nil
+}
+
 // StepAutoMergeAppendConflicts attempts automatic merge for append-only conflicts.
 // Returns fatal error if merge produces conflicts (fallback to manual).
 func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol.IMPLManifest, conflicts []protocol.ConflictPredictionEnhanced, onEvent EventCallback) (*StepResult, []AutoMergeData, error) {
@@ -795,4 +852,39 @@ func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, ma
 		Detail: detail,
 		Data:   results,
 	}, results, nil
+}
+
+// ---------------------------------------------------------------------------
+// WAVE1-AGENT-C TEMPORARY STUBS
+// These type definitions are placeholders only. They will be superseded by
+// the canonical definitions in pkg/engine/caller_cascade.go once Agent B's
+// work is merged. Remove these stubs during Wave 1 integration merge.
+// ---------------------------------------------------------------------------
+
+// CallerCascadeError represents a single compiler error classified as a
+// caller cascade: the error file is not owned by the current wave.
+type CallerCascadeError struct {
+	File    string `json:"file"`    // relative file path reporting the error
+	Line    int    `json:"line"`    // line number (0 if unknown)
+	Message string `json:"message"` // raw compiler error text
+}
+
+// CallerCascadeClassification is the result of ClassifyCallerCascadeErrors.
+type CallerCascadeClassification struct {
+	Errors         []CallerCascadeError `json:"errors"`
+	AllAreCascades bool                 `json:"all_are_cascades"`
+	// MixedErrors is true when some errors are in current-wave files
+	// (real failures) and some are in future-wave/unowned files (cascades).
+	MixedErrors bool `json:"mixed_errors"`
+}
+
+// ClassifyCallerCascadeErrors is a stub placeholder.
+// The real implementation lives in pkg/engine/caller_cascade.go (Agent B).
+// Remove this stub when Agent B's caller_cascade.go is merged.
+func ClassifyCallerCascadeErrors(
+	verifyData *protocol.VerifyBuildData,
+	manifest *protocol.IMPLManifest,
+	waveNum int,
+) CallerCascadeClassification {
+	return CallerCascadeClassification{}
 }
