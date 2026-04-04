@@ -1,0 +1,535 @@
+title: 'sawtools UX Improvements: set-critic-verdict command and V048 per-file exemption'
+feature_slug: sawtools-ux-improvements
+verdict: SUITABLE
+suitability_assessment: |
+    Fix 1 (set-critic-verdict command) and Fix 2 (V048 per-file exemption) are fully
+    independent changes with disjoint file ownership.
+
+    File decomposition: Agent A owns the new CLI command file + registration in main.go.
+    Agent B owns pkg/protocol/types.go (FileOwnership struct) and pkg/protocol/complexity.go
+    (CheckAgentLOCBudget logic). Agent C owns docs/reference/cli-reference.md (doc update)
+    and runs in Wave 2 — both because it documents the V048Exempt field that B adds, and
+    because cli-reference.md is 2543 lines (over the V048 limit). By Wave 2 the new
+    sawtools binary with v048_exempt support is built and merged, so the doc agent can
+    reference the completed feature.
+
+    Investigation status: No root-cause analysis needed. Both problems are well-understood:
+    the missing command and the missing struct field are straightforward additions.
+
+    Interface discoverability: The set-critic-verdict command implements inline load/mutate/
+    save (no new protocol function needed). The V048Exempt field shape is trivially specified.
+
+    Parallelization value: Go build+test cycle is meaningful (many packages). Agents A and B
+    work on different packages (cmd/sawtools vs pkg/protocol), so isolation is clean. SUITABLE.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: Wave 1 = 2 agents x ~8 min avg = 8 min wall-clock; Wave 2 = 1 agent ~5 min
+    - Merge and verification: ~4 min
+    Total SAW time: ~27 min
+    Sequential baseline: ~29 min (3 x ~9-10 min sequential)
+    Time savings: ~2 min (parallelism in Wave 1)
+    Recommendation: Clear speedup for Wave 1. Wave 2 is a single doc agent.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: cmd/sawtools/set_critic_verdict_cmd.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/main.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/types.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/complexity.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/complexity_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: docs/reference/cli-reference.md
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: FileOwnership.V048Exempt
+      description: |-
+        Boolean field added to FileOwnership struct. When true, CheckAgentLOCBudget
+        skips the V048_AGENT_LOC_BUDGET line-count check for this file entry.
+      definition: |
+        type FileOwnership struct {
+            File       string   `yaml:"file" json:"file"`
+            Agent      string   `yaml:"agent" json:"agent"`
+            Wave       int      `yaml:"wave" json:"wave"`
+            Action     string   `yaml:"action,omitempty" json:"action,omitempty"`
+            DependsOn  []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+            Repo       string   `yaml:"repo,omitempty" json:"repo,omitempty"`
+            V048Exempt bool     `yaml:"v048_exempt,omitempty" json:"v048_exempt,omitempty"`
+        }
+      location: pkg/protocol/types.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are implementing the `sawtools set-critic-verdict` command in the
+            scout-and-wave-go repository at `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            ## What to implement
+
+            ### 1. New file: `cmd/sawtools/set_critic_verdict_cmd.go`
+
+            Create a new file `cmd/sawtools/set_critic_verdict_cmd.go` (package main)
+            implementing `newSetCriticVerdictCmd()`. Follow the exact patterns from
+            `cmd/sawtools/set_injection_method_cmd.go` and `cmd/sawtools/set_impl_state_cmd.go`.
+
+            Command spec:
+            ```
+            sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
+            ```
+
+            Behavior:
+            - Accepts one positional argument: the absolute path to the IMPL YAML file
+            - Requires `--verdict` flag with values: `pass`, `issues`
+              (case-insensitive; normalize to uppercase for storage: PASS, ISSUES)
+            - Use `context.TODO()` for the context parameter
+            - Load the manifest using `protocol.Load(ctx, implPath)`
+            - If `manifest.CriticReport == nil`, return error:
+              `"set-critic-verdict: critic_report does not exist in IMPL doc"`
+            - Otherwise: record old verdict, set `manifest.CriticReport.Verdict` to
+              the uppercase normalized new verdict, save with `protocol.Save(ctx, manifest, implPath)`
+            - On save failure, return the error
+            - On success, print JSON to stdout:
+              `{"impl_path": "...", "old_verdict": "ISSUES", "new_verdict": "PASS"}`
+            - Exit 0 on success, exit 1 on error (cobra handles this via RunE returning error)
+
+            Valid verdict values (case-insensitive input, uppercase stored):
+            - `pass` -> `"PASS"`
+            - `issues` -> `"ISSUES"`
+            - 
+
+            Validation logic:
+            ```go
+            normalized := strings.ToUpper(verdict)
+            switch normalized {
+            case "PASS", "ISSUES":
+                // valid
+            default:
+                return fmt.Errorf("set-critic-verdict: invalid --verdict %q: must be one of pass, issues", verdict)
+            }
+            ```
+
+            JSON output uses `fmt.Println(string(out))` with `json.Marshal` (not
+            `json.MarshalIndent`), matching the pattern in `set_injection_method_cmd.go`.
+
+            Complete implementation sketch:
+            ```go
+            package main
+
+            import (
+                "context"
+                "encoding/json"
+                "fmt"
+                "strings"
+
+                "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+                "github.com/spf13/cobra"
+            )
+
+            func newSetCriticVerdictCmd() *cobra.Command {
+                var verdict string
+
+                cmd := &cobra.Command{
+                    Use:   "set-critic-verdict <impl-path>",
+                    Short: "Update critic_report.verdict in an IMPL doc",
+                    Long: `Atomically updates critic_report.verdict in an existing IMPL doc.
+            Use after the Orchestrator corrects IMPL issues flagged by the critic, to
+            transition the verdict from ISSUES to PASS without manually editing YAML.
+
+            Exits 1 if critic_report does not exist in the IMPL doc.
+
+            Example:
+              sawtools set-critic-verdict /path/to/IMPL-feature.yaml --verdict pass`,
+                    Args: cobra.ExactArgs(1),
+                    RunE: func(cmd *cobra.Command, args []string) error {
+                        implPath := args[0]
+
+                        normalized := strings.ToUpper(verdict)
+                        switch normalized {
+                        case "PASS", "ISSUES":
+                            // valid
+                        default:
+                            return fmt.Errorf("set-critic-verdict: invalid --verdict %q: must be one of pass, issues", verdict)
+                        }
+
+                        doc, err := protocol.Load(context.TODO(), implPath)
+                        if err != nil {
+                            return fmt.Errorf("set-critic-verdict: failed to load IMPL doc: %w", err)
+                        }
+
+                        if doc.CriticReport == nil {
+                            return fmt.Errorf("set-critic-verdict: critic_report does not exist in IMPL doc")
+                        }
+
+                        oldVerdict := doc.CriticReport.Verdict
+                        doc.CriticReport.Verdict = normalized
+
+                        if saveRes := protocol.Save(context.TODO(), doc, implPath); saveRes.IsFatal() {
+                            saveErrMsg := "save failed"
+                            if len(saveRes.Errors) > 0 {
+                                saveErrMsg = saveRes.Errors[0].Message
+                            }
+                            return fmt.Errorf("set-critic-verdict: failed to save IMPL doc: %s", saveErrMsg)
+                        }
+
+                        out, _ := json.Marshal(map[string]interface{}{
+                            "impl_path":   implPath,
+                            "old_verdict": oldVerdict,
+                            "new_verdict": normalized,
+                        })
+                        fmt.Println(string(out))
+                        return nil
+                    },
+                }
+
+                cmd.Flags().StringVar(&verdict, "verdict", "", "New verdict: pass or issues (required)")
+                _ = cmd.MarkFlagRequired("verdict")
+
+                return cmd
+            }
+            ```
+
+            ### 2. Register in `cmd/sawtools/main.go`
+
+            In `main.go`, add `newSetCriticVerdictCmd()` to the `rootCmd.AddCommand(...)` call.
+            Place it immediately after the existing `newSetCriticReviewCmd()` line (currently
+            around line 80 in the AddCommand block):
+            ```go
+            newSetCriticReviewCmd(), // E37: Used by critic agents to write results
+            newSetCriticVerdictCmd(), // E37: Update verdict after Orchestrator corrections
+            ```
+
+            ## Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/sawtools/...
+            go vet ./cmd/sawtools/...
+            go test ./cmd/sawtools/... -v 2>&1 | tail -20
+            ```
+
+            The build must pass. There are no existing tests for set-critic-verdict,
+            so just confirm the build compiles cleanly.
+
+            ## Constraints
+            - Modify ONLY `cmd/sawtools/set_critic_verdict_cmd.go` (new) and `cmd/sawtools/main.go`
+            - Do NOT modify any files in `pkg/`
+            - Follow existing patterns exactly: cobra RunE, context.TODO(), json.Marshal, fmt.Println
+            - The `--verdict` flag is required (use `cmd.MarkFlagRequired("verdict")`)
+            - File must be in `package main`
+            - No new dependencies beyond what is already in go.mod
+          files:
+            - cmd/sawtools/set_critic_verdict_cmd.go
+            - cmd/sawtools/main.go
+        - id: B
+          task: |
+            ## Context
+            You are implementing the V048 per-file exemption in the scout-and-wave-go
+            repository at `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            ## What to implement
+
+            ### 1. Add `V048Exempt` field to `FileOwnership` struct in `pkg/protocol/types.go`
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go`.
+            Find the `FileOwnership` struct (around line 67-78):
+
+            ```go
+            type FileOwnership struct {
+                File      string   `yaml:"file" json:"file"`
+                Agent     string   `yaml:"agent" json:"agent"`
+                Wave      int      `yaml:"wave" json:"wave"`
+                Action    string   `yaml:"action,omitempty" json:"action,omitempty"`
+                DependsOn []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+                Repo      string   `yaml:"repo,omitempty" json:"repo,omitempty"`
+            }
+            ```
+
+            Add `V048Exempt` as the last field:
+
+            ```go
+            type FileOwnership struct {
+                File       string   `yaml:"file" json:"file"`
+                Agent      string   `yaml:"agent" json:"agent"`
+                Wave       int      `yaml:"wave" json:"wave"`
+                Action     string   `yaml:"action,omitempty" json:"action,omitempty"`
+                DependsOn  []string `yaml:"depends_on,omitempty" json:"depends_on,omitempty"`
+                Repo       string   `yaml:"repo,omitempty" json:"repo,omitempty"`
+                V048Exempt bool     `yaml:"v048_exempt,omitempty" json:"v048_exempt,omitempty"`
+            }
+            ```
+
+            The `omitempty` tag ensures the field is absent in serialized YAML/JSON
+            when false (zero value), maintaining full backward compatibility.
+
+            ### 2. Thread exemption through `CheckAgentLOCBudget` in `pkg/protocol/complexity.go`
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/complexity.go`.
+            Find `CheckAgentLOCBudget` (line ~92). The function contains this loop:
+
+            ```go
+            for _, fo := range m.FileOwnership {
+                if fo.Action != "modify" {
+                    continue
+                }
+                absPath := filepath.Join(repoPath, fo.File)
+                // ...
+            ```
+
+            Add the V048Exempt check immediately after the `Action != "modify"` check:
+
+            ```go
+            for _, fo := range m.FileOwnership {
+                if fo.Action != "modify" {
+                    continue
+                }
+                if fo.V048Exempt {
+                    continue
+                }
+                absPath := filepath.Join(repoPath, fo.File)
+                // ... rest unchanged
+            ```
+
+            The skip must happen BEFORE the file is opened. This ensures exempt files
+            are completely excluded from the per-agent LOC total.
+
+            ### 3. Add test cases to `pkg/protocol/complexity_test.go`
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/complexity_test.go`.
+            Find `TestCheckAgentLOCBudget` (line ~194). Add two new sub-tests at the
+            END of the test function body, inside `TestCheckAgentLOCBudget`:
+
+            ```go
+            t.Run("v048_exempt=true skips file even if over 2000 lines", func(t *testing.T) {
+                dir := t.TempDir()
+                writeLines(t, filepath.Join(dir, "big.go"), 5000)
+                m := &IMPLManifest{
+                    FileOwnership: []FileOwnership{
+                        {File: "big.go", Agent: "A", Wave: 1, Action: "modify", V048Exempt: true},
+                    },
+                }
+                got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
+                if len(got) != 0 {
+                    t.Errorf("expected 0 errors for v048_exempt file, got %v", got)
+                }
+            })
+
+            t.Run("v048_exempt=false behaves normally (over budget still errors)", func(t *testing.T) {
+                dir := t.TempDir()
+                writeLines(t, filepath.Join(dir, "big2.go"), 3000)
+                m := &IMPLManifest{
+                    FileOwnership: []FileOwnership{
+                        {File: "big2.go", Agent: "A", Wave: 1, Action: "modify", V048Exempt: false},
+                    },
+                }
+                got := CheckAgentLOCBudget(context.Background(), m, dir, 2000)
+                if len(got) != 1 {
+                    t.Fatalf("expected 1 error for non-exempt file over budget, got %d: %v", len(got), got)
+                }
+                if got[0].Code != "V048_AGENT_LOC_BUDGET" {
+                    t.Errorf("code = %q, want V048_AGENT_LOC_BUDGET", got[0].Code)
+                }
+            })
+            ```
+
+            ## Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestCheckAgentLOCBudget -v
+            ```
+
+            All tests in TestCheckAgentLOCBudget must pass, including the two new ones.
+
+            ## Constraints
+            - Modify ONLY `pkg/protocol/types.go`, `pkg/protocol/complexity.go`,
+              and `pkg/protocol/complexity_test.go`
+            - Do NOT change the function signature of `CheckAgentLOCBudget`
+            - The new field must use `yaml:"v048_exempt,omitempty"` — omitempty is required
+            - Do NOT add the field to any other struct
+            - Do NOT modify cmd/ or docs/ files
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/complexity.go
+            - pkg/protocol/complexity_test.go
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Context
+            You are updating documentation in the scout-and-wave-go repository at
+            `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            Wave 1 agents A and B have already been merged. The codebase now has:
+            - `sawtools set-critic-verdict` command (cmd/sawtools/set_critic_verdict_cmd.go)
+            - `V048Exempt bool` field on `FileOwnership` struct (pkg/protocol/types.go)
+
+            The file `docs/reference/cli-reference.md` is 2543 lines (over V048 limit),
+            but this is a doc-only agent — no build or test gate applies.
+
+            ## What to implement
+
+            ### 1. Update `docs/reference/cli-reference.md`
+
+            Open `/Users/dayna.blackwell/code/scout-and-wave-go/docs/reference/cli-reference.md`.
+
+            **Change 1: Document the `v048_exempt` field in `file_ownership`.**
+
+            Search for the section describing `file_ownership` entry fields. Look for
+            text mentioning `action:`, `depends_on:`, or `repo:` field descriptions.
+            Add after the `repo` field entry:
+
+            ```markdown
+            - `v048_exempt` (bool, optional): When `true`, skips the V048_AGENT_LOC_BUDGET
+              line-count check for this file. Use for large documentation files (e.g., files
+              exceeding 2000 lines) that cannot be split. All other validators still apply.
+              Default: `false` (omitted from YAML when false).
+            ```
+
+            **Change 2: Document the `sawtools set-critic-verdict` command.**
+
+            Search for where other `set-*` commands are documented (e.g., `set-completion`,
+            `set-impl-state`, `set-injection-method`, or `set-critic-review`). Add an entry
+            for `set-critic-verdict` in the same section or adjacent to `set-critic-review`:
+
+            ```markdown
+            ### `sawtools set-critic-verdict`
+
+            Atomically updates `critic_report.verdict` in an existing IMPL doc.
+            Use after the Orchestrator corrects IMPL issues flagged by the critic,
+            to transition the verdict from `ISSUES` to `PASS` without manually editing YAML.
+            This avoids the duplicate-key YAML error that can occur with manual edits.
+
+            ```
+            sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
+            ```
+
+            Flags:
+            - `--verdict` (required): New verdict value. Accepted values: `pass`, `issues`,
+              `warning` (case-insensitive; stored as uppercase: PASS, ISSUES, WARNING).
+
+            Exits 0 on success. Exits 1 if `critic_report` key does not exist in the IMPL.
+
+            JSON output:
+            ```json
+            {"impl_path": "...", "old_verdict": "ISSUES", "new_verdict": "PASS"}
+            ```
+
+            Note: `set-critic-review` is used by critic agents to write the full structured
+            review result. `set-critic-verdict` is a lightweight Orchestrator-facing command
+            to update just the verdict field after manual corrections are applied.
+            ```
+
+            If no dedicated `set-*` section exists, find the `run-critic` entry and add
+            `set-critic-verdict` immediately after it.
+
+            ## Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            grep -n "set-critic-verdict" docs/reference/cli-reference.md
+            grep -n "v048_exempt" docs/reference/cli-reference.md
+            ```
+            Both commands must return at least one match.
+
+            ## Constraints
+            - Modify ONLY `docs/reference/cli-reference.md`
+            - Do not reformat or reorganize existing content
+            - Do not add documentation for features that don't exist
+            - No build or Go commands needed — this is documentation only
+          files:
+            - docs/reference/cli-reference.md
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A's newSetCriticVerdictCmd function name doesn't match what main.go
+            expects, causing a compile error.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent A's brief includes the exact function name newSetCriticVerdictCmd() and
+            the exact registration line for main.go. Both files are owned by Agent A so
+            there is no cross-agent coordination needed. Build gate catches this immediately.
+        - scenario: |-
+            The V048Exempt omitempty tag causes existing round-trip YAML tests to fail
+            because serialized output now differs for FileOwnership structs.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            omitempty suppresses the field when false (zero value). Existing YAML files
+            without this field parse cleanly with V048Exempt defaulting to false. No test
+            produces FileOwnership YAML with the new field, so round-trip behavior is unchanged.
+        - scenario: |-
+            Agent C cannot find a clear location in cli-reference.md for the new entries
+            and places them in an awkward location.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent C is given specific search terms (set-critic-review, run-critic, action:,
+            depends_on:, repo:) to find the right location. Documentation placement is
+            low-risk — the content is correct regardless of exact location, and the
+            verification grep confirms both entries are present.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+            issues:
+                - check: symbol_accuracy
+                  severity: error
+                  description: Brief specifies WARNING as a valid --verdict value (case-insensitive input normalized to WARNING for storage), but pkg/protocol/critic.go defines only CriticVerdictPass=PASS, CriticVerdictIssues=ISSUES, and CriticVerdictSkipped=SKIPPED. WARNING is not a recognized CriticData verdict constant. Storing WARNING would produce an undocumented verdict value inconsistent with the existing set-critic-review command, which only accepts PASS or ISSUES.
+                  file: pkg/protocol/critic.go
+                  symbol: CriticVerdictWarning
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+            issues:
+                - check: file_existence
+                  severity: error
+                  description: file_ownership marks docs/reference/cli-reference.md as action:new but the file already exists at /Users/dayna.blackwell/code/scout-and-wave-go/docs/reference/cli-reference.md. This entry must use action:modify.
+                  file: docs/reference/cli-reference.md
+                - check: pattern_accuracy
+                  severity: warning
+                  description: 'Brief instructs Agent C to find a file_ownership schema section listing action:, depends_on:, and repo: field descriptions to anchor the v048_exempt entry. No such dedicated schema reference section exists in cli-reference.md. The fallback instruction (find run-critic entry and add set-critic-verdict adjacent) is valid — run-critic section exists at line 709.'
+                  file: docs/reference/cli-reference.md
+    summary: 'Agent A and B briefs are accurate against the codebase. One error: Agent A''s brief specifies ''WARNING'' as a valid --verdict value for set-critic-verdict, but critic.go defines only PASS, ISSUES, and SKIPPED as recognized verdict constants — WARNING is not a valid CriticData verdict value. One error: Agent C''s file_ownership entry marks docs/reference/cli-reference.md as action:new but the file already exists at that path — it should be action:modify. One warning for Agent C: the brief instructs searching for a file_ownership schema section with action:/depends_on:/repo: field descriptions to anchor the v048_exempt entry, but no such dedicated schema section exists in cli-reference.md; the fallback instruction (find run-critic and add adjacent) is valid and sufficient.'
+    reviewed_at: "2026-04-04T06:46:57Z"
+    issue_count: 2
+state: SCOUT_PENDING
+injection_method: hook
