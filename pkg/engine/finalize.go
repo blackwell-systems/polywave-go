@@ -288,6 +288,9 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 				if !protocol.WorktreesAbsent(manifest, opts.WaveNum, repoPath) {
 					isSolo = false
 				}
+				if !protocol.AllBranchesAbsent(manifest, opts.WaveNum, repoPath) {
+					isSolo = false
+				}
 			}
 		}
 

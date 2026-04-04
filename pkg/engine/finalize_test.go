@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -774,6 +775,105 @@ func TestExtractReposFromManifest_CrossRepo(t *testing.T) {
 	if agentRepos["B"] != "repo-beta" {
 		t.Errorf("expected agentRepos[B]='repo-beta', got %q", agentRepos["B"])
 	}
+}
+
+// TestFinalizeWave_WorktreesGoneBranchesRemain verifies that when worktree
+// directories are cleaned up but agent branches still exist, FinalizeWave does
+// NOT take the solo-wave shortcut. This prevents silent data loss where commits
+// would be skipped over because WorktreesAbsent returns true even though
+// branches with unmerged work remain.
+func TestFinalizeWave_WorktreesGoneBranchesRemain(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoRoot := filepath.Join(tmpDir, "repo")
+	if err := os.MkdirAll(repoRoot, 0755); err != nil {
+		t.Fatalf("failed to create repo root: %v", err)
+	}
+
+	// Initialize a real git repo with an initial commit
+	if _, err := git.Run(repoRoot, "init"); err != nil {
+		t.Fatalf("git init: %v", err)
+	}
+	if _, err := git.Run(repoRoot, "config", "user.email", "test@test.com"); err != nil {
+		t.Fatalf("git config email: %v", err)
+	}
+	if _, err := git.Run(repoRoot, "config", "user.name", "Test"); err != nil {
+		t.Fatalf("git config name: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoRoot, "README.md"), []byte("init"), 0644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	if _, err := git.Run(repoRoot, "add", "."); err != nil {
+		t.Fatalf("git add: %v", err)
+	}
+	if _, err := git.Run(repoRoot, "commit", "-m", "initial"); err != nil {
+		t.Fatalf("git commit: %v", err)
+	}
+
+	// Create agent branch (so AllBranchesAbsent returns false)
+	if _, err := git.Run(repoRoot, "branch", "saw/test-wt-gone/wave1-agent-A"); err != nil {
+		t.Fatalf("git branch: %v", err)
+	}
+
+	// Write IMPL with 1 agent whose branch pattern matches the branch we created.
+	// No worktree directory exists, so WorktreesAbsent returns true.
+	// But the branch exists, so AllBranchesAbsent returns false.
+	// Before the fix, isSolo would be true (only checked WorktreesAbsent).
+	// After the fix, isSolo must be false (also checks AllBranchesAbsent).
+	implContent := `feature_slug: test-wt-gone
+feature: test worktrees gone branches remain
+repo: ` + repoRoot + `
+test_command: "echo ok"
+lint_command: "echo ok"
+waves:
+  - number: 1
+    agents:
+      - id: A
+        branch: saw/test-wt-gone/wave1-agent-A
+        files:
+          - pkg/foo.go
+completion_reports:
+  A:
+    status: complete
+    commit: deadbeef
+    branch: saw/test-wt-gone/wave1-agent-A
+    files_changed:
+      - pkg/foo.go
+`
+	implPath := filepath.Join(tmpDir, "IMPL-test-wt-gone.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatalf("failed to write IMPL: %v", err)
+	}
+
+	res := FinalizeWave(context.Background(), FinalizeWaveOpts{
+		IMPLPath: implPath,
+		RepoPath: repoRoot,
+		WaveNum:  1,
+	})
+
+	// The key assertion: FinalizeWave must NOT succeed via the solo-wave shortcut.
+	// With branches still present, isSolo=false, so it enters the full pipeline.
+	// The full pipeline will fail at VerifyCommits because "deadbeef" is not a real
+	// commit SHA — but that's expected. The important thing is it did NOT take the
+	// solo path (which would set synthetic MergeResult and potentially succeed).
+	if res.IsSuccess() {
+		// If it succeeded, that means it took the solo-wave shortcut and skipped
+		// merge entirely — the bug we're fixing.
+		t.Fatal("expected FinalizeWave to NOT take solo-wave shortcut when branches exist; " +
+			"got success (implies solo path was taken, silently skipping merge)")
+	}
+
+	// Verify the error comes from the full pipeline (VerifyCommits or similar),
+	// not from missing manifest data or other setup issues.
+	if len(res.Errors) == 0 {
+		t.Fatal("expected at least one error from the full pipeline path")
+	}
+	errMsg := res.Errors[0].Message
+	// The error should be from verify-commits or the ancestor check — NOT from
+	// manifest loading or missing IMPLPath.
+	if strings.Contains(errMsg, "IMPLPath is required") || strings.Contains(errMsg, "RepoPath is required") {
+		t.Fatalf("unexpected setup error: %s", errMsg)
+	}
+	t.Logf("FinalizeWave correctly rejected solo-wave shortcut; pipeline error: %s", errMsg)
 }
 
 // TestFinalizeWave_MultiRepo verifies that ExtractReposFromManifest handles
