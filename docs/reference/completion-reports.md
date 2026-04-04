@@ -62,7 +62,7 @@ The `downstream_action_required` flag is the primary signal used by the orchestr
 
 ## `failure_type` Values
 
-`failure_type` is a free-form string but the following values are used by convention and are recognized by the E19 reactions system:
+`failure_type` is validated against the `FailureTypeEnum` type. The following values are accepted by the builder and recognized by the E19 reactions system:
 
 | Value | Meaning |
 |---|---|
@@ -73,6 +73,22 @@ The `downstream_action_required` flag is the primary signal used by the orchestr
 | `escalate` | Problem requires human intervention beyond automated retry |
 
 The `ReactionsConfig` on the IMPL manifest can override how the orchestrator responds to each `failure_type` value. Absent a `reactions` block, E19 hardcoded defaults apply.
+
+---
+
+## Validation Rules
+
+The `CompletionReportBuilder.Validate()` method enforces the following rules before any manifest mutation:
+
+| Rule | Description |
+|---|---|
+| `status` required | Must be one of `complete`, `partial`, or `blocked` |
+| `commit` required when complete | `commit` must be non-empty when `status` is `complete` |
+| `failure_type` required when non-complete | `failure_type` must be set when `status` is `partial` or `blocked` |
+| `failure_type` forbidden when complete | `failure_type` must NOT be set when `status` is `complete` |
+| `failure_type` must be valid | When present, `failure_type` must be one of the recognized `FailureTypeEnum` values (see table above) |
+
+The `sawtools set-completion` CLI and the `AppendToManifest` builder method both run these checks before writing to disk.
 
 ---
 
@@ -142,6 +158,7 @@ Completion reports are stored under `completion_reports` at the top level of the
 completion_reports:
   A:
     status: complete
+    commit: "a1b2c3d"
     files_changed:
       - pkg/engine/foo.go
     files_created: []
@@ -161,4 +178,54 @@ completion_reports:
     verification: "go build ./... — FAIL"
 ```
 
-The `ErrReportNotFound` sentinel (`protocol.ErrReportNotFound`) is returned by `ParseCompletionReport` when the requested agent's key is absent from the map.
+The `ErrReportNotFound` sentinel (`protocol.ErrReportNotFound`) is returned when the requested agent's key is absent from the map. The `ErrAgentNotFound` sentinel is returned by `CompletionReportBuilder.AppendToManifest` when the agent ID is not present in the manifest's wave list.
+
+---
+
+## `sawtools set-completion` CLI
+
+```
+sawtools set-completion <manifest-path> [flags]
+```
+
+| Flag | Required | Description |
+|---|---|---|
+| `--agent` | yes | Agent ID |
+| `--status` | yes | `complete`, `partial`, or `blocked` |
+| `--commit` | no | Commit SHA |
+| `--worktree` | no | Worktree path |
+| `--branch` | no | Branch name |
+| `--files-changed` | no | Comma-separated list of changed files |
+| `--files-created` | no | Comma-separated list of created files |
+| `--tests-added` | no | Comma-separated list of tests added |
+| `--verification` | no | Verification result text |
+| `--notes` | no | Free-text notes |
+| `--failure-type` | no | `transient`, `fixable`, `needs_replan`, `escalate`, or `timeout` |
+
+The CLI validates the report using `CompletionReportBuilder.Validate()` before writing. On success it prints a JSON object with `agent`, `status`, and `saved` fields. The write is performed inside `WithCompletionReportLock` to prevent concurrent modification.
+
+Note: `--interface-deviations`, `--out-of-scope-deps`, `--repo`, and `--dedup-stats` are not exposed as CLI flags. These fields must be set programmatically via the `CompletionReportBuilder` API.
+
+---
+
+## Builder API
+
+The `CompletionReportBuilder` (in `pkg/protocol/completion_report.go`) is the canonical way to construct and write completion reports. It uses a fluent API:
+
+```go
+builder := protocol.NewCompletionReport("A").
+    WithStatus(protocol.StatusComplete).
+    WithCommit("abc123").
+    WithFiles(changed, created).
+    WithVerification("go test ./... — PASS").
+    WithTestsAdded([]string{"TestFoo"})
+
+err := protocol.WithCompletionReportLock(ctx, func(ctx context.Context) error {
+    m, err := protocol.Load(ctx, implDocPath)
+    if err != nil { return err }
+    if err := builder.AppendToManifest(m); err != nil { return err }
+    return protocol.Save(ctx, m, implDocPath).Err()
+})
+```
+
+Available builder methods: `WithStatus`, `WithCommit`, `WithWorktree`, `WithBranch`, `WithRepo`, `WithFiles`, `WithTestsAdded`, `WithVerification`, `WithNotes`, `WithFailureType`, `WithDedupStats`, `WithInterfaceDeviations`.
