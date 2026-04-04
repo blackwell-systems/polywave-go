@@ -853,38 +853,3 @@ func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, ma
 		Data:   results,
 	}, results, nil
 }
-
-// ---------------------------------------------------------------------------
-// WAVE1-AGENT-C TEMPORARY STUBS
-// These type definitions are placeholders only. They will be superseded by
-// the canonical definitions in pkg/engine/caller_cascade.go once Agent B's
-// work is merged. Remove these stubs during Wave 1 integration merge.
-// ---------------------------------------------------------------------------
-
-// CallerCascadeError represents a single compiler error classified as a
-// caller cascade: the error file is not owned by the current wave.
-type CallerCascadeError struct {
-	File    string `json:"file"`    // relative file path reporting the error
-	Line    int    `json:"line"`    // line number (0 if unknown)
-	Message string `json:"message"` // raw compiler error text
-}
-
-// CallerCascadeClassification is the result of ClassifyCallerCascadeErrors.
-type CallerCascadeClassification struct {
-	Errors         []CallerCascadeError `json:"errors"`
-	AllAreCascades bool                 `json:"all_are_cascades"`
-	// MixedErrors is true when some errors are in current-wave files
-	// (real failures) and some are in future-wave/unowned files (cascades).
-	MixedErrors bool `json:"mixed_errors"`
-}
-
-// ClassifyCallerCascadeErrors is a stub placeholder.
-// The real implementation lives in pkg/engine/caller_cascade.go (Agent B).
-// Remove this stub when Agent B's caller_cascade.go is merged.
-func ClassifyCallerCascadeErrors(
-	verifyData *protocol.VerifyBuildData,
-	manifest *protocol.IMPLManifest,
-	waveNum int,
-) CallerCascadeClassification {
-	return CallerCascadeClassification{}
-}
