@@ -71,6 +71,7 @@ func main() {
 		newExtractCommandsCmd(),
 		newFinalizeWaveCmd(),
 		newFinalizeImplCmd(),
+		newFinalizeScoutCmd(),
 		newDiagnoseBuildFailureCmd(),
 		newAssignAgentIDsCmd(),
 		newInterviewCmd(),
