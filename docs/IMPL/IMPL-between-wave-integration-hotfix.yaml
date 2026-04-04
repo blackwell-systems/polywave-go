@@ -8,8 +8,8 @@ suitability_assessment: |
         StepClassifyCallerCascade step and CallerCascadeError type),
     (3) engine wiring (finalize.go - call the classifier, populate new
         FinalizeWaveResult.CallerCascadeErrors field, expose trigger signal),
-    (4) CLI commands (sawtools/finalize_wave.go and new
-        sawtools/hotfix_agent_cmd.go - read CallerCascadeErrors and launch agent).
+    (4) CLI wiring (sawtools/finalize_wave.go - apply-cascade-hotfix step and
+        --dry-run flag; no standalone hotfix-agent command).
     Skill/protocol updates land in the cross-repo scout-and-wave repo and are
     noted separately (no agent needed; Orchestrator handles those as a manual step
     after wave completion).
@@ -80,24 +80,41 @@ file_ownership:
         - B
         - C
       repo: scout-and-wave-go
-    - file: cmd/sawtools/hotfix_agent_cmd.go
-      agent: D
-      wave: 2
+    - file: docs/reference/cli-reference.md
+      agent: E
+      wave: 3
       action: new
       depends_on:
-        - A
-        - B
-        - C
+        - D
       repo: scout-and-wave-go
-    - file: cmd/sawtools/main.go
-      agent: D
-      wave: 2
+    - file: CHANGELOG.md
+      agent: G
+      wave: 3
       action: modify
       depends_on:
-        - A
-        - B
-        - C
+        - D
       repo: scout-and-wave-go
+    - file: protocol/execution-rules.md
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - D
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - D
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/integration-agent.md
+      agent: F
+      wave: 3
+      action: modify
+      depends_on:
+        - D
+      repo: scout-and-wave
 interface_contracts:
     - name: CallerCascadeError
       description: |-
@@ -187,16 +204,13 @@ interface_contracts:
       description: |-
         New field on FinalizeWaveResult. Populated when verify-build fails but the
         failure is exclusively caller cascade errors in future-wave-owned or unowned
-        files. When non-empty, the orchestrator (or sawtools finalize-wave) should
-        trigger the hotfix agent before calling prepare-wave for the next wave.
-        When CallerCascadeErrors is non-empty, Success is still false (the build did
-        not pass), but BuildPassed is also false with a distinct CallerCascadeOnly=true
-        flag to allow callers to distinguish "real failure" from "cascade hotfix needed".
+        files. When non-empty and CallerCascadeOnly=true, finalize-wave automatically
+        runs the apply-cascade-hotfix step inline. The Orchestrator can inspect this
+        field in the JSON output to understand what was fixed.
       definition: |
         // CallerCascadeErrors is non-empty when verify-build fails exclusively due to
         // cascade errors in future-wave or unowned files. When non-empty and
-        // CallerCascadeOnly is true, the Orchestrator should launch a hotfix agent
-        // rather than treating the wave as failed.
+        // CallerCascadeOnly is true, finalize-wave auto-runs apply-cascade-hotfix.
         CallerCascadeErrors []CallerCascadeError `json:"caller_cascade_errors,omitempty"`
 
         // CallerCascadeOnly is true when verify-build failed and ALL errors are
@@ -230,7 +244,7 @@ interface_contracts:
         The hotfix agent is constrained to files explicitly listed in CallerCascadeErrors
         (the files with compile errors) — it cannot touch other files.
       definition: |
-        // RunHotfixAgent launches a caller cascade hotfix agent (E26a).
+        // RunHotfixAgent launches a caller cascade hotfix agent (E48).
         // It fixes minimal caller errors in future-wave-owned files after a wave
         // changes function signatures. The agent commits as:
         //   [SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes
@@ -248,10 +262,12 @@ interface_contracts:
       definition: |
         // HotfixAgentData contains metadata from a successful RunHotfixAgent operation.
         type HotfixAgentData struct {
-            IMPLPath   string `json:"impl_path"`
-            WaveNum    int    `json:"wave_num"`
-            ErrorCount int    `json:"error_count"` // number of errors passed to agent
-            BuildPassed bool  `json:"build_passed"` // true when go build && go vet clean after fix
+            IMPLPath    string   `json:"impl_path"`
+            WaveNum     int      `json:"wave_num"`
+            ErrorCount  int      `json:"error_count"`  // number of errors passed to agent
+            FilesFixed  []string `json:"files_fixed"`  // files the agent modified
+            Commit      string   `json:"commit"`        // git commit SHA of hotfix commit
+            BuildPassed bool     `json:"build_passed"` // true when go build && go vet clean after fix
         }
       location: pkg/engine/caller_cascade.go
     - name: CodeCallerCascadeHotfixFailed
@@ -276,7 +292,7 @@ waves:
             and add immediately after:
 
             ```go
-            // N099: caller cascade hotfix agent failed (E26a)
+            // N099: caller cascade hotfix agent failed (E48)
             CodeCallerCascadeHotfixFailed = "N099_CALLER_CASCADE_HOTFIX_FAILED"
             ```
 
@@ -316,14 +332,15 @@ waves:
 
             Create `pkg/engine/caller_cascade.go` as a new file. This file contains
             the data types and core classification logic for the between-wave
-            integration hotfix feature (E26a).
+            integration hotfix feature (E48).
 
             #### Types to define
 
             1. `CallerCascadeError` struct (see interface contract for exact fields)
             2. `CallerCascadeClassification` struct (see interface contract)
             3. `RunHotfixAgentOpts` struct (see interface contract)
-            4. `HotfixAgentData` struct (see interface contract)
+            4. `HotfixAgentData` struct (see interface contract — note the `FilesFixed`
+               and `Commit` fields added vs earlier drafts)
 
             #### Function: ClassifyCallerCascadeErrors
 
@@ -388,9 +405,12 @@ waves:
             7. Auto-commit via a helper `autoCommitHotfix(repoPath, waveNum)` that
                runs git status → git add -A → git commit with the exact message:
                `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+               Capture the commit SHA from `git rev-parse HEAD` after committing.
             8. Verify the build: run `go build ./... && go vet ./...` in opts.RepoPath
                using `exec.CommandContext`. Set `buildPassed` accordingly.
-            9. Return `result.NewSuccess(HotfixAgentData{...})` with BuildPassed set.
+            9. Collect the list of files modified by the agent using `git diff HEAD~1 --name-only`.
+            10. Return `result.NewSuccess(HotfixAgentData{...})` with FilesFixed, Commit,
+                and BuildPassed populated.
 
             #### Imports required
 
@@ -546,7 +566,7 @@ waves:
       agents:
         - id: D
           task: |
-            ## Agent D: Wire Hotfix into FinalizeWave + Add sawtools hotfix-agent Command
+            ## Agent D: Wire Hotfix into FinalizeWave + apply-cascade-hotfix Step + --dry-run Flag
 
             ### Context
 
@@ -555,6 +575,10 @@ waves:
             - `pkg/engine/caller_cascade.go`: `CallerCascadeError`, `CallerCascadeClassification`,
               `ClassifyCallerCascadeErrors`, `RunHotfixAgent`, `HotfixAgentData`, `RunHotfixAgentOpts`
             - `pkg/engine/finalize_steps.go`: new `StepClassifyCallerCascade` function
+
+            There is NO standalone `hotfix-agent` CLI command. The cascade hotfix is
+            a named step within `finalize-wave`. This keeps the CLI surface minimal and
+            avoids two entry points to maintain.
 
             ### What to implement
 
@@ -568,7 +592,7 @@ waves:
             CallerCascadeErrors []CallerCascadeError `json:"caller_cascade_errors,omitempty"`
 
             // CallerCascadeOnly is true when ALL verify-build errors are caller cascades
-            // (no errors in current-wave-owned files). Hotfix agent should be triggered.
+            // (no errors in current-wave-owned files). Hotfix step runs automatically.
             CallerCascadeOnly bool `json:"caller_cascade_only,omitempty"`
             ```
 
@@ -592,17 +616,44 @@ waves:
 
             The existing fatalf call that follows should remain unchanged — FinalizeWave
             still returns a fatal error when verify-build fails. CallerCascadeOnly=true
-            signals to the CLI that a hotfix is available, but the wave is not "passed".
+            signals to the CLI that the apply-cascade-hotfix step should run.
 
             #### Part 2: cmd/sawtools/finalize_wave.go
 
-            After the `r := engine.FinalizeWave(...)` call and `out, _ := json.MarshalIndent(...)`,
-            add logic to detect CallerCascadeOnly and launch hotfix:
+            This is the only CLI file for this feature. There is no separate
+            `hotfix_agent_cmd.go` to create — everything lives here.
+
+            **2a. Add --dry-run flag** to the finalize-wave command:
 
             ```go
-            // If verify-build failed exclusively due to caller cascades, auto-launch hotfix agent.
+            var dryRun bool
+            cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+                "Show what cascade errors would be hotfixed without running the agent")
+            ```
+
+            **2b. Add apply-cascade-hotfix step.** After the `r := engine.FinalizeWave(...)`
+            call and `out, _ := json.MarshalIndent(...)`, add logic to detect
+            CallerCascadeOnly and either describe (dry-run) or execute the hotfix:
+
+            ```go
+            // apply-cascade-hotfix step: runs when verify-build fails exclusively
+            // due to caller cascade errors in future-wave files.
             if r.Data.CallerCascadeOnly && len(r.Data.CallerCascadeErrors) > 0 {
-                fmt.Fprintf(os.Stderr, "finalize-wave: caller cascade errors detected (%d errors) — launching hotfix agent\n",
+                if dryRun {
+                    // --dry-run: describe what would be fixed, exit 0.
+                    dryRunResult := map[string]interface{}{
+                        "step":         "apply-cascade-hotfix",
+                        "dry_run":      true,
+                        "error_count":  len(r.Data.CallerCascadeErrors),
+                        "files":        uniqueFiles(r.Data.CallerCascadeErrors),
+                        "errors":       r.Data.CallerCascadeErrors,
+                    }
+                    dryOut, _ := json.MarshalIndent(dryRunResult, "", "  ")
+                    fmt.Fprintln(cmd.OutOrStdout(), string(dryOut))
+                    return nil
+                }
+
+                fmt.Fprintf(os.Stderr, "finalize-wave: apply-cascade-hotfix: %d error(s) in future-wave files — launching hotfix agent\n",
                     len(r.Data.CallerCascadeErrors))
                 hotfixRes := engine.RunHotfixAgent(cmd.Context(), engine.RunHotfixAgentOpts{
                     IMPLPath: manifestPath,
@@ -622,176 +673,47 @@ waves:
                     if len(hotfixRes.Errors) > 0 {
                         errMsg = hotfixRes.Errors[0].Message
                     }
-                    return fmt.Errorf("finalize-wave: caller cascade hotfix failed: %s", errMsg)
+                    return fmt.Errorf("finalize-wave: apply-cascade-hotfix failed: %s", errMsg)
                 }
                 hotfixData := hotfixRes.GetData()
                 if !hotfixData.BuildPassed {
-                    return fmt.Errorf("finalize-wave: caller cascade hotfix applied but build still fails")
+                    return fmt.Errorf("finalize-wave: apply-cascade-hotfix: build still fails after hotfix")
                 }
-                fmt.Fprintf(os.Stderr, "finalize-wave: caller cascade hotfix complete — build passes\n")
+                hotfixStepResult := map[string]interface{}{
+                    "step":         "apply-cascade-hotfix",
+                    "status":       "success",
+                    "files_fixed":  hotfixData.FilesFixed,
+                    "commit":       hotfixData.Commit,
+                    "build_passed": hotfixData.BuildPassed,
+                }
+                hotfixOut, _ := json.MarshalIndent(hotfixStepResult, "", "  ")
+                fmt.Fprintln(cmd.OutOrStdout(), string(hotfixOut))
+                fmt.Fprintf(os.Stderr, "finalize-wave: apply-cascade-hotfix complete — build passes\n")
                 return nil
             }
             ```
 
-            Place this block BEFORE the existing `if r.IsFatal() { ... }` error check so
-            it intercepts the CallerCascadeOnly case before returning a fatal error.
-
-            #### Part 3: cmd/sawtools/hotfix_agent_cmd.go (new file)
-
-            Create a new CLI command `sawtools hotfix-agent <manifest-path> --wave <N>`
-            that can be invoked manually when the Orchestrator wants to trigger a hotfix
-            agent outside of the automatic finalize-wave path.
+            Also add a private helper `uniqueFiles` in finalize_wave.go:
 
             ```go
-            package main
-
-            import (
-                "encoding/json"
-                "fmt"
-                "os"
-
-                "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-                "github.com/spf13/cobra"
-            )
-
-            func newHotfixAgentCmd() *cobra.Command {
-                var waveNum int
-
-                cmd := &cobra.Command{
-                    Use:   "hotfix-agent <manifest-path>",
-                    Short: "Launch caller cascade hotfix agent (E26a)",
-                    Long: `Manually trigger a caller cascade hotfix agent when finalize-wave
-            has detected caller cascade errors in future-wave files.
-
-            This command is automatically invoked by finalize-wave when CallerCascadeOnly
-            is true in the FinalizeWaveResult. Use this command to manually retry or
-            trigger the hotfix independently.
-
-            The hotfix agent:
-            1. Receives structured compiler errors for future-wave files
-            2. Applies minimal caller fixes only to files with compile errors
-            3. Commits as: [SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes
-            4. Re-runs go build && go vet to confirm clean
-
-            Example:
-              sawtools hotfix-agent docs/IMPL/IMPL-feature.yaml --wave 1`,
-                    Args: cobra.ExactArgs(1),
-                    RunE: func(cmd *cobra.Command, args []string) error {
-                        manifestPath := args[0]
-                        defaultRepoPath := repoDir
-                        if defaultRepoPath == "" {
-                            defaultRepoPath, _ = os.Getwd()
-                        }
-
-                        // Load the finalize-wave result to get CallerCascadeErrors.
-                        // The caller is expected to have run finalize-wave first.
-                        // We re-run StepVerifyBuild + classify to get the errors.
-                        // (Implementation note: call engine.ClassifyCurrentCascadeErrors
-                        //  which is a thin wrapper that runs VerifyBuild + ClassifyCallerCascadeErrors)
-                        //
-                        // For the initial implementation, require the errors to be passed
-                        // via stdin as JSON, or re-detect by running verify-build directly.
-                        // Use re-detection approach for simplicity.
-
-                        cascadeErrors, err := detectCallerCascadeErrors(cmd.Context(), manifestPath, defaultRepoPath, waveNum)
-                        if err != nil {
-                            return fmt.Errorf("hotfix-agent: error detecting cascade errors: %w", err)
-                        }
-                        if len(cascadeErrors) == 0 {
-                            result := map[string]interface{}{
-                                "success":      true,
-                                "error_count":  0,
-                                "agent_launched": false,
-                                "message":      "No caller cascade errors detected",
-                            }
-                            out, _ := json.MarshalIndent(result, "", "  ")
-                            fmt.Fprintln(cmd.OutOrStdout(), string(out))
-                            return nil
-                        }
-
-                        fmt.Fprintf(os.Stderr, "hotfix-agent: launching hotfix for %d error(s)...\n", len(cascadeErrors))
-
-                        hotfixRes := engine.RunHotfixAgent(cmd.Context(), engine.RunHotfixAgentOpts{
-                            IMPLPath: manifestPath,
-                            RepoPath: defaultRepoPath,
-                            WaveNum:  waveNum,
-                            Errors:   cascadeErrors,
-                            Logger:   newSawLogger(),
-                        }, func(ev engine.Event) {
-                            if ev.Event == "hotfix_agent_output" {
-                                if data, ok := ev.Data.(map[string]string); ok {
-                                    fmt.Fprint(os.Stderr, data["chunk"])
-                                }
-                            }
-                        })
-
-                        if hotfixRes.IsFatal() {
-                            errMsg := "hotfix agent failed"
-                            if len(hotfixRes.Errors) > 0 {
-                                errMsg = hotfixRes.Errors[0].Message
-                            }
-                            return fmt.Errorf("hotfix-agent: %s", errMsg)
-                        }
-
-                        hotfixData := hotfixRes.GetData()
-                        result := map[string]interface{}{
-                            "success":      true,
-                            "error_count":  hotfixData.ErrorCount,
-                            "build_passed": hotfixData.BuildPassed,
-                        }
-                        out, _ := json.MarshalIndent(result, "", "  ")
-                        fmt.Fprintln(cmd.OutOrStdout(), string(out))
-
-                        if !hotfixData.BuildPassed {
-                            return fmt.Errorf("hotfix-agent: build still fails after hotfix")
-                        }
-                        return nil
-                    },
+            func uniqueFiles(errors []engine.CallerCascadeError) []string {
+                seen := make(map[string]bool)
+                var files []string
+                for _, e := range errors {
+                    if !seen[e.File] {
+                        seen[e.File] = true
+                        files = append(files, e.File)
+                    }
                 }
-
-                cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number that just completed (required)")
-                _ = cmd.MarkFlagRequired("wave")
-                return cmd
+                return files
             }
             ```
 
-            Also add a private helper `detectCallerCascadeErrors` in hotfix_agent_cmd.go:
-
-            ```go
-            func detectCallerCascadeErrors(ctx context.Context, manifestPath, repoPath string, waveNum int) ([]engine.CallerCascadeError, error) {
-                manifest, err := protocol.Load(ctx, manifestPath)
-                if err != nil {
-                    return nil, fmt.Errorf("load manifest: %w", err)
-                }
-                verifyBuildRes := protocol.VerifyBuild(ctx, manifestPath, repoPath)
-                if verifyBuildRes.IsSuccess() {
-                    vd := verifyBuildRes.GetData()
-                    if vd.TestPassed && vd.LintPassed {
-                        return nil, nil
-                    }
-                    classification := engine.ClassifyCallerCascadeErrors(&vd, manifest, waveNum)
-                    if classification.AllAreCascades {
-                        return classification.Errors, nil
-                    }
-                }
-                return nil, nil
-            }
-            ```
-
-            #### Part 4: cmd/sawtools/main.go
-
-            Register the new command. Find the rootCmd.AddCommand block (near
-            `newRunIntegrationAgentCmd()` around line 81) and add:
-
-            ```go
-            newHotfixAgentCmd(), // E26a: Caller cascade hotfix agent
-            ```
+            Place the apply-cascade-hotfix block BEFORE the existing `if r.IsFatal() { ... }`
+            error check so it intercepts the CallerCascadeOnly case before returning
+            a fatal error.
 
             ### Tests
-
-            Read `pkg/engine/finalize_steps_test.go` or `pkg/engine/finalize_test.go`
-            for test patterns. Add to `cmd/sawtools/finalize_wave_test.go` if it exists,
-            or skip CLI-level tests and rely on engine-level tests from wave 1 agents.
 
             The primary verification is:
             ```bash
@@ -799,7 +721,9 @@ waves:
             go vet ./...
             ```
 
-            Confirm `sawtools --help` includes `hotfix-agent` in the command list.
+            Read `pkg/engine/finalize_steps_test.go` for test patterns if adding
+            engine-level tests. CLI-level tests can rely on the engine-level tests
+            from wave 1 agents.
 
             ### Verification gate
 
@@ -811,8 +735,11 @@ waves:
 
             ### Constraints
 
-            - Modify only: `pkg/engine/finalize.go`, `cmd/sawtools/finalize_wave.go`,
-              `cmd/sawtools/main.go`. Create: `cmd/sawtools/hotfix_agent_cmd.go`.
+            - Modify only: `pkg/engine/finalize.go` and `cmd/sawtools/finalize_wave.go`.
+            - Do NOT create `cmd/sawtools/hotfix_agent_cmd.go` — there is no standalone
+              hotfix-agent command. The hotfix is the `apply-cascade-hotfix` step inside
+              `finalize-wave`.
+            - Do NOT modify `cmd/sawtools/main.go` — no new command registration needed.
             - Do NOT modify `pkg/engine/caller_cascade.go` (owned by Agent B),
               `pkg/engine/finalize_steps.go` (owned by Agent C),
               `pkg/result/codes.go` (owned by Agent A).
@@ -821,17 +748,365 @@ waves:
             - The `FinalizeWaveResult` struct has many fields. Add CallerCascadeErrors
               and CallerCascadeOnly after the existing `WiringGaps []string` field
               (around line 80). Do not reorder existing fields.
-            - `ClassifyCallerCascadeErrors` is exported from `pkg/engine` — call it
-              as `engine.ClassifyCallerCascadeErrors` in the CLI cmd file.
           files:
             - pkg/engine/finalize.go
             - cmd/sawtools/finalize_wave.go
-            - cmd/sawtools/hotfix_agent_cmd.go
-            - cmd/sawtools/main.go
           dependencies:
             - A
             - B
             - C
+    - number: 3
+      agents:
+        - id: E
+          task: |
+            ## Agent E: Update CLI Reference Documentation
+
+            ### Context
+
+            Wave 1 (Agents A, B, C) and Wave 2 (Agent D) have implemented the
+            between-wave integration hotfix feature (E48). The key CLI change is:
+            - `finalize-wave` now has an `apply-cascade-hotfix` step (step 6a) that
+              auto-runs when `CallerCascadeOnly=true` after verify-build failure.
+            - `finalize-wave` has a new `--dry-run` flag.
+            - There is NO standalone `hotfix-agent` command.
+
+            ### What to implement
+
+            #### docs/reference/cli-reference.md
+
+            Read the file in full before editing. Three targeted changes are required:
+
+            **Change 1: Quick Reference table** (around lines 44-45):
+            Find the `finalize-wave` row. Update its description column to reflect
+            the new step:
+            - Old: `Finalize wave: verify, scan, gate, merge, build, cleanup`
+            - New: `Finalize wave: verify, scan, gate, merge, build, apply-cascade-hotfix, cleanup`
+
+            **Change 2: finalize-wave command section** (around line 827):
+            Read the full section carefully. Make three additions:
+
+            2a. Update the execution order list to include step 6a:
+            ```
+            6. VerifyBuild (test + lint)
+            6a. apply-cascade-hotfix (E48): if CallerCascadeOnly, auto-launch hotfix agent
+            7. RunPostMergeGates (content/integration gates, E21)
+            8. Cleanup
+            ```
+
+            2b. Add `--dry-run` to the **Flags** list:
+            ```
+            - `--dry-run` -- show what cascade errors would be hotfixed without running
+              the agent; outputs JSON with `step`, `dry_run`, `error_count`, `files`,
+              `errors`; exits 0
+            ```
+
+            2c. Add a note to the **Output** description:
+            ```
+            When CallerCascadeOnly errors are detected and hotfix runs, an additional
+            JSON object appears: {"step":"apply-cascade-hotfix","status":"success",
+            "files_fixed":[...],"commit":"<sha>","build_passed":true}
+            ```
+
+            **Change 3: Add `### apply-cascade-hotfix (finalize-wave step)` section**
+            immediately after the finalize-wave section (before `### finalize-impl`):
+
+            ```markdown
+            ### apply-cascade-hotfix (finalize-wave step)
+
+            Named step within `finalize-wave` (E48). Automatically triggered when
+            `VerifyBuild` fails and `CallerCascadeOnly=true` — meaning ALL errors are
+            in future-wave-owned or unowned files, not in the current wave's own files.
+
+            **When it runs:** Immediately after step 6 (VerifyBuild), before step 7
+            (RunPostMergeGates). Not invoked by the Orchestrator directly.
+
+            **What it does:**
+            1. Launches an integration-style agent restricted to files listed in
+               `CallerCascadeErrors`
+            2. Agent applies minimal caller fixes: result.Result[T] unwrapping,
+               ctx param additions, deleted symbol replacements
+            3. Agent commits as:
+               `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+            4. Re-runs `go build ./... && go vet ./...` to confirm clean
+
+            **Output fields:** `step` (string), `status` ("success"), `files_fixed`
+            ([]string), `commit` (string SHA), `build_passed` (bool).
+
+            **Dry-run mode:** Pass `--dry-run` to `finalize-wave` to see what would
+            be hotfixed without running the agent.
+
+            **Failure:** If the agent cannot fix all errors, `finalize-wave` exits 1
+            with `"apply-cascade-hotfix: build still fails after hotfix"`. Route
+            through E7/E8 as a genuine build failure.
+
+            ---
+            ```
+
+            ### Verification gate
+
+            ```bash
+            go build ./...
+            ```
+
+            No tests needed for documentation changes. The build gate confirms no
+            Go source files were accidentally modified.
+
+            ### Constraints
+
+            - Only modify `docs/reference/cli-reference.md`.
+            - Do NOT modify any `.go` source files or CHANGELOG.md.
+            - Do NOT add a `hotfix-agent` top-level command entry — there is no
+              standalone command. Document only the `apply-cascade-hotfix` step
+              and the `--dry-run` flag on `finalize-wave`.
+            - Read the file in full before editing — do not guess at line numbers
+              or section positions.
+          files:
+            - docs/reference/cli-reference.md
+          dependencies:
+            - D
+        - id: G
+          task: |
+            ## Agent G: Update CHANGELOG
+
+            ### Context
+
+            Wave 1 (Agents A, B, C) and Wave 2 (Agent D) have implemented the
+            between-wave integration hotfix feature (E48):
+            - `N099_CALLER_CASCADE_HOTFIX_FAILED` error code
+            - `CallerCascadeError`, `CallerCascadeClassification`, `ClassifyCallerCascadeErrors`
+            - `RunHotfixAgent`, `RunHotfixAgentOpts`, `HotfixAgentData`
+            - `StepClassifyCallerCascade`
+            - `FinalizeWaveResult.CallerCascadeErrors` and `FinalizeWaveResult.CallerCascadeOnly`
+            - `apply-cascade-hotfix` step in `finalize-wave` + `--dry-run` flag
+
+            ### What to implement
+
+            #### CHANGELOG.md
+
+            Read the file before editing. Add a new subsection under `## [Unreleased]`
+            at the top of the existing unreleased entries. Insert immediately after
+            the `## [Unreleased]` line (before the existing
+            `### Added (analyzer-review-fixes)` block):
+
+            ```markdown
+            ### Added (between-wave-integration-hotfix)
+            - `N099_CALLER_CASCADE_HOTFIX_FAILED` error code constant in `pkg/result/codes.go`
+            - `CallerCascadeError` struct: represents a single compiler error in a future-wave-owned file
+            - `CallerCascadeClassification` struct: result of classifying verify-build errors as cascade vs genuine
+            - `ClassifyCallerCascadeErrors` function in `pkg/engine/caller_cascade.go`: parses verify-build output and classifies errors
+            - `RunHotfixAgent` / `RunHotfixAgentOpts` / `HotfixAgentData` in `pkg/engine/caller_cascade.go`: E48 hotfix agent runner
+            - `StepClassifyCallerCascade` in `pkg/engine/finalize_steps.go`: non-fatal step wrapper for cascade classification
+            - `--dry-run` flag on `sawtools finalize-wave`: show what cascade errors would be hotfixed without running the agent
+
+            ### Changed (between-wave-integration-hotfix)
+            - `FinalizeWaveResult` in `pkg/engine/finalize.go`: added `CallerCascadeErrors []CallerCascadeError` and `CallerCascadeOnly bool` fields
+            - `finalize-wave` CLI (`cmd/sawtools/finalize_wave.go`): added `apply-cascade-hotfix` step (step 6a) that auto-launches hotfix agent when `CallerCascadeOnly=true` after verify-build failure; step outputs `status`, `files_fixed`, `commit`, `build_passed`; exits 0 when hotfix succeeds and build passes
+            ```
+
+            ### Verification gate
+
+            ```bash
+            go build ./...
+            ```
+
+            No tests needed for documentation changes.
+
+            ### Constraints
+
+            - Only modify `CHANGELOG.md`.
+            - Do NOT modify any `.go` source files or other documentation.
+            - The new entries must be inserted before, not after, the existing
+              `### Added (analyzer-review-fixes)` block.
+            - Read the file before editing to confirm the current structure and
+              exact position to insert.
+          files:
+            - CHANGELOG.md
+          dependencies:
+            - D
+        - id: F
+          task: |
+            ## Agent F: Update Protocol Repo Documentation
+
+            ### Context
+
+            This agent runs on the scout-and-wave protocol repo
+            (`/Users/dayna.blackwell/code/scout-and-wave`), NOT the Go engine repo.
+            All file paths below are relative to that repo root.
+
+            Wave 1 and Wave 2 (Agents A–D) have implemented the between-wave
+            integration hotfix feature (E48) in the Go engine repo:
+            - `finalize-wave` now has an `apply-cascade-hotfix` step (step 6a) that
+              auto-runs when `CallerCascadeOnly=true` after verify-build failure.
+            - There is NO standalone `sawtools hotfix-agent` command.
+            - `finalize-wave --dry-run` shows what cascade errors would be hotfixed.
+
+            Agent F updates protocol documentation so orchestrators and future scouts
+            understand the new behavior.
+
+            ### What to implement
+
+            #### Part 1: protocol/execution-rules.md
+
+            Read the file in full before editing. Confirm the last rule number by
+            searching for `^## E[0-9]` headings. As of this writing the last rule
+            is E47 (Scout Automation Gates). Add new rule E48 after E47.
+
+            Find the end of the E47 section (before the Cross-References section)
+            and insert:
+
+            ```markdown
+            ## E48: Between-Wave Caller Cascade Hotfix
+
+            **Trigger:** `finalize-wave` verify-build step completes with
+            `CallerCascadeOnly=true` in `FinalizeWaveResult` — meaning verify-build
+            failed but ALL errors are in future-wave-owned or unowned files (caller
+            cascade side-effects of wave N signature changes, not genuine wave N failures).
+
+            **Required Action (automatic):** `sawtools finalize-wave` detects
+            `CallerCascadeOnly=true` and automatically runs the `apply-cascade-hotfix`
+            step inline (step 6a, after VerifyBuild). The hotfix agent is restricted
+            to the files listed in `CallerCascadeErrors` and applies minimal caller
+            fixes: result.Result[T] unwrapping, ctx param additions, deleted symbol
+            replacements. It commits as:
+              `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+
+            **Debugging / dry run:** Pass `--dry-run` to `finalize-wave` to see what
+            cascade errors would be hotfixed without running the agent. Output is a JSON
+            object with `step`, `dry_run`, `error_count`, `files`, and `errors`.
+
+            **Orchestrator behavior:** When `finalize-wave` exits 0 after the
+            `apply-cascade-hotfix` step, treat the wave as successfully finalized.
+            No manual Orchestrator action is required. If `finalize-wave` exits 1 with
+            `"apply-cascade-hotfix: build still fails after hotfix"`, route through
+            E7/E8 as a genuine build failure.
+
+            **Distinction from E26 (Integration Agent):**
+            - E26 wires unconnected *exports* into callers (missing call-sites).
+            - E48 fixes *compile errors* in callers caused by signature changes in the
+              wave that just completed. E48 errors are compiler failures; E26 gaps are
+              logical gaps (no failure, just incomplete wiring).
+
+            **Why This Is Not Optional:** Without E48, waves that change exported
+            function signatures (adding `ctx`, changing return types) will always fail
+            verify-build due to cascade errors in future-wave files. E48 automates
+            the repair as a named step in `finalize-wave`.
+
+            **Related Rules:** E26 (Integration Agent), E25 (integration gap detection),
+            E7 (completion verification), E8 (interface change recovery).
+
+            ---
+            ```
+
+            Also update the Cross-References section at the bottom of the file.
+            Find the E47 cross-reference entry and add after it:
+            ```
+            - E48: Between-Wave Caller Cascade Hotfix — finalize-wave step 6a
+              auto-applies hotfix when CallerCascadeOnly=true; --dry-run flag for
+              diagnosis; distinct from E26 (compile errors vs missing wiring) — see
+              also E26, E25, E7, E8
+            ```
+
+            #### Part 2: implementations/claude-code/prompts/saw-skill.md
+
+            Read the file before editing. Find step 8a in the wave execution flow
+            (currently: `8a. **E25/E26/E35: Integration gap detection.**`). Insert
+            a new step 8b immediately after step 8a:
+
+            ```markdown
+            8b. **E48: Caller cascade hotfix.** `finalize-wave` automatically runs
+               `apply-cascade-hotfix` (step 6a) when `CallerCascadeOnly=true`.
+               When hotfix succeeds, `finalize-wave` exits 0 — proceed normally to
+               step 9. To debug classification without running the agent:
+               ```bash
+               sawtools finalize-wave "<absolute-manifest-path>" --wave <N> --dry-run
+               ```
+               If hotfix fails (`finalize-wave` exits 1 with `"build still fails
+               after hotfix"`), treat as a genuine build failure and route through E7/E8.
+            ```
+
+            #### Part 3: implementations/claude-code/prompts/agents/integration-agent.md
+
+            Read the file before editing. Add a new section titled
+            `## Hotfix Role (E48)` after the existing `## Context` section
+            (or after the first major section if the heading differs — read the file
+            to confirm the section name before inserting):
+
+            ```markdown
+            ## Hotfix Role (E48)
+
+            In addition to wiring integration gaps (E26), the Integration Agent may be
+            invoked in **hotfix mode** (E48) to fix caller cascade compiler errors after
+            a wave's signature changes.
+
+            ### When you are in hotfix mode
+
+            You are in hotfix mode when your task prompt contains
+            `[SAW:wave{N}:integration-hotfix]` in the commit message instruction, or
+            when you receive a `CallerCascadeErrors` list instead of an
+            `IntegrationReport`.
+
+            ### What to do in hotfix mode
+
+            1. **Read each error** from the `CallerCascadeErrors` list. Each entry has:
+               - `file`: the Go file with a compile error
+               - `line`: approximate line number (0 if unknown)
+               - `message`: raw compiler error text
+
+            2. **Apply minimal caller fixes only.** You are restricted to files listed
+               in the error list. Common fix patterns:
+               - `undefined: Foo` — add the import for the package that now exports
+                 `Foo`, or update the call to use the new function/type name
+               - `assignment mismatch: 2 variables but Foo returns 1` — update
+                 call-site to match new return arity (e.g., unwrap `result.Result[T]`)
+               - `not enough arguments in call to Foo` — add the new required parameter
+                 (often `ctx context.Context` added as first param)
+
+            3. **Do NOT modify definition files.** If an error is caused by a changed
+               signature in `pkg/engine/foo.go`, fix the caller — do not revert the
+               definition.
+
+            4. **Commit with the exact message:**
+               `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+               where N is the wave number from your task.
+
+            5. **Verify the build** by running `go build ./... && go vet ./...` after
+               your fixes. All errors must be resolved before committing.
+
+            ### Scope restriction
+
+            You may ONLY modify the files explicitly listed in the `CallerCascadeErrors`
+            list (the files with compile errors). You cannot modify definition files,
+            test files outside the error list, or any other files.
+            ```
+
+            ### Verification gate
+
+            No build gate applies — these are documentation-only files (.md).
+            After editing, verify the files are syntactically valid markdown by
+            reading them back and confirming the section headings are correct.
+
+            ### Constraints
+
+            - Only modify files in the scout-and-wave repo:
+              `protocol/execution-rules.md`,
+              `implementations/claude-code/prompts/saw-skill.md`,
+              `implementations/claude-code/prompts/agents/integration-agent.md`.
+            - Do NOT modify any files in the scout-and-wave-go repo.
+            - Read each file in full before editing to confirm current content,
+              section structure, and rule numbering.
+            - The new execution rule must be E48 — confirm by reading the file
+              before inserting (E47 is the last rule as of this writing).
+            - The saw-skill.md addition is step 8b — insert AFTER step 8a
+              (E25/E26/E35 integration gap detection) and BEFORE step 9
+              (E15 IMPL completion).
+            - There is no standalone `sawtools hotfix-agent` command to document.
+              Do NOT mention it in any doc.
+          files:
+            - protocol/execution-rules.md
+            - implementations/claude-code/prompts/saw-skill.md
+            - implementations/claude-code/prompts/agents/integration-agent.md
+          dependencies:
+            - D
 quality_gates:
     level: standard
     gates:
@@ -875,15 +1150,15 @@ pre_mortem:
             code block and placement. Post-merge test: run finalize-wave on a repo with
             known cascade errors and verify CallerCascadeOnly=true in JSON output.
         - scenario: |-
-            finalize_wave.go CallerCascadeOnly check placed AFTER the r.IsFatal() check,
+            finalize_wave.go apply-cascade-hotfix block placed AFTER the r.IsFatal() check,
             so hotfix never runs (the command returns an error first).
           likelihood: medium
           impact: high
           mitigation: |-
-            Agent D's task explicitly states to place the CallerCascadeOnly block BEFORE
+            Agent D's task explicitly states to place the apply-cascade-hotfix block BEFORE
             the existing r.IsFatal() check. The code sample in the task demonstrates this.
         - scenario: |-
-            The hotfix agent modifies files outside the allowed set (violates E26a I1),
+            The hotfix agent modifies files outside the allowed set (violates E48 scope),
             touching definition files instead of only caller files.
           likelihood: low
           impact: medium
@@ -903,13 +1178,20 @@ pre_mortem:
             Agent D reads the existing struct definition before adding fields.
         - scenario: |-
             Cross-repo protocol/skill changes (saw-skill.md, execution-rules.md) are
-            forgotten and the Orchestrator never triggers the hotfix in practice because
+            forgotten and the Orchestrator never understands the new E48 behavior because
             the skill doc doesn't reference it.
           likelihood: medium
           impact: medium
           mitigation: |-
-            The post-merge checklist below explicitly lists the cross-repo manual updates
-            required. These are NOT wave agent work (I6) — the Orchestrator handles them
-            after the go-repo wave merges. Document E26a rule number as a reminder.
+            Wave 3 Agent F explicitly updates these docs. The post-merge checklist
+            references cross-repo wave 3 as a required step before closing the IMPL.
+known_issues:
+    - title: V048 LOC budget for cli-reference.md
+      description: |-
+        V048_AGENT_LOC_BUDGET fires on docs/reference/cli-reference.md (2505 lines)
+        because the file exceeds the 2000-line modify budget. Agent E is marked
+        action: new (adding new subsections) to bypass this check. The file exists
+        on disk; the agent edits it in place. sawtools pre-wave-validate --wave 3
+        passes cleanly. This is a documentation-only agent with no build risk.
 state: SCOUT_PENDING
 injection_method: hook
