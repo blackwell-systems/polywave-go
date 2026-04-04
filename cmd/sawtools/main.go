@@ -77,7 +77,8 @@ func main() {
 		newRunScoutCmd(),       // I3: Phase 5 integration
 		newAutoCmd(),           // /saw auto: scout + confirm + wave in one command
 		newRunCriticCmd(),      // E37: Pre-wave brief review
-		newSetCriticReviewCmd(), // E37: Used by critic agents to write results
+		newSetCriticReviewCmd(),     // E37: Used by critic agents to write results
+		newSetCriticVerdictCmd(),    // E37: Update verdict after Orchestrator corrections
 		newRunIntegrationAgentCmd(), // E26: Integration agent workflow
 		newRunIntegrationWaveCmd(),  // E27: Planned integration waves
 		newVerifyHookInstalledCmd(),
