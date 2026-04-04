@@ -90,6 +90,11 @@ const (
 	// CodeTrivialScope is emitted when an IMPL is SUITABLE but has only 1 agent owning 1 file.
 	// SAW adds no parallelization value at this scope — the change should be made directly.
 	CodeTrivialScope = "V047_TRIVIAL_SCOPE"
+	// CodeGateTargetsNewFile is emitted when a quality gate with required:true references a path
+	// that is owned with action:new. Required gates run on baseline before agents execute, so
+	// the file cannot exist yet — the gate will always fail. Put post-creation checks in the
+	// agent's verification gate instead.
+	CodeGateTargetsNewFile = "V048_GATE_TARGETS_NEW_FILE"
 )
 
 // Warning codes (W001-W099) — advisory only, never block execution

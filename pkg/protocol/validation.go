@@ -659,5 +659,36 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 		}
 	}
 
+	// V048: detect required:true gates whose command references an action:new file.
+	// Quality gates run on baseline before agents execute, so the file cannot exist yet.
+	newFilePaths := make(map[string]bool)
+	for _, f := range m.FileOwnership {
+		if f.Action == "new" {
+			newFilePaths[f.File] = true
+		}
+	}
+	if len(newFilePaths) > 0 {
+		for i, gate := range m.QualityGates.Gates {
+			if !gate.Required {
+				continue
+			}
+			for path := range newFilePaths {
+				if strings.Contains(gate.Command, path) {
+					errs = append(errs, result.SAWError{
+						Code: result.CodeGateTargetsNewFile,
+						Message: fmt.Sprintf(
+							"quality_gates.gates[%d]: required gate references action:new file %q — "+
+								"this gate will always fail on baseline (file does not exist yet); "+
+								"use required:false or move the check to the agent's verification gate",
+							i, path),
+						Severity: "error",
+						Field:    fmt.Sprintf("quality_gates.gates[%d].command", i),
+					})
+					break
+				}
+			}
+		}
+	}
+
 	return errs
 }
