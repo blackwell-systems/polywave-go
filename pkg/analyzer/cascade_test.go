@@ -44,18 +44,19 @@ func GetUser() {
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should detect import statement
-	if len(result.CascadeCandidates) == 0 {
+	if len(cascadeResult.CascadeCandidates) == 0 {
 		t.Fatal("expected cascade candidates, got none")
 	}
 
 	found := false
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == userFile && c.CascadeType == "syntax" && c.Severity == "high" {
 			found = true
 			if c.Line != 3 {
@@ -106,20 +107,21 @@ var token AuthToken
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should detect both type declaration and variable declaration
-	if len(result.CascadeCandidates) < 2 {
-		t.Fatalf("expected at least 2 cascade candidates, got %d", len(result.CascadeCandidates))
+	if len(cascadeResult.CascadeCandidates) < 2 {
+		t.Fatalf("expected at least 2 cascade candidates, got %d", len(cascadeResult.CascadeCandidates))
 	}
 
 	foundTypeDecl := false
 	foundVarDecl := false
 
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == handlerFile {
 			if c.Line == 3 && c.CascadeType == "syntax" && c.Severity == "high" {
 				foundTypeDecl = true
@@ -175,18 +177,19 @@ func GetSession() {
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should detect comments mentioning AuthToken
-	if len(result.CascadeCandidates) == 0 {
+	if len(cascadeResult.CascadeCandidates) == 0 {
 		t.Fatal("expected cascade candidates, got none")
 	}
 
 	semanticCount := 0
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == serviceFile && c.CascadeType == "semantic" && c.Severity == "low" {
 			semanticCount++
 		}
@@ -236,18 +239,19 @@ func LogAuth() {
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should detect string literals mentioning AuthToken
-	if len(result.CascadeCandidates) == 0 {
+	if len(cascadeResult.CascadeCandidates) == 0 {
 		t.Fatal("expected cascade candidates, got none")
 	}
 
 	semanticCount := 0
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == loggerFile && c.CascadeType == "semantic" && c.Severity == "low" {
 			semanticCount++
 		}
@@ -305,20 +309,21 @@ var role UserRole
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should detect cascades for both renames
-	if len(result.CascadeCandidates) < 4 {
-		t.Fatalf("expected at least 4 cascade candidates (2 types + 2 vars), got %d", len(result.CascadeCandidates))
+	if len(cascadeResult.CascadeCandidates) < 4 {
+		t.Fatalf("expected at least 4 cascade candidates (2 types + 2 vars), got %d", len(cascadeResult.CascadeCandidates))
 	}
 
 	authCount := 0
 	roleCount := 0
 
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == multiFile {
 			if c.Match == "AuthToken" || (c.CascadeType == "syntax" && c.Line == 3) {
 				authCount++
@@ -376,15 +381,16 @@ func DoSomething() {
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should return empty list
-	if len(result.CascadeCandidates) != 0 {
-		t.Errorf("expected 0 cascade candidates, got %d", len(result.CascadeCandidates))
-		for i, c := range result.CascadeCandidates {
+	if len(cascadeResult.CascadeCandidates) != 0 {
+		t.Errorf("expected 0 cascade candidates, got %d", len(cascadeResult.CascadeCandidates))
+		for i, c := range cascadeResult.CascadeCandidates {
 			t.Logf("  [%d] File=%s Line=%d Match=%q Type=%s Severity=%s Reason=%s",
 				i, c.File, c.Line, c.Match, c.CascadeType, c.Severity, c.Reason)
 		}
@@ -430,13 +436,14 @@ func TestAuth() {
 		},
 	}
 
-	result, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades failed: %v", err)
+	res := DetectCascades(context.Background(), tmpDir, renames)
+	if !res.IsSuccess() {
+		t.Fatalf("DetectCascades failed: %v", res.Errors)
 	}
+	cascadeResult := res.GetData()
 
 	// Should skip test file
-	for _, c := range result.CascadeCandidates {
+	for _, c := range cascadeResult.CascadeCandidates {
 		if c.File == testFile {
 			t.Errorf("test file should be skipped, but found cascade: %+v", c)
 		}
@@ -482,15 +489,17 @@ type AuthToken struct {
 	}
 
 	// Run twice and verify identical order
-	result1, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades run 1 failed: %v", err)
+	res1 := DetectCascades(context.Background(), tmpDir, renames)
+	if !res1.IsSuccess() {
+		t.Fatalf("DetectCascades run 1 failed: %v", res1.Errors)
 	}
+	result1 := res1.GetData()
 
-	result2, err := DetectCascades(context.Background(), tmpDir, renames)
-	if err != nil {
-		t.Fatalf("DetectCascades run 2 failed: %v", err)
+	res2 := DetectCascades(context.Background(), tmpDir, renames)
+	if !res2.IsSuccess() {
+		t.Fatalf("DetectCascades run 2 failed: %v", res2.Errors)
 	}
+	result2 := res2.GetData()
 
 	if len(result1.CascadeCandidates) != len(result2.CascadeCandidates) {
 		t.Errorf("different number of candidates: %d vs %d", len(result1.CascadeCandidates), len(result2.CascadeCandidates))
@@ -520,5 +529,38 @@ type AuthToken struct {
 		if prev.File == curr.File && prev.Line > curr.Line {
 			t.Errorf("not sorted by line: %d comes after %d in %s", prev.Line, curr.Line, prev.File)
 		}
+	}
+}
+
+// TestDetectCascades_WalkFailedError tests that a nonexistent repoRoot returns Z013_WALK_FAILED.
+func TestDetectCascades_WalkFailedError(t *testing.T) {
+	nonexistent := "/nonexistent/path/that/does/not/exist"
+
+	renames := []RenameInfo{
+		{
+			Old:   "AuthToken",
+			New:   "SessionToken",
+			Scope: "pkg/auth",
+		},
+	}
+
+	res := DetectCascades(context.Background(), nonexistent, renames)
+	if !res.IsFatal() {
+		t.Fatalf("expected FATAL result for nonexistent repoRoot, got code=%s", res.Code)
+	}
+
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in FATAL result, got none")
+	}
+
+	found := false
+	for _, e := range res.Errors {
+		if e.Code == "Z013_WALK_FAILED" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected error code Z013_WALK_FAILED, got errors: %v", res.Errors)
 	}
 }

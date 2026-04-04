@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RenameInfo describes a type rename operation.
@@ -43,7 +45,7 @@ type CascadeCandidate struct {
 // 3. Classify each match as syntax or semantic based on AST context
 // 4. Assign severity: high (import/type decl), medium (var decl), low (comment/string)
 // 5. Sort results by file path, then line number for determinism
-func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) (CascadeResult, error) {
+func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) result.Result[CascadeResult] {
 	var candidates []CascadeCandidate
 
 	// Build map of old type names to rename info for quick lookup
@@ -89,7 +91,7 @@ func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) 
 	})
 
 	if err != nil {
-		return CascadeResult{}, fmt.Errorf("walk repo: %w", err)
+		return result.NewFailure[CascadeResult]([]result.SAWError{result.NewFatal(result.CodeAnalyzeWalkFailed, err.Error())})
 	}
 
 	// Sort for determinism: by file path, then line number
@@ -100,7 +102,7 @@ func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) 
 		return candidates[i].Line < candidates[j].Line
 	})
 
-	return CascadeResult{CascadeCandidates: candidates}, nil
+	return result.NewSuccess(CascadeResult{CascadeCandidates: candidates})
 }
 
 // scanFileForRenames parses a single .go file and searches for references to renamed types.
