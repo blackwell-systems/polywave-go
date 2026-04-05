@@ -37,7 +37,7 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 // It does NOT execute the retry agent — that is the caller's responsibility.
 //
 // ctx is checked for cancellation before each significant step; if cancelled,
-// Run returns ctx.Err() immediately.
+// Run returns a fatal Result wrapping ctx.Err().
 //
 // State transitions:
 //   - attempt < MaxRetries → FinalState = "retrying" (more attempts available)
@@ -47,9 +47,6 @@ func NewRetryLoop(cfg RetryConfig) *RetryLoop {
 //   - "retry_started"  when beginning a retry attempt
 //   - "retry_blocked"  when max retries are exceeded (no IMPL saved)
 func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onEvent func(Event)) result.Result[*RetryAttempt] {
-	if ctx == nil {
-		ctx = context.Background()
-	}
 	// Check for cancellation before doing any work.
 	select {
 	case <-ctx.Done():
@@ -99,7 +96,7 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	// to all files owned by agents in the parent IMPL.
 	failedFiles := failedGate.FailedFiles
 	if len(failedFiles) == 0 {
-		failedFiles = rl.filesFromIMPL(ctx)
+		failedFiles = rl.filesFromIMPL(ctx, onEvent)
 	}
 
 	// Generate the retry IMPL manifest.
@@ -135,7 +132,7 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 // to generate a retry IMPL without calling Run().
 func (rl *RetryLoop) GenerateRetryIMPL(ctx context.Context, failedFiles []string, gateOutput string) *protocol.IMPLManifest {
 	parentSlug := slugFromIMPLPath(rl.cfg.IMPLPath)
-	gateCommand := gateCommandFromIMPL(ctx, rl.cfg.IMPLPath)
+	gateCommand := gateCommandFromIMPL(ctx, rl.cfg.IMPLPath, nil)
 	return GenerateRetryIMPL(parentSlug, rl.attempt, failedFiles, gateOutput, gateCommand)
 }
 
@@ -168,12 +165,21 @@ func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest
 
 // filesFromIMPL reads the parent IMPL manifest and collects all files owned by
 // agents. Used as a fallback when QualityGateFailure.FailedFiles is empty.
-func (rl *RetryLoop) filesFromIMPL(ctx context.Context) []string {
+func (rl *RetryLoop) filesFromIMPL(ctx context.Context, onEvent func(Event)) []string {
 	if rl.cfg.IMPLPath == "" {
 		return nil
 	}
 	m, err := protocol.Load(ctx, rl.cfg.IMPLPath)
 	if err != nil {
+		if onEvent != nil {
+			onEvent(Event{
+				Event: "retry_file_resolution_failed",
+				Data: map[string]interface{}{
+					"impl_path": rl.cfg.IMPLPath,
+					"error":     err.Error(),
+				},
+			})
+		}
 		return nil
 	}
 	seen := make(map[string]bool)
@@ -206,16 +212,44 @@ func slugFromIMPLPath(implPath string) string {
 
 // gateCommandFromIMPL loads the parent IMPL manifest and returns its test_command,
 // or a sensible default if the manifest cannot be read or has no test_command.
-func gateCommandFromIMPL(ctx context.Context, implPath string) string {
+func gateCommandFromIMPL(ctx context.Context, implPath string, onEvent func(Event)) string {
 	if implPath == "" {
+		if onEvent != nil {
+			onEvent(Event{
+				Event: "retry_gate_command_fallback",
+				Data: map[string]interface{}{
+					"impl_path": implPath,
+					"fallback":  "go build ./...",
+				},
+			})
+		}
 		return "go build ./..."
 	}
 	m, err := protocol.Load(ctx, implPath)
 	if err != nil {
+		if onEvent != nil {
+			onEvent(Event{
+				Event: "retry_gate_command_fallback",
+				Data: map[string]interface{}{
+					"impl_path": implPath,
+					"fallback":  "go build ./...",
+				},
+			})
+		}
 		return "go build ./..."
 	}
 	if m.TestCommand != "" {
 		return m.TestCommand
+	}
+	if onEvent != nil {
+		onEvent(Event{
+			Event: "retry_gate_command_fallback",
+			Data: map[string]interface{}{
+				"impl_path": implPath,
+				"fallback":  "go build ./...",
+				"reason":    "test_command empty in manifest",
+			},
+		})
 	}
 	return "go build ./..."
 }

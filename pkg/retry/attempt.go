@@ -78,12 +78,18 @@ func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string,
 	if m.QualityGates != nil {
 		for _, gate := range m.QualityGates.Gates {
 			status := "unknown"
+			switch report.Status {
+			case "complete":
+				status = "passed"
+			case "partial", "failed":
+				status = "failed"
+			}
 			gateResults = append(gateResults, fmt.Sprintf("%s: %s", gate.Type, status))
 		}
 	}
 
 	// Derive GatePassed and GateOutput from the completion report.
-	gatePassed := report.Status == "complete" || report.Status == ""
+	gatePassed := report.Status == "complete"
 	gateOutput := report.Verification
 
 	promptText := BuildPromptText(RetryAttempt{
