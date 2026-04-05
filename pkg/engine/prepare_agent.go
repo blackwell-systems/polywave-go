@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -78,6 +79,21 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 	if agentTask == "" {
 		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
 			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum)),
+		})
+	}
+
+	// Pre-launch gate: validate preconditions before writing brief.
+	// For solo/no-worktree agents, wtPath is empty; checkWorktreeBranch
+	// gracefully skips when wtPath is "".
+	wtPath := ""
+	gateRes := hooks.PreLaunchGate(doc, opts.WaveNum, opts.AgentID, opts.ProjectRoot, wtPath)
+	if gateRes.IsPartial() || !gateRes.IsSuccess() {
+		var errParts []string
+		for _, e := range gateRes.Errors {
+			errParts = append(errParts, e.Message)
+		}
+		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf("pre-launch gate failed: %s", strings.Join(errParts, "; "))),
 		})
 	}
 

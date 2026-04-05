@@ -23,11 +23,11 @@ type PreLaunchResult struct {
 	Checks []PreLaunchCheck `json:"checks"`
 }
 
-// preLaunchGate validates all preconditions before launching a wave agent.
+// PreLaunchGate validates all preconditions before launching a wave agent.
 //
-// NOTE: This function is not yet integrated into the wave preparation flow.
-// It was built as a defense-in-depth validation layer but remains unused.
-// Consider integration into `sawtools prepare-wave` or removal if not needed by Q3 2026.
+// This function is wired into engine.PrepareAgent and runs before the agent
+// brief is written. It enforces that all preconditions are met before any
+// agent work begins.
 //
 // Parameters:
 //
@@ -45,7 +45,7 @@ type PreLaunchResult struct {
 //  5. Scaffolds are committed (I2 defense-in-depth)
 //  6. File ownership has no I1 conflicts
 //  7. Critic report exists if E37 threshold met
-func preLaunchGate(
+func PreLaunchGate(
 	manifest *protocol.IMPLManifest,
 	waveNum int,
 	agentID string,
