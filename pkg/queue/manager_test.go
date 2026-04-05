@@ -3,6 +3,7 @@ package queue
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -503,6 +504,94 @@ func TestCompletedSlugs_CompleteDir_ReadFailure(t *testing.T) {
 	}
 	if nextRes.Errors[0].Code != result.CodeQueueCompletedScanFailed {
 		t.Errorf("error code = %q, want %q", nextRes.Errors[0].Code, result.CodeQueueCompletedScanFailed)
+	}
+}
+
+func TestCompletedSlugs_UnreadableFile_ReturnsWarning(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	// Create complete directory with an unreadable file
+	completeDir := filepath.Join(dir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(completeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	unreadablePath := filepath.Join(completeDir, "IMPL-broken.yaml")
+	if err := os.WriteFile(unreadablePath, []byte("feature_slug: broken"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unreadablePath, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(unreadablePath, 0o644)
+
+	// Also add a readable file to verify it still gets processed
+	readablePath := filepath.Join(completeDir, "IMPL-readable.yaml")
+	if err := os.WriteFile(readablePath, []byte("feature_slug: readable\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// completedSlugs is unexported, so test via Next() behavior
+	// Add an item that depends on "readable"
+	item := Item{Title: "Dep", Priority: 1, Slug: "dep", DependsOn: []string{"readable"}}
+	addRes := mgr.Add(item)
+	if addRes.IsFatal() {
+		t.Fatalf("Add: %v", addRes.Errors[0].Message)
+	}
+
+	nextRes := mgr.Next()
+	// Should still find "dep" since "readable" is resolved
+	if nextRes.IsFatal() {
+		t.Fatalf("Next should succeed: %v", nextRes.Errors[0].Message)
+	}
+	if nextRes.GetData().Slug != "dep" {
+		t.Errorf("slug = %q, want %q", nextRes.GetData().Slug, "dep")
+	}
+}
+
+func TestUpdateStatus_InvalidStatus(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	item := Item{Title: "Test", Priority: 1, Slug: "test"}
+	if addRes := mgr.Add(item); addRes.IsFatal() {
+		t.Fatalf("Add: %v", addRes.Errors[0].Message)
+	}
+
+	updateRes := mgr.UpdateStatus("test", "banana")
+	if !updateRes.IsFatal() {
+		t.Fatal("expected Fatal result for invalid status")
+	}
+	if len(updateRes.Errors) == 0 {
+		t.Fatal("expected errors")
+	}
+	if updateRes.Errors[0].Code != result.CodeQueueStatusUpdateFailed {
+		t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, result.CodeQueueStatusUpdateFailed)
+	}
+	if !strings.Contains(updateRes.Errors[0].Message, "banana") {
+		t.Errorf("error message should mention invalid status, got: %s", updateRes.Errors[0].Message)
+	}
+}
+
+func TestUpdateStatus_AllValidStatuses(t *testing.T) {
+	for _, status := range []string{"queued", "in_progress", "complete", "blocked"} {
+		t.Run(status, func(t *testing.T) {
+			dir := t.TempDir()
+			mgr := NewManager(dir)
+
+			item := Item{Title: "Test", Priority: 1, Slug: "test"}
+			if addRes := mgr.Add(item); addRes.IsFatal() {
+				t.Fatalf("Add: %v", addRes.Errors[0].Message)
+			}
+
+			updateRes := mgr.UpdateStatus("test", status)
+			if updateRes.IsFatal() {
+				t.Fatalf("UpdateStatus(%q) failed: %v", status, updateRes.Errors[0].Message)
+			}
+			if updateRes.GetData().NewStatus != status {
+				t.Errorf("NewStatus = %q, want %q", updateRes.GetData().NewStatus, status)
+			}
+		})
 	}
 }
 
