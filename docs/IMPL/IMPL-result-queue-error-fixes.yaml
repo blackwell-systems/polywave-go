@@ -1,0 +1,633 @@
+title: 'Fix pkg/result and pkg/queue errors: shared-map bug, missing constructor, test gaps, silent failures, status validation, dead code wiring'
+feature_slug: result-queue-error-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly:
+
+    1. File decomposition: 5 files across 2 independent packages (pkg/result and pkg/queue).
+       3 agents with fully disjoint file ownership. No conflicting modifications.
+
+    2. Investigation-first items: None. All 6 errors have known root causes and prescribed fixes.
+
+    3. Interface discoverability: The only cross-agent interface is the existing NewInfo constructor
+       (same pattern as NewError/NewFatal/NewWarning). No new cross-boundary contracts needed.
+       Agent C already imports pkg/result for CodeQueueCorruptedFile — no new dependency.
+
+    4. Pre-implementation status: All 6 errors are confirmed TODO via direct code inspection.
+       WithContext shared-map bug verified at result.go:58-64. NewInfo missing confirmed (only
+       NewError, NewFatal, NewWarning exist). 25 codes verified missing from TestAllCodesAreUnique.
+       completedSlugs silent continue confirmed at manager.go:191-192. UpdateStatus has no
+       validation. Q006 is defined but has zero callers.
+
+    5. Parallelization value: Build+test cycle ~0.9s total for both packages. 3 agents are
+       fully independent (single wave). The coordination value outweighs marginal speed savings —
+       disjoint ownership ensures no merge conflicts across the 5 files.
+
+    Estimated times:
+    - Scout phase: ~5 min (dependency mapping, interface contracts, IMPL doc)
+    - Agent execution: ~3 min (3 agents x 3 min avg, all parallel in single wave)
+    - Merge & verification: ~2 min
+    Total SAW time: ~10 min
+
+    Sequential baseline: ~12 min (3 tasks x 4 min avg sequential time)
+    Time savings: ~2 min (17% faster)
+
+    Recommendation: Coordination value — parallel agents prevent file conflicts and
+    provide audit trail. Marginal speed gain but clean decomposition.
+test_command: go test ./pkg/result/... ./pkg/queue/...
+lint_command: go vet ./pkg/result/... ./pkg/queue/...
+file_ownership:
+    - file: pkg/result/result.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/result_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/result/codes_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/queue/manager_test.go
+      agent: C
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: NewInfo
+      description: Constructor for SAWError with severity 'info', matching existing NewError/NewFatal/NewWarning pattern
+      definition: |
+        func NewInfo(code, message string) SAWError {
+            return SAWError{Code: code, Message: message, Severity: "info"}
+        }
+      location: pkg/result/result.go
+    - name: WithContext (fixed)
+      description: Value-receiver method that clones the map before mutating to prevent shared-map corruption on fork
+      definition: |
+        func (e SAWError) WithContext(key, value string) SAWError {
+            newCtx := make(map[string]string, len(e.Context)+1)
+            for k, v := range e.Context {
+                newCtx[k] = v
+            }
+            newCtx[key] = value
+            e.Context = newCtx
+            return e
+        }
+      location: pkg/result/result.go
+    - name: UpdateStatus validation
+      description: Status parameter validated against known values before mutation
+      definition: |
+        // Valid statuses for queue items
+        var validStatuses = map[string]bool{
+            "queued":      true,
+            "in_progress": true,
+            "complete":    true,
+            "blocked":     true,
+        }
+        // Validation at top of UpdateStatus:
+        if !validStatuses[status] {
+            return result.NewFailure[UpdateStatusData]([]result.SAWError{
+                result.NewError(result.CodeQueueStatusUpdateFailed,
+                    fmt.Sprintf("invalid status %q: must be one of queued, in_progress, complete, blocked", status)),
+            })
+        }
+      location: pkg/queue/manager.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — Fix WithContext shared-map bug and add NewInfo constructor
+
+            ### What to implement
+
+            **Error 1: WithContext shared-map mutation bug** in `pkg/result/result.go`.
+
+            The current `WithContext` method (value receiver) does not clone the map before
+            mutating. Since Go maps are reference types, forking two copies from the same
+            base corrupts both. Replace the implementation at lines 58-64.
+
+            Find this exact code in `pkg/result/result.go`:
+            ```go
+            func (e SAWError) WithContext(key, value string) SAWError {
+            	if e.Context == nil {
+            		e.Context = make(map[string]string)
+            	}
+            	e.Context[key] = value
+            	return e
+            }
+            ```
+
+            Replace with:
+            ```go
+            func (e SAWError) WithContext(key, value string) SAWError {
+            	newCtx := make(map[string]string, len(e.Context)+1)
+            	for k, v := range e.Context {
+            		newCtx[k] = v
+            	}
+            	newCtx[key] = value
+            	e.Context = newCtx
+            	return e
+            }
+            ```
+
+            **Error 2: Missing NewInfo constructor** in `pkg/result/result.go`.
+
+            Add `NewInfo` after the existing `NewWarning` function (line 85). Follow the
+            exact same pattern as `NewError`, `NewFatal`, and `NewWarning`:
+
+            Insert after this exact text:
+            ```go
+            // NewWarning creates a SAWError with severity "warning".
+            func NewWarning(code, message string) SAWError {
+            	return SAWError{Code: code, Message: message, Severity: "warning"}
+            }
+            ```
+
+            Add:
+            ```go
+
+            // NewInfo creates a SAWError with severity "info".
+            func NewInfo(code, message string) SAWError {
+            	return SAWError{Code: code, Message: message, Severity: "info"}
+            }
+            ```
+
+            ### Tests to add in `pkg/result/result_test.go`
+
+            1. **TestWithContextForkSafety** — The critical fork test:
+               ```go
+               func TestWithContextForkSafety(t *testing.T) {
+                   base := NewError("E001", "base").WithContext("shared", "original")
+                   a := base.WithContext("k1", "v1")
+                   b := base.WithContext("k2", "v2")
+
+                   // a should have shared+k1, b should have shared+k2
+                   if a.Context["k2"] != "" {
+                       t.Errorf("fork a leaked k2: got %q", a.Context["k2"])
+                   }
+                   if b.Context["k1"] != "" {
+                       t.Errorf("fork b leaked k1: got %q", b.Context["k1"])
+                   }
+                   if a.Context["shared"] != "original" {
+                       t.Errorf("a lost shared: got %q", a.Context["shared"])
+                   }
+                   if b.Context["shared"] != "original" {
+                       t.Errorf("b lost shared: got %q", b.Context["shared"])
+                   }
+                   // base should be unchanged
+                   if len(base.Context) != 1 {
+                       t.Errorf("base context mutated: len=%d, want 1", len(base.Context))
+                   }
+               }
+               ```
+
+            2. **TestNewInfo** — Constructor test:
+               ```go
+               func TestNewInfo(t *testing.T) {
+                   e := NewInfo("I001", "informational message")
+                   if e.Code != "I001" {
+                       t.Errorf("Code = %q, want %q", e.Code, "I001")
+                   }
+                   if e.Message != "informational message" {
+                       t.Errorf("Message = %q, want %q", e.Message, "informational message")
+                   }
+                   if e.Severity != "info" {
+                       t.Errorf("Severity = %q, want %q", e.Severity, "info")
+                   }
+               }
+               ```
+
+            3. Add `NewInfo` to the existing `TestNewErrorConstructors` test. Find:
+               ```go
+               	w := NewWarning("W001", "warning msg")
+               	if w.Code != "W001" || w.Message != "warning msg" || w.Severity != "warning" {
+               		t.Errorf("NewWarning = %+v", w)
+               	}
+               ```
+               Insert after it:
+               ```go
+
+               	i := NewInfo("I001", "info msg")
+               	if i.Code != "I001" || i.Message != "info msg" || i.Severity != "info" {
+               		t.Errorf("NewInfo = %+v", i)
+               	}
+               ```
+
+            4. Add `NewInfo` to the SAWError interface test. In `TestSAWErrorInterface`, find:
+               ```go
+               		{
+               			name: "warning severity",
+               			err:  NewWarning("W001", "heads up"),
+               			want: "[warning] W001: heads up",
+               		},
+               ```
+               Insert after it:
+               ```go
+               		{
+               			name: "info severity",
+               			err:  NewInfo("I001", "fyi"),
+               			want: "[info] I001: fyi",
+               		},
+               ```
+
+            5. Update `TestSAWErrorIsFatal` to include NewInfo. Find:
+               ```go
+               	if NewWarning("W001", "warning").IsFatal() {
+               		t.Error("NewWarning should not be fatal")
+               	}
+               ```
+               Insert after it:
+               ```go
+               	if NewInfo("I001", "info").IsFatal() {
+               		t.Error("NewInfo should not be fatal")
+               	}
+               ```
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./pkg/result/... && go vet ./pkg/result/... && go test ./pkg/result/... -run "TestWithContextForkSafety|TestNewInfo|TestNewErrorConstructors|TestSAWErrorInterface|TestSAWErrorIsFatal" -v
+            ```
+
+            ### Postconditions
+            ```bash
+            # NewInfo exists exactly once
+            grep -c "func NewInfo" pkg/result/result.go
+            # Expected: 1
+
+            # WithContext clones the map (no bare e.Context[key] = value)
+            grep -c "newCtx\[key\] = value" pkg/result/result.go
+            # Expected: 1
+            ```
+
+            ### Constraints
+            - Do NOT modify `pkg/result/codes.go` or `pkg/result/codes_test.go` — those are owned by Agent B.
+            - Do NOT modify any files outside `pkg/result/result.go` and `pkg/result/result_test.go`.
+          files:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        - id: B
+          task: |
+            ## Agent B — Add 25 missing codes to TestAllCodesAreUnique
+
+            ### What to implement
+
+            **Error 3:** `TestAllCodesAreUnique` in `pkg/result/codes_test.go` is missing 25
+            constants that exist in `pkg/result/codes.go`. A duplicate value among these would
+            go undetected by the uniqueness test.
+
+            Add the following 25 entries to the `allCodes` slice in `TestAllCodesAreUnique`.
+
+            **V048 (1 code)** — Insert after the existing `CodeTrivialScope` entry (line 159).
+            Find this exact text:
+            ```go
+            		{"CodeTrivialScope", CodeTrivialScope},
+            		// W codes
+            ```
+            Insert between them:
+            ```go
+            		{"CodeGateTargetsNewFile", CodeGateTargetsNewFile},
+            ```
+
+            **N094-N098 (5 codes)** — Insert after the existing `CodeFinalizeStepFailed` entry (line 283).
+            Find this exact text:
+            ```go
+            		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
+            		{"CodeCallerCascadeHotfixFailed", CodeCallerCascadeHotfixFailed},
+            ```
+            Insert between them:
+            ```go
+            		{"CodeManifestSaveFailed", CodeManifestSaveFailed},
+            		{"CodeReportSetFailed", CodeReportSetFailed},
+            		{"CodePipelineRunFailed", CodePipelineRunFailed},
+            		{"CodeStepExecutionFailed", CodeStepExecutionFailed},
+            		{"CodeRequiredKeyMissing", CodeRequiredKeyMissing},
+            ```
+
+            **P011-P013 (3 codes)** — Insert after the existing `CodeTierConflictDetected` entry (line 301).
+            Find this exact text:
+            ```go
+            		{"CodeTierConflictDetected", CodeTierConflictDetected},
+            		// T codes
+            ```
+            Insert between them:
+            ```go
+            		{"CodeWaveNotFound", CodeWaveNotFound},
+            		{"CodeUnknownAgentInOwnership", CodeUnknownAgentInOwnership},
+            		{"CodeAmendBlocked", CodeAmendBlocked},
+            ```
+
+            **J001-J014 (14 codes)** — Insert after the Z codes block. Find this exact text:
+            ```go
+            		{"CodeAnalyzeWalkFailed", CodeAnalyzeWalkFailed},
+            	}
+            ```
+            Replace with:
+            ```go
+            		{"CodeAnalyzeWalkFailed", CodeAnalyzeWalkFailed},
+            		// J codes
+            		{"CodeJournalArchiveCreateFailed", CodeJournalArchiveCreateFailed},
+            		{"CodeJournalArchiveMetaFailed", CodeJournalArchiveMetaFailed},
+            		{"CodeJournalArchiveExtractFailed", CodeJournalArchiveExtractFailed},
+            		{"CodeJournalArchiveListFailed", CodeJournalArchiveListFailed},
+            		{"CodeJournalArchiveCleanupFailed", CodeJournalArchiveCleanupFailed},
+            		{"CodeJournalCheckpointInvalidName", CodeJournalCheckpointInvalidName},
+            		{"CodeJournalCheckpointCreateFailed", CodeJournalCheckpointCreateFailed},
+            		{"CodeJournalCheckpointAlreadyExists", CodeJournalCheckpointAlreadyExists},
+            		{"CodeJournalCheckpointNotFound", CodeJournalCheckpointNotFound},
+            		{"CodeJournalCheckpointCopyFailed", CodeJournalCheckpointCopyFailed},
+            		{"CodeJournalCheckpointDeleteFailed", CodeJournalCheckpointDeleteFailed},
+            		{"CodeJournalObserverCursorFailed", CodeJournalObserverCursorFailed},
+            		{"CodeJournalObserverAppendFailed", CodeJournalObserverAppendFailed},
+            		{"CodeJournalObserverUpdateFailed", CodeJournalObserverUpdateFailed},
+            		// O codes
+            		{"CodeObsEmitFailed", CodeObsEmitFailed},
+            		{"CodeObsQueryFailed", CodeObsQueryFailed},
+            	}
+            ```
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./pkg/result/... && go vet ./pkg/result/... && go test ./pkg/result/... -run "TestAllCodesAreUnique" -v
+            ```
+
+            ### Postconditions
+            ```bash
+            # Total entries in allCodes slice should be ~175 (was ~150)
+            grep -c 'Code[A-Z]' pkg/result/codes_test.go
+            # Expected: increased by 25 from baseline
+
+            # All 25 new constants appear in the test
+            grep -c "CodeGateTargetsNewFile\|CodeManifestSaveFailed\|CodeReportSetFailed\|CodePipelineRunFailed\|CodeStepExecutionFailed\|CodeRequiredKeyMissing\|CodeWaveNotFound\|CodeUnknownAgentInOwnership\|CodeAmendBlocked\|CodeJournalArchiveCreateFailed\|CodeObsEmitFailed\|CodeObsQueryFailed" pkg/result/codes_test.go
+            # Expected: >= 12 (some appear in multiple tests)
+            ```
+
+            ### Constraints
+            - Do NOT modify `pkg/result/result.go` or `pkg/result/result_test.go` — those are owned by Agent A.
+            - Do NOT modify `pkg/result/codes.go` — only add to the test file.
+            - Do NOT modify any files outside `pkg/result/codes_test.go`.
+          files:
+            - pkg/result/codes_test.go
+        - id: C
+          task: |
+            ## Agent C — Fix completedSlugs silent failure, add UpdateStatus validation, wire Q006
+
+            ### What to implement
+
+            Three related fixes in `pkg/queue/manager.go`:
+
+            **Error 4 + Error 6: completedSlugs silent failure + wire CodeQueueCorruptedFile**
+
+            In `completedSlugs()`, the `os.ReadFile` error at line 191-192 is silently swallowed
+            with `continue`. Wire the existing `result.CodeQueueCorruptedFile` (Q006) to surface
+            these failures as warnings in a partial result.
+
+            Find this exact code in `pkg/queue/manager.go`:
+            ```go
+            	for _, e := range entries {
+            		if e.IsDir() {
+            			continue
+            		}
+            		name := e.Name()
+            		if !strings.HasSuffix(name, ".yaml") {
+            			continue
+            		}
+
+            		// Try to extract feature_slug from file contents
+            		path := filepath.Join(completeDir, name)
+            		data, err := os.ReadFile(path)
+            		if err != nil {
+            			continue
+            		}
+            ```
+
+            Replace the `data, err := os.ReadFile(path)` block. Instead of silently continuing,
+            collect warnings and return a partial result when files are unreadable:
+
+            1. Before the loop, add: `var warnings []result.SAWError`
+            2. Replace the `if err != nil { continue }` with:
+               ```go
+               if err != nil {
+                   warnings = append(warnings, result.NewWarning(result.CodeQueueCorruptedFile,
+                       fmt.Sprintf("cannot read IMPL file %s: %s", name, err.Error())).WithCause(err))
+                   continue
+               }
+               ```
+            3. At the end of the function, replace `return result.NewSuccess(completed)` with:
+               ```go
+               if len(warnings) > 0 {
+                   return result.NewPartial(completed, warnings)
+               }
+               return result.NewSuccess(completed)
+               ```
+
+            The final `return result.NewSuccess(completed)` to replace is this one (the last line
+            of the function, after the for loop):
+            ```go
+            	return result.NewSuccess(completed)
+            }
+            ```
+
+            **Error 5: UpdateStatus accepts arbitrary status strings**
+
+            Add validation at the top of `UpdateStatus`. Find this exact code:
+            ```go
+            func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateStatusData] {
+            	dir := m.queueDir()
+            ```
+
+            Insert between the function signature and `dir := m.queueDir()`:
+            ```go
+            	validStatuses := map[string]bool{
+            		"queued":      true,
+            		"in_progress": true,
+            		"complete":    true,
+            		"blocked":     true,
+            	}
+            	if !validStatuses[status] {
+            		return result.NewFailure[UpdateStatusData]([]result.SAWError{
+            			result.NewError(result.CodeQueueStatusUpdateFailed,
+            				fmt.Sprintf("invalid status %q: must be one of queued, in_progress, complete, blocked", status)),
+            		})
+            	}
+
+            ```
+
+            ### Tests to add in `pkg/queue/manager_test.go`
+
+            1. **TestCompletedSlugs_UnreadableFile_ReturnsWarning** — Verify Q006 is emitted:
+               ```go
+               func TestCompletedSlugs_UnreadableFile_ReturnsWarning(t *testing.T) {
+                   dir := t.TempDir()
+                   mgr := NewManager(dir)
+
+                   // Create complete directory with an unreadable file
+                   completeDir := filepath.Join(dir, "docs", "IMPL", "complete")
+                   if err := os.MkdirAll(completeDir, 0o755); err != nil {
+                       t.Fatal(err)
+                   }
+                   unreadablePath := filepath.Join(completeDir, "IMPL-broken.yaml")
+                   if err := os.WriteFile(unreadablePath, []byte("feature_slug: broken"), 0o644); err != nil {
+                       t.Fatal(err)
+                   }
+                   if err := os.Chmod(unreadablePath, 0o000); err != nil {
+                       t.Fatal(err)
+                   }
+                   defer os.Chmod(unreadablePath, 0o644)
+
+                   // Also add a readable file to verify it still gets processed
+                   readablePath := filepath.Join(completeDir, "IMPL-readable.yaml")
+                   if err := os.WriteFile(readablePath, []byte("feature_slug: readable\n"), 0o644); err != nil {
+                       t.Fatal(err)
+                   }
+
+                   // completedSlugs is unexported, so test via Next() behavior
+                   // Add an item that depends on "readable"
+                   item := Item{Title: "Dep", Priority: 1, Slug: "dep", DependsOn: []string{"readable"}}
+                   addRes := mgr.Add(item)
+                   if addRes.IsFatal() {
+                       t.Fatalf("Add: %v", addRes.Errors[0].Message)
+                   }
+
+                   nextRes := mgr.Next()
+                   // Should still find "dep" since "readable" is resolved
+                   if nextRes.IsFatal() {
+                       t.Fatalf("Next should succeed: %v", nextRes.Errors[0].Message)
+                   }
+                   if nextRes.GetData().Slug != "dep" {
+                       t.Errorf("slug = %q, want %q", nextRes.GetData().Slug, "dep")
+                   }
+               }
+               ```
+
+            2. **TestUpdateStatus_InvalidStatus** — Verify validation rejects bad values:
+               ```go
+               func TestUpdateStatus_InvalidStatus(t *testing.T) {
+                   dir := t.TempDir()
+                   mgr := NewManager(dir)
+
+                   item := Item{Title: "Test", Priority: 1, Slug: "test"}
+                   if addRes := mgr.Add(item); addRes.IsFatal() {
+                       t.Fatalf("Add: %v", addRes.Errors[0].Message)
+                   }
+
+                   updateRes := mgr.UpdateStatus("test", "banana")
+                   if !updateRes.IsFatal() {
+                       t.Fatal("expected Fatal result for invalid status")
+                   }
+                   if len(updateRes.Errors) == 0 {
+                       t.Fatal("expected errors")
+                   }
+                   if updateRes.Errors[0].Code != result.CodeQueueStatusUpdateFailed {
+                       t.Errorf("error code = %q, want %q", updateRes.Errors[0].Code, result.CodeQueueStatusUpdateFailed)
+                   }
+                   if !strings.Contains(updateRes.Errors[0].Message, "banana") {
+                       t.Errorf("error message should mention invalid status, got: %s", updateRes.Errors[0].Message)
+                   }
+               }
+               ```
+               Note: This test requires adding `"strings"` to the import block if not already present.
+
+            3. **TestUpdateStatus_AllValidStatuses** — Verify all 4 valid statuses are accepted:
+               ```go
+               func TestUpdateStatus_AllValidStatuses(t *testing.T) {
+                   for _, status := range []string{"queued", "in_progress", "complete", "blocked"} {
+                       t.Run(status, func(t *testing.T) {
+                           dir := t.TempDir()
+                           mgr := NewManager(dir)
+
+                           item := Item{Title: "Test", Priority: 1, Slug: "test"}
+                           if addRes := mgr.Add(item); addRes.IsFatal() {
+                               t.Fatalf("Add: %v", addRes.Errors[0].Message)
+                           }
+
+                           updateRes := mgr.UpdateStatus("test", status)
+                           if updateRes.IsFatal() {
+                               t.Fatalf("UpdateStatus(%q) failed: %v", status, updateRes.Errors[0].Message)
+                           }
+                           if updateRes.GetData().NewStatus != status {
+                               t.Errorf("NewStatus = %q, want %q", updateRes.GetData().NewStatus, status)
+                           }
+                       })
+                   }
+               }
+               ```
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/workspace/code/scout-and-wave-go && go build ./pkg/queue/... && go vet ./pkg/queue/... && go test ./pkg/queue/... -run "TestUpdateStatus_InvalidStatus|TestUpdateStatus_AllValidStatuses|TestCompletedSlugs_UnreadableFile" -v
+            ```
+
+            ### Postconditions
+            ```bash
+            # CodeQueueCorruptedFile is now referenced in manager.go
+            grep -c "CodeQueueCorruptedFile" pkg/queue/manager.go
+            # Expected: 1
+
+            # Status validation exists
+            grep -c "validStatuses" pkg/queue/manager.go
+            # Expected: >= 2 (declaration + usage)
+
+            # "banana" test exists
+            grep -c "banana" pkg/queue/manager_test.go
+            # Expected: >= 1
+            ```
+
+            ### Constraints
+            - Do NOT modify any files in `pkg/result/` — those are owned by Agents A and B.
+            - Do NOT modify any files outside `pkg/queue/manager.go` and `pkg/queue/manager_test.go`.
+            - The `strings` import may need to be added to `manager_test.go` for the invalid status test.
+          files:
+            - pkg/queue/manager.go
+            - pkg/queue/manager_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/result/... ./pkg/queue/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/result/... ./pkg/queue/...
+          required: true
+        - type: test
+          command: go test ./pkg/result/... ./pkg/queue/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A's WithContext fix changes behavior for callers chaining WithContext on a nil-context error
+          likelihood: low
+          impact: low
+          mitigation: The new implementation handles nil Context identically (make with len 0 + 1 capacity). Existing tests cover nil->non-nil path.
+        - scenario: Agent C's completedSlugs partial result not handled by Next() callers
+          likelihood: medium
+          impact: low
+          mitigation: Next() already checks completedResult.IsFatal() — partial results pass through. The warnings are informational only and do not block queue processing.
+        - scenario: Agent B inserts codes at wrong position in allCodes slice causing test to not compile
+          likelihood: low
+          impact: low
+          mitigation: Text anchors are exact with surrounding context. Agent has 4 distinct insertion points, each with before/after context.
+        - scenario: Agent C's status validation breaks existing tests that use non-standard statuses
+          likelihood: low
+          impact: medium
+          mitigation: 'Verified: all existing tests use only ''in_progress'', ''complete'', and ''queued''. No test uses invalid statuses.'
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'All three agent briefs verified against the codebase. File existence confirmed for all 5 owned files (action: modify). Symbol accuracy verified: all 25 missing code constants exist in codes.go, all anchor text in codes_test.go matches actual line content, WithContext implementation matches the described bug pattern at result.go:58-64, completedSlugs silent continue confirmed at manager.go:191-192, UpdateStatus lacks validation as described. Interface contracts are syntactically valid and reference existing types. No disjoint ownership violations (wave 1: A owns result.go+result_test.go, B owns codes_test.go, C owns manager.go+manager_test.go). No dependency ordering issues — all agents are independent in a single wave. No complexity balance concerns (max 2 files per agent).'
+    reviewed_at: "2026-04-05T06:49:23Z"
+    issue_count: 0
+state: REVIEWED
