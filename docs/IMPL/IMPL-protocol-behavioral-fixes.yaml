@@ -643,6 +643,7 @@ waves:
           files:
             - pkg/protocol/state_transition.go
             - pkg/protocol/state_transition_test.go
+      base_commit: 56bcfeb1c67e306d4d8df2ddde5e65d7f5ff95d2
 quality_gates:
     level: standard
     gates:
@@ -655,6 +656,62 @@ quality_gates:
         - type: test
           command: go test ./...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-behavioral-fixes/wave1-agent-A
+        commit: 0fafc02
+        files_changed:
+            - pkg/protocol/failure.go
+            - pkg/protocol/types.go
+            - pkg/protocol/failure_test.go
+        tests_added:
+            - TestValidFailureType_unknown_now_true
+        verification: PASS
+        notes: FailureCategory unified as type alias for FailureTypeEnum. FailureUnknown added. All backward-compatible constants preserved. All protocol and resume tests pass.
+    B:
+        status: complete
+        branch: saw/protocol-behavioral-fixes/wave1-agent-B
+        commit: 31c1df2
+        files_changed:
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/program_validation.go
+            - pkg/protocol/full_validate.go
+        verification: PASS
+        notes: 'All context.TODO() removed from owned files. Out-of-scope callers needing ctx update: cmd/sawtools/validate_program_cmd.go, pkg/engine/import_impls.go, pkg/engine/program_tier_loop.go, pkg/protocol/program_validation_test.go (Agent C/D scope).'
+    C:
+        status: complete
+        branch: saw/protocol-behavioral-fixes/wave1-agent-C
+        commit: 3a2254b
+        files_changed:
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_transition_test.go
+        tests_added:
+            - TestValidateStateTransitionContext_SoloWaveNoWarning
+            - TestValidateStateTransitionContext_MultiAgentWarning
+            - TestValidateStateTransitionContext_NormalTransitionNoWarning
+        verification: PASS
+        notes: Added ValidateStateTransitionContext guard function and wired it into SetImplState. Solo-wave transitions produce no warning; multi-agent WAVE_EXECUTING->COMPLETE produces advisory warning. All existing and new tests pass.
+    D:
+        status: complete
+        branch: saw/protocol-behavioral-fixes/wave1-agent-D
+        commit: 6372c27
+        files_changed:
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/validate_program_cmd.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/import_impls.go
+        verification: PASS
+        notes: 'Updated all 4 caller sites: PrepareTierOpts.Ctx in prepare_tier_cmd.go, ValidateProgramImportMode ctx parameter in validate_program_cmd.go, program_tier_loop.go, and import_impls.go. Branch does not compile alone as expected (depends on Agent B signature changes).'
+    E:
+        status: complete
+        branch: saw/protocol-behavioral-fixes/wave1-agent-E
+        commit: b4b3587
+        files_changed:
+            - pkg/protocol/program_tier_prepare_test.go
+            - pkg/protocol/program_validation_test.go
+        verification: PASS
+        notes: 'Added Ctx: context.Background() to all 8 PrepareTierOpts call sites and context.Background() first arg to all 4 ValidateProgramImportMode call sites. Pre-existing context.TODO() calls on Load() and SkipCriticForIMPL() left unchanged as those signatures are not changing in this IMPL.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -688,5 +745,11 @@ critic_report:
     summary: Skipped by operator (--skip-critic)
     reviewed_at: "2026-04-05T12:19:10Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: REVIEWED
 injection_method: hook
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
