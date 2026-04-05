@@ -126,7 +126,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 
 	// Use the CLI model on the agent spec.
 	agentSpec := protocol.Agent{ID: "A", Task: "do work", Model: "cli:kimi"}
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
 		t.Fatalf("launchAgentStructured returned unexpected error: %v", err)
 	}

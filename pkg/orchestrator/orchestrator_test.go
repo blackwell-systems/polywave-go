@@ -25,7 +25,7 @@ import (
 // makeOrch is a helper that returns a fresh Orchestrator backed by an
 // empty IMPLManifest so tests have no pkg/types dependency.
 func makeOrch() *Orchestrator {
-	return newFromDoc(&protocol.IMPLManifest{}, "/repo", "/repo/IMPL.md")
+	return newFromDoc(&protocol.IMPLManifest{FeatureSlug: "test"}, "/repo", "/repo/IMPL.md")
 }
 
 // makeOrchWithWave returns an Orchestrator whose IMPLManifest contains one wave
@@ -36,9 +36,8 @@ func makeOrchWithWave(waveNum int, ids ...string) *Orchestrator {
 		agents[i] = protocol.Agent{ID: id, Task: "do work"}
 	}
 	doc := &protocol.IMPLManifest{
-		Waves: []protocol.Wave{
-			{Number: waveNum, Agents: agents},
-		},
+		FeatureSlug: "test",
+		Waves:       []protocol.Wave{{Number: waveNum, Agents: agents}},
 	}
 	return newFromDoc(doc, "/repo", "/repo/IMPL.md")
 }
@@ -281,6 +280,7 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	}
 
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,
@@ -338,6 +338,7 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	}
 
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,
@@ -700,6 +701,7 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,
@@ -763,6 +765,7 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	// The agent should still run with its original prompt (fallback).
 	const originalPrompt = "original agent prompt"
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,
@@ -1327,6 +1330,7 @@ func TestLaunchAgent_JournalContextPrepended(t *testing.T) {
 
 	const originalTask = "original agent task"
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,
@@ -1399,6 +1403,7 @@ func TestLaunchAgent_JournalContextSkippedWhenEmpty(t *testing.T) {
 
 	const originalTask = "original agent task no journal"
 	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
 		Waves: []protocol.Wave{
 			{
 				Number: 1,

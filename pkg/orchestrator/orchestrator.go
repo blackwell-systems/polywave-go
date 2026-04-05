@@ -152,17 +152,13 @@ var worktreeCreatorFunc = func(wm *worktree.Manager, waveNum int, agentLetter st
 	return r.GetData().Path, nil
 }
 
-// implSlug loads the IMPL manifest and returns the feature slug.
-// Returns empty string if the manifest can't be loaded (backward compat).
-func (o *Orchestrator) implSlug(ctx context.Context) string {
-	if o.implDocPath == "" {
+// implSlug returns the feature slug from the in-memory IMPL manifest.
+// Returns empty string if the manifest was not loaded (backward compat).
+func (o *Orchestrator) implSlug(_ context.Context) string {
+	if o.implDoc == nil {
 		return ""
 	}
-	manifest, err := protocol.Load(ctx, o.implDocPath)
-	if err != nil {
-		return ""
-	}
-	return manifest.FeatureSlug
+	return o.implDoc.FeatureSlug
 }
 
 // waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
