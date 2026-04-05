@@ -137,13 +137,13 @@ func TestSolve_MissingDependency(t *testing.T) {
 	found := false
 	for _, e := range result.Errors {
 		lower := strings.ToLower(e)
-		if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") {
+		if strings.Contains(lower, "does not exist") || strings.Contains(lower, "depends on") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected error containing 'missing' or 'unknown', got: %v", result.Errors)
+		t.Errorf("expected error containing 'does not exist' or 'depends on', got: %v", result.Errors)
 	}
 }
 
