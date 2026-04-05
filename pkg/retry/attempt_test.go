@@ -69,6 +69,16 @@ func TestBuildRetryAttempt_Complete(t *testing.T) {
 	if !strings.Contains(ra.PromptText, "## Retry Context (Attempt 2)") {
 		t.Error("PromptText missing expected heading")
 	}
+	// After Finding 3 fix: status "partial" means GatePassed = false
+	if ra.GatePassed {
+		t.Error("GatePassed should be false for status 'partial'")
+	}
+	// After Finding 2 fix: gate results should derive from report status, not "unknown"
+	for _, gr := range ra.GateResults {
+		if strings.Contains(gr, "unknown") {
+			t.Errorf("GateResults should not contain 'unknown', got: %s", gr)
+		}
+	}
 }
 
 func TestBuildRetryAttempt_ExcerptTruncation(t *testing.T) {
@@ -209,6 +219,40 @@ func TestBuildPromptText_FixRequired(t *testing.T) {
 	}
 	if !strings.Contains(text, "## Retry Context (Attempt 1)") {
 		t.Error("BuildPromptText missing retry context heading")
+	}
+}
+
+func TestBuildRetryAttempt_EmptyStatusNotPassed(t *testing.T) {
+	dir := t.TempDir()
+	manifestPath := filepath.Join(dir, "impl.yaml")
+	yaml := `title: "T"
+feature_slug: "f"
+verdict: "SUITABLE"
+test_command: "go test"
+lint_command: "go vet"
+file_ownership: []
+interface_contracts: []
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "t"
+        files: []
+completion_reports:
+  A:
+    status: ""
+    notes: "no info"
+    verification: "none"
+`
+	if err := os.WriteFile(manifestPath, []byte(yaml), 0644); err != nil {
+		t.Fatal(err)
+	}
+	res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+	if res.IsFatal() {
+		t.Fatalf("unexpected error: %v", res.Errors[0])
+	}
+	if res.GetData().GatePassed {
+		t.Error("GatePassed should be false for empty status")
 	}
 }
 

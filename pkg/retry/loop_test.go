@@ -511,8 +511,8 @@ func TestRetryLoop_ContextCancelled(t *testing.T) {
 	}
 }
 
-// TestRetryLoop_Run_NilContext verifies that Run handles nil context by
-// defaulting to context.Background().
+// TestRetryLoop_Run_NilContext verifies that Run panics when given nil context,
+// since the nil guard was removed per Go convention.
 func TestRetryLoop_Run_NilContext(t *testing.T) {
 	tmpDir := t.TempDir()
 	cfg := RetryConfig{MaxRetries: 2, RepoPath: tmpDir}
@@ -525,14 +525,12 @@ func TestRetryLoop_Run_NilContext(t *testing.T) {
 		FailedFiles: []string{"file.go"},
 	}
 
-	// Pass nil context — should default to context.Background()
-	res := loop.Run(nil, gate, nil)
-	if res.IsFatal() {
-		t.Fatalf("Run with nil context should succeed, got: %v", res.Errors[0])
-	}
-	if res.GetData().AttemptNumber != 1 {
-		t.Errorf("AttemptNumber = %d, want 1", res.GetData().AttemptNumber)
-	}
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("Run with nil context should panic")
+		}
+	}()
+	loop.Run(nil, gate, nil)
 }
 
 // TestRetryLoop_saveRetryIMPL_Errors verifies error handling in saveRetryIMPL
@@ -608,7 +606,7 @@ func TestRetryLoop_filesFromIMPL_LoadError(t *testing.T) {
 	loop := NewRetryLoop(cfg)
 
 	// filesFromIMPL should return nil when protocol.Load fails
-	files := loop.filesFromIMPL(context.Background())
+	files := loop.filesFromIMPL(context.Background(), nil)
 	if files != nil {
 		t.Errorf("filesFromIMPL should return nil for missing file, got: %v", files)
 	}
@@ -618,9 +616,45 @@ func TestRetryLoop_filesFromIMPL_LoadError(t *testing.T) {
 // returns default command when protocol.Load fails.
 func TestRetryLoop_gateCommandFromIMPL_LoadError(t *testing.T) {
 	invalidPath := "/nonexistent/path.yaml"
-	cmd := gateCommandFromIMPL(context.Background(), invalidPath)
+	cmd := gateCommandFromIMPL(context.Background(), invalidPath, nil)
 	if cmd != "go build ./..." {
 		t.Errorf("gateCommandFromIMPL should return default on load error, got: %q", cmd)
+	}
+}
+
+// TestRetryLoop_filesFromIMPL_EmitsEvent verifies that filesFromIMPL emits
+// a warning event when protocol.Load fails.
+func TestRetryLoop_filesFromIMPL_EmitsEvent(t *testing.T) {
+	tmpDir := t.TempDir()
+	invalidPath := filepath.Join(tmpDir, "nonexistent.yaml")
+	cfg := RetryConfig{IMPLPath: invalidPath, RepoPath: tmpDir}
+	loop := NewRetryLoop(cfg)
+
+	var events []Event
+	files := loop.filesFromIMPL(context.Background(), func(e Event) {
+		events = append(events, e)
+	})
+	if files != nil {
+		t.Errorf("expected nil files, got: %v", files)
+	}
+	if len(events) != 1 || events[0].Event != "retry_file_resolution_failed" {
+		t.Errorf("expected retry_file_resolution_failed event, got: %v", events)
+	}
+}
+
+// TestRetryLoop_gateCommandFromIMPL_EmitsEvent verifies that gateCommandFromIMPL
+// emits a warning event when falling back to default command.
+func TestRetryLoop_gateCommandFromIMPL_EmitsEvent(t *testing.T) {
+	invalidPath := "/nonexistent/path.yaml"
+	var events []Event
+	cmd := gateCommandFromIMPL(context.Background(), invalidPath, func(e Event) {
+		events = append(events, e)
+	})
+	if cmd != "go build ./..." {
+		t.Errorf("expected default command, got: %q", cmd)
+	}
+	if len(events) != 1 || events[0].Event != "retry_gate_command_fallback" {
+		t.Errorf("expected retry_gate_command_fallback event, got: %v", events)
 	}
 }
 
