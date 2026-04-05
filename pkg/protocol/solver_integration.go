@@ -35,7 +35,7 @@ func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
 			lower := strings.ToLower(errStr)
 			if strings.Contains(lower, "cycle") {
 				code = "SOLVER_CYCLE"
-			} else if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") {
+			} else if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") || strings.Contains(lower, "does not exist") {
 				code = "SOLVER_MISSING_DEP"
 			}
 			errs = append(errs, result.SAWError{
