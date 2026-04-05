@@ -1,0 +1,362 @@
+title: Add commit_state step to finalize-wave before merge-agents
+feature_slug: finalize-commit-state
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions pass cleanly:
+
+    1. File decomposition: 4 files changing across 2 agents with disjoint ownership.
+       Agent A owns the new step function + tests (finalize_steps.go, new test file).
+       Agent B owns the wiring into finalize.go and the CLI flag addition.
+
+    2. No investigation needed — root cause is documented and the fix pattern
+       exists in prepare.go (CommitState logic).
+
+    3. Interface discoverable: StepCommitState follows the exact Step* function
+       pattern used by all other finalize steps. Signature is fully specified.
+
+    4. Pre-implementation: fresh feature, nothing implemented.
+
+    5. Parallelization value: Build/test cycle is >30s (Go project). 2 agents
+       with 2 files each benefit from parallel execution. Single wave — no
+       sequential dependency since the interface contract is fully specified.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~4 min (2 agents x 3 min avg, parallel)
+    - Merge and verification: ~3 min
+    Total SAW time: ~12 min
+    Sequential baseline: ~10 min (2 agents x 5 min avg)
+    Time savings: marginal but coordination value is high (interface spec, audit trail)
+    Recommendation: Clear coordination value. Proceed.
+test_command: go test ./pkg/engine/ -count=1 -timeout 60s
+lint_command: go vet ./pkg/engine/...
+file_ownership:
+    - file: pkg/engine/finalize_steps.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/engine/finalize_steps_commit_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/engine/finalize.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/finalize_wave.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: StepCommitState
+      description: |
+        Commits uncommitted SAW-owned state files (IMPL docs, .saw-state/)
+        before merge-agents runs. Non-fatal on failure — reports warning
+        and continues. This prevents dirty working directory from blocking
+        git merge.
+      definition: |
+        func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
+            manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error)
+
+        Behavior:
+        - Calls git.StatusPorcelain(opts.RepoPath) to detect dirty files
+        - Filters using isSAWOwnedPath(path, opts.IMPLPath, opts.RepoPath)
+        - If no dirty SAW files: returns success with "working directory clean"
+        - If dirty SAW files exist:
+          - Stages each with git.AddForce (not git add -A)
+          - Commits with gitCommitAllowMain using message format:
+            "chore: advance IMPL state to <state> (pre-merge commit)"
+          - State extracted from manifest.State
+        - If user-code files are dirty: logs warning but does NOT fail
+          (unlike prepare-wave which fails on user code)
+        - On commit failure: returns StepResult with status "warning",
+          not an error — the step is non-fatal
+      location: pkg/engine/finalize_steps.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Add `StepCommitState` function to `pkg/engine/finalize_steps.go` and
+            tests in a new file `pkg/engine/finalize_steps_commit_test.go`.
+
+            ### StepCommitState function
+
+            Add `StepCommitState` to `pkg/engine/finalize_steps.go`. Follow the
+            exact pattern of existing Step functions (StepVerifyCommits, StepMergeAgents, etc.).
+
+            The function signature:
+            ```go
+            func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
+                manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error)
+            ```
+
+            Implementation:
+            1. Use step name `"commit-state"`.
+            2. Call `emitStepEvent(onEvent, stepName, "running", "")`.
+            3. Call `git.StatusPorcelain(opts.RepoPath)` to get dirty files.
+            4. If status output is empty (clean): return success StepResult with
+               detail "working directory clean — no SAW state to commit".
+            5. Parse the porcelain output line by line. For each non-empty line,
+               classify using `isSAWOwnedPath(line, opts.IMPLPath, opts.RepoPath)`.
+               The `isSAWOwnedPath` function is in `pkg/engine/prepare.go` — it is
+               already exported at package level (same package), so call it directly.
+            6. Collect SAW-owned files and user-code files separately.
+            7. If user-code files are dirty: emit a warning event but do NOT return
+               error. The commit_state step in finalize is non-fatal unlike prepare-wave.
+               Detail: "<N> non-SAW file(s) also dirty (ignored for pre-merge commit)".
+            8. If no SAW-owned files are dirty: return success.
+            9. Stage each SAW-owned file individually using `git.AddForce(opts.RepoPath, trimmedPath)`.
+               Trim the 2-char git status prefix before passing to AddForce.
+               If staging fails: emit warning event and return nil error (non-fatal).
+            10. Build commit message: use manifest.State if available:
+                `fmt.Sprintf("chore: advance IMPL state to %s (pre-merge commit)", manifest.State)`
+                If manifest.State is empty, use: `"chore: commit SAW state (pre-merge commit)"`.
+            11. Commit using `gitCommitAllowMain(opts.RepoPath, "-m", commitMsg)`.
+                If commit fails: return StepResult with status "warning" and nil error.
+                This is non-fatal — the orchestrator can work around it.
+            12. On success: emit complete event with detail like "committed <N> SAW state file(s)".
+
+            Important: You need to import `"strings"` for parsing porcelain output.
+            The `git` package is already imported in finalize_steps.go — verify it is;
+            if not, add `"github.com/blackwell-systems/scout-and-wave-go/internal/git"`.
+
+            Insert the function after `StepAutoMergeAppendConflicts` (the last function
+            in the file). Place it at the end of the file, before any closing content.
+
+            The `gitCommitAllowMain` function is in `prepare.go` but is package-level
+            (unexported) — it is accessible from `finalize_steps.go` since both are
+            in `package engine`.
+
+            ### Tests
+
+            Create `pkg/engine/finalize_steps_commit_test.go` with these tests:
+
+            1. `TestStepCommitState_CleanWorkDir` — call with a temp dir that is a
+               valid git repo with no dirty files. Assert StepResult.Status == "success"
+               and detail contains "clean". Use `collectStepEvents()` helper from
+               finalize_steps_test.go (same package, accessible).
+
+            2. `TestStepCommitState_NilOnEvent` — call with nil onEvent callback.
+               Assert no panic. Use a temp git repo.
+
+            3. `TestStepCommitState_EmitsRunningEvent` — verify the first event
+               emitted is ("commit-state", "running", "").
+
+            For git repo setup in tests, use:
+            ```go
+            repoDir := t.TempDir()
+            // git init
+            cmd := exec.Command("git", "-C", repoDir, "init")
+            if out, err := cmd.CombinedOutput(); err != nil {
+                t.Fatalf("git init: %s: %v", out, err)
+            }
+            // configure git user for commits
+            exec.Command("git", "-C", repoDir, "config", "user.email", "test@test.com").Run()
+            exec.Command("git", "-C", repoDir, "config", "user.name", "Test").Run()
+            // initial commit
+            exec.Command("git", "-C", repoDir, "commit", "--allow-empty", "-m", "init").Run()
+            ```
+
+            ### Verification gate
+            ```bash
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/...
+            go test ./pkg/engine/ -run TestStepCommitState -count=1 -v
+            ```
+
+            ### Postconditions
+            ```bash
+            # StepCommitState function exists
+            grep -c "func StepCommitState" pkg/engine/finalize_steps.go
+            # Expected: 1
+
+            # Test file exists with tests
+            grep -c "func TestStepCommitState" pkg/engine/finalize_steps_commit_test.go
+            # Expected: 3
+            ```
+
+            ### Constraints
+            - Do NOT modify `pkg/engine/finalize.go` — that file is owned by Agent B.
+            - Do NOT modify `pkg/engine/prepare.go` — the existing isSAWOwnedPath and
+              gitCommitAllowMain functions are reused as-is.
+            - Do NOT add any new types to step_types.go.
+          files:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_commit_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Wire `StepCommitState` into the `FinalizeWave` pipeline in
+            `pkg/engine/finalize.go`, and add a `--commit-state` flag to the CLI
+            in `cmd/sawtools/finalize_wave.go`.
+
+            ### 1. Add CommitState field to FinalizeWaveOpts
+
+            In `pkg/engine/finalize.go`, add a new field to the `FinalizeWaveOpts`
+            struct. Insert it after the `SkipMerge` field:
+
+            Insert after this exact text:
+            ```go
+            	// SkipMerge: When true, skip steps 1-4 (VerifyCommits, ScanStubs, RunGates, MergeAgents)
+            	// and start from verify-build. Used for manual merge escape hatch when E11
+            	// blocks merge with false positive.
+            	SkipMerge bool
+            ```
+
+            Add:
+            ```go
+            	// CommitState: When true, commit uncommitted SAW-owned files (IMPL docs,
+            	// .saw-state/) before merge-agents. Prevents dirty working directory from
+            	// blocking git merge. Non-fatal — if commit fails, a warning is emitted
+            	// but finalize continues.
+            	CommitState bool
+            ```
+
+            ### 2. Wire StepCommitState into the pipeline
+
+            In the `FinalizeWave` function, insert the commit-state step call
+            BEFORE "Step 4: MergeAgents" and AFTER the wiring declarations check
+            (Step 3.6). The insertion point is right before this block:
+
+            Insert before this exact text:
+            ```go
+            		// Step 4: MergeAgents — per repo
+            		// Skip for integration waves (type: integration) — agents commit directly to main.
+            		skipMergeAgents := false
+            ```
+
+            Add this block:
+            ```go
+            		// Step 3.7: CommitState — commit SAW-owned dirty files before merge
+            		if opts.CommitState {
+            			_, commitErr := StepCommitState(ctx, opts, manifest, onEvent)
+            			if commitErr != nil {
+            				// Non-fatal: log warning but continue with merge
+            				loggerFrom(opts.Logger).Warn("engine.FinalizeWave: commit-state warning", "err", commitErr)
+            			}
+            		}
+
+            ```
+
+            Note: Even though StepCommitState is non-fatal internally, wrap
+            the call in `if opts.CommitState` so it only runs when requested
+            (matching prepare-wave's opt-in behavior).
+
+            ### 3. Add --commit-state flag to CLI
+
+            In `cmd/sawtools/finalize_wave.go`, add a boolean variable and flag.
+
+            Add the variable declaration. Insert after this exact text:
+            ```go
+            	var crossRepoVerify bool
+            ```
+
+            Add:
+            ```go
+            	var commitState bool
+            ```
+
+            Wire it into FinalizeWaveOpts. In the `engine.FinalizeWaveOpts{...}`
+            struct literal, insert after the `CrossRepoVerify` field:
+
+            Insert after this exact text:
+            ```go
+            			CrossRepoVerify:           crossRepoVerify,
+            ```
+
+            Add:
+            ```go
+            			CommitState:               commitState,
+            ```
+
+            Add the flag registration. Insert after this exact text:
+            ```go
+            	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
+            		"Show what cascade errors would be hotfixed without running the agent")
+            ```
+
+            Add:
+            ```go
+            	cmd.Flags().BoolVar(&commitState, "commit-state", false,
+            		"Auto-commit SAW-owned state files (IMPL docs, .saw-state/) before merge. Prevents dirty-workdir merge failures.")
+            ```
+
+            ### Verification gate
+            ```bash
+            go build ./cmd/sawtools/...
+            go build ./pkg/engine/...
+            go vet ./pkg/engine/... ./cmd/sawtools/...
+            ```
+
+            ### Postconditions
+            ```bash
+            # CommitState field exists in FinalizeWaveOpts
+            grep -c "CommitState bool" pkg/engine/finalize.go
+            # Expected: 1
+
+            # StepCommitState is called in FinalizeWave
+            grep -c "StepCommitState" pkg/engine/finalize.go
+            # Expected: 1
+
+            # CLI flag registered
+            grep -c "commit-state" cmd/sawtools/finalize_wave.go
+            # Expected: 2 (flag definition + variable)
+            ```
+
+            ### Constraints
+            - Do NOT modify `pkg/engine/finalize_steps.go` — that file is owned by Agent A.
+            - Do NOT modify `pkg/engine/step_types.go` — the CommitState field goes
+              on FinalizeWaveOpts in finalize.go, not PrepareWaveOpts.
+            - Do NOT modify `pkg/engine/prepare.go`.
+            - The `StepCommitState` function will be available at build time because
+              Agent A creates it in the same package. If your isolated worktree
+              cannot compile due to the missing function, add a temporary build tag
+              or skip — the merge will resolve it. But ideally just reference it;
+              Go will find it at merge time.
+          files:
+            - pkg/engine/finalize.go
+            - cmd/sawtools/finalize_wave.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/engine/ -count=1 -timeout 60s
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent B's worktree cannot compile because StepCommitState doesn't exist yet
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Both agents are in the same wave. Agent B references StepCommitState
+            which Agent A creates. In isolation, B's branch won't compile. This is
+            expected — the merge resolves it. Agent B should focus on the structural
+            edit (adding the call site and field) and not try to stub the function.
+            Post-merge build verification will confirm the wiring is correct.
+        - scenario: isSAWOwnedPath misclassifies a file, causing user code to be committed
+          likelihood: low
+          impact: medium
+          mitigation: |
+            StepCommitState reuses the existing isSAWOwnedPath function which is
+            battle-tested in prepare-wave. No new classification logic is introduced.
+        - scenario: Pre-commit hook rejects the auto-commit
+          likelihood: medium
+          impact: low
+          mitigation: |
+            StepCommitState is non-fatal. If gitCommitAllowMain fails (including
+            hook rejection), the step returns a warning and finalize continues.
+            The SAW_ALLOW_MAIN_COMMIT env var bypasses the SAW-specific pre-commit
+            hook that blocks main-branch commits.
+state: REVIEWED
+injection_method: hook
