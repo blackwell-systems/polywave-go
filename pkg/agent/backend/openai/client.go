@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
@@ -90,7 +91,7 @@ func (c *Client) CommitCount() int {
 	if c.commitTracker == nil {
 		return 0
 	}
-	return c.commitTracker.Count
+	return int(atomic.LoadInt64(&c.commitTracker.Count))
 }
 
 // WithAPIKey sets the API key. Returns c for chaining.

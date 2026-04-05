@@ -9,7 +9,6 @@ package tools
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 // RegisterConstraintMiddleware sets the package-level middleware constructor
@@ -19,7 +18,7 @@ import (
 func RegisterConstraintMiddleware() {
 	ownershipMiddlewareFn = newOwnershipMiddleware
 	freezeMiddlewareFn = newFreezeMiddleware
-	rolePathMiddlewareFn = newRolePathMiddleware
+	rolePathMiddlewareFn = RolePathMiddleware
 }
 
 // extractFilePath returns the target file path from a tool input map.
@@ -77,37 +76,3 @@ func newFreezeMiddleware(toolName string, c Constraints) Middleware {
 	}
 }
 
-// newRolePathMiddleware returns middleware that enforces I6 (scout write boundaries).
-// Write/edit operations to paths that don't match any c.AllowedPathPrefixes are
-// blocked with a structured I6_VIOLATION error. If AllowedPathPrefixes is empty,
-// this is a passthrough (Wave agents use OwnershipMiddleware instead).
-func newRolePathMiddleware(toolName string, c Constraints) Middleware {
-	return func(next ToolExecutor) ToolExecutor {
-		return executorFunc(func(ctx context.Context, execCtx ExecutionContext, input map[string]interface{}) (string, error) {
-			if len(c.AllowedPathPrefixes) == 0 {
-				return next.Execute(ctx, execCtx, input)
-			}
-
-			filePath := extractFilePath(input)
-			if filePath == "" {
-				return next.Execute(ctx, execCtx, input)
-			}
-
-			for _, prefix := range c.AllowedPathPrefixes {
-				if strings.HasPrefix(filePath, prefix) {
-					if c.AgentRole == "scout" && !strings.HasSuffix(filePath, ".yaml") {
-						continue
-					}
-					return next.Execute(ctx, execCtx, input)
-				}
-			}
-
-			role := c.AgentRole
-			if role == "" {
-				role = "unknown"
-			}
-			return "", fmt.Errorf("I6_VIOLATION: %s agent cannot write outside allowed paths %v (attempted: %s)",
-				role, c.AllowedPathPrefixes, filePath)
-		})
-	}
-}

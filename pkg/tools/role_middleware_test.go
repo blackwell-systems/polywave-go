@@ -58,8 +58,8 @@ func TestRolePath_ScoutBlocksSourceCode(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(err.Error(), "BLOCKED") {
-		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	if !strings.Contains(err.Error(), "I6_VIOLATION") {
+		t.Errorf("expected I6_VIOLATION in error message, got %q", err.Error())
 	}
 	if !strings.Contains(err.Error(), "scout") {
 		t.Errorf("expected role in error message, got %q", err.Error())
@@ -88,8 +88,8 @@ func TestRolePath_ScoutBlocksNonIMPLYaml(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(err.Error(), "BLOCKED") {
-		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	if !strings.Contains(err.Error(), "I6_VIOLATION") {
+		t.Errorf("expected I6_VIOLATION in error message, got %q", err.Error())
 	}
 
 	// Different path entirely
@@ -106,8 +106,8 @@ func TestRolePath_ScoutBlocksNonIMPLYaml(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(err.Error(), "BLOCKED") {
-		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	if !strings.Contains(err.Error(), "I6_VIOLATION") {
+		t.Errorf("expected I6_VIOLATION in error message, got %q", err.Error())
 	}
 }
 
@@ -167,8 +167,8 @@ func TestRolePath_ScaffoldBlocksOtherPaths(t *testing.T) {
 	if result != "" {
 		t.Errorf("expected empty result on violation, got %q", result)
 	}
-	if !strings.Contains(err.Error(), "BLOCKED") {
-		t.Errorf("expected BLOCKED in error message, got %q", err.Error())
+	if !strings.Contains(err.Error(), "I6_VIOLATION") {
+		t.Errorf("expected I6_VIOLATION in error message, got %q", err.Error())
 	}
 	if !strings.Contains(err.Error(), "scaffold") {
 		t.Errorf("expected role in error message, got %q", err.Error())

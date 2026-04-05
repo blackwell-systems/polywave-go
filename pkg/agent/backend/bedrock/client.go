@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -270,7 +271,7 @@ func (c *Client) CommitCount() int {
 	if c.commitTracker == nil {
 		return 0
 	}
-	return c.commitTracker.Count
+	return int(atomic.LoadInt64(&c.commitTracker.Count))
 }
 
 // DedupStats returns dedup metrics from the most recent Run call.

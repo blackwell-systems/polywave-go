@@ -37,11 +37,11 @@ func RolePathMiddleware(toolName string, c Constraints) Middleware {
 			// Check if file_path matches any allowed prefix
 			for _, prefix := range c.AllowedPathPrefixes {
 				if strings.HasPrefix(filePath, prefix) {
-					// For Scout role: additionally require .yaml suffix
-					if c.AgentRole == "scout" {
-						if !strings.HasSuffix(filePath, ".yaml") {
-							continue
-						}
+					// For Scout role: additionally require .yaml suffix.
+					// Break (not continue) so a second matching prefix cannot
+					// rescue a file that fails the extension restriction.
+					if c.AgentRole == "scout" && !strings.HasSuffix(filePath, ".yaml") {
+						break
 					}
 					return next.Execute(ctx, execCtx, input)
 				}
@@ -51,10 +51,8 @@ func RolePathMiddleware(toolName string, c Constraints) Middleware {
 			if role == "" {
 				role = "unknown"
 			}
-			return "", fmt.Errorf(
-				"BLOCKED: %s agent cannot write to %s. Allowed paths: %v",
-				role, filePath, c.AllowedPathPrefixes,
-			)
+			return "", fmt.Errorf("I6_VIOLATION: %s agent cannot write outside allowed paths %v (attempted: %s)",
+				role, c.AllowedPathPrefixes, filePath)
 		})
 	}
 }

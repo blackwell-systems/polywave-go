@@ -92,10 +92,10 @@ func WithPermissions(w Workshop, allowed map[string]bool) Workshop {
 	return wrapped
 }
 
-// ReadOnlyAllowed is the permission set for Scout agents.
+// readOnlyAllowed is the permission set for Scout agents.
 // read_file, list_directory, glob, grep, and bash are permitted.
 // write_file and edit_file are denied at execution time.
-var ReadOnlyAllowed = map[string]bool{
+var readOnlyAllowed = map[string]bool{
 	"read_file":      true,
 	"list_directory": true,
 	"glob":           true,
@@ -107,5 +107,5 @@ var ReadOnlyAllowed = map[string]bool{
 // registered (model sees them in the schema) but write_file and edit_file
 // are blocked at execution time via PermissionMiddleware.
 func ReadOnlyTools(workDir string) Workshop {
-	return WithPermissions(StandardTools(workDir), ReadOnlyAllowed)
+	return WithPermissions(StandardTools(workDir), readOnlyAllowed)
 }

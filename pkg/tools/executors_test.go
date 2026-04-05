@@ -314,3 +314,50 @@ func TestFileWriteExecutor_CreatesParentDirs(t *testing.T) {
 		t.Errorf("File contents: got %q, want 'nested'", string(contents))
 	}
 }
+
+func TestIsGitModifyCommand(t *testing.T) {
+	cases := []struct {
+		command string
+		want    bool
+	}{
+		{"git checkout main", true},
+		{"git checkout -- file.go", true},
+		{"git merge feature-branch", true},
+		{"git rebase origin/main", true},
+		{"git cherry-pick abc123", true},
+		{"git stash pop", true},
+		{"git reset --hard HEAD", true},
+		{"git restore .", true},
+		{"git status", false},
+		{"git add .", false},
+		{"git commit -m 'msg'", false},
+		{"git diff HEAD", false},
+		{"git log --oneline", false},
+		{"git push origin main", false},
+		{"echo hello", false}, // no git pattern
+	}
+	for _, tc := range cases {
+		got := isGitModifyCommand(tc.command)
+		if got != tc.want {
+			t.Errorf("isGitModifyCommand(%q) = %v, want %v", tc.command, got, tc.want)
+		}
+	}
+}
+
+func TestStandardTools(t *testing.T) {
+	w := StandardTools(t.TempDir())
+	all := w.All()
+	if len(all) != 7 {
+		t.Errorf("StandardTools: expected 7 tools, got %d", len(all))
+	}
+	want := []string{"read_file", "write_file", "list_directory", "bash", "edit_file", "glob", "grep"}
+	got := make(map[string]bool, len(all))
+	for _, tool := range all {
+		got[tool.Name] = true
+	}
+	for _, name := range want {
+		if !got[name] {
+			t.Errorf("StandardTools: missing expected tool %q", name)
+		}
+	}
+}

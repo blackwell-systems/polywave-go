@@ -40,7 +40,7 @@ type Constraints struct {
 }
 
 // CommitTracker tracks git commit invocations for I5 enforcement.
-// The Count field should be accessed atomically (sync/atomic) for goroutine safety.
+// Count must be accessed via sync/atomic (e.g. atomic.AddInt64, atomic.LoadInt64).
 type CommitTracker struct {
-	Count int
+	Count int64
 }

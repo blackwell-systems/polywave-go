@@ -1,3 +1,4 @@
+completion_date: "2026-04-04"
 title: Wire Manager Lifecycle
 feature_slug: wire-manager-lifecycle
 verdict: SUITABLE
@@ -546,6 +547,7 @@ waves:
             - pkg/orchestrator/orchestrator.go
             - pkg/orchestrator/orchestrator_test.go
             - pkg/orchestrator/structured_wave_test.go
+      base_commit: 51f22e0f1c814cb2c3e34d8ac9b188f17b37639b
 quality_gates:
     level: standard
     gates:
@@ -558,6 +560,28 @@ quality_gates:
         - type: lint
           command: go vet ./...
           required: false
+completion_reports:
+    A:
+        status: complete
+        branch: saw/wire-manager-lifecycle/wave1-agent-A
+        commit: b5d06e3
+        files_changed:
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        tests_added:
+            - TestCreateBranchAlreadyExists
+            - TestCleanupAllErrorPropagation
+        verification: PASS
+        notes: All four fixes applied. New returns (*Manager, error). BranchExists TOCTOU check added. CleanupAll propagates original errors. godoc updated. All existing and new tests pass. Agent B must update orchestrator.go call sites for new New signature.
+    B:
+        status: complete
+        branch: saw/wire-manager-lifecycle/wave1-agent-B
+        commit: 9f8622a
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/structured_wave_test.go
+        verification: PASS
+        notes: 'Build fails with current single-return worktree.New signature (expected parallel wave dependency on Agent A). All three orchestrator.go changes applied: Fix1=RunWave worktree.New handler, Fix2=CleanupAll wiring, Fix3=RunAgent worktree.New handler. All 8 worktree.New call sites in structured_wave_test.go updated to two-return form. Will compile correctly after Agent A merges.'
 pre_mortem:
     overall_risk: low
     rows:
@@ -619,5 +643,5 @@ critic_report:
     summary: 'Both agent briefs are accurate against the codebase. All exact ''find'' text blocks in manager.go and orchestrator.go match the current source. All referenced symbols exist with correct signatures: git.BranchExists(repoPath, branch), result.CodeBranchExists, result.CodeWorktreeCreateFailed, result.CodeWorktreeRemoveFailed, result.SAWError.Message, cleanupResult.IsFatal(), cleanupResult.IsPartial(), and o.log(). One warning is raised for each agent: structured_wave_test.go contains 8 calls to worktree.New that are not in Agent B''s file_ownership table — after Agent A changes the New signature these test files will break. These are test files (*_test.go) so they are advisory warnings per the caller exhaustiveness check, not errors. Wave execution may proceed.'
     reviewed_at: "2026-04-05T02:47:06Z"
     issue_count: 2
-state: "REVIEWED"
+state: COMPLETE
 injection_method: manual-fallback

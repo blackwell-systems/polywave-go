@@ -14,27 +14,7 @@ var (
 )
 
 func init() {
-	// Set passthrough stubs, then immediately replace with real implementations.
-	// The explicit RegisterConstraintMiddleware() call replaces reliance on
-	// Go's alphabetical file init() ordering.
-	ownershipMiddlewareFn = defaultOwnershipMiddleware
-	freezeMiddlewareFn = defaultFreezeMiddleware
-	rolePathMiddlewareFn = defaultRolePathMiddleware
 	RegisterConstraintMiddleware()
-}
-
-// Default stubs that will be replaced when agent files are merged.
-// These are passthroughs that apply no constraints.
-func defaultOwnershipMiddleware(_ string, _ Constraints) Middleware {
-	return func(next ToolExecutor) ToolExecutor { return next }
-}
-
-func defaultFreezeMiddleware(_ string, _ Constraints) Middleware {
-	return func(next ToolExecutor) ToolExecutor { return next }
-}
-
-func defaultRolePathMiddleware(_ string, _ Constraints) Middleware {
-	return func(next ToolExecutor) ToolExecutor { return next }
 }
 
 // writableTools are the tools that can modify files and need constraint middleware.

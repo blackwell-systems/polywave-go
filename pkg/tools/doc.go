@@ -61,7 +61,8 @@
 //	)
 //
 // Middleware are applied right-to-left: the last middleware in the list
-// becomes the innermost wrapper.
+// becomes the innermost wrapper. Execution order matches list order — the
+// first middleware listed executes first (outermost call).
 //
 // # Adapters
 //

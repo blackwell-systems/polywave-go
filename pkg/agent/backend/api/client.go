@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -103,7 +104,7 @@ func (c *Client) CommitCount() int {
 	if ct == nil {
 		return 0
 	}
-	return ct.Count
+	return int(atomic.LoadInt64(&ct.Count))
 }
 
 // DedupStats returns dedup metrics from the most recent Run call.

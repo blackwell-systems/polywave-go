@@ -1,0 +1,610 @@
+title: Wire pkg/solver graph functions — close integration gaps
+feature_slug: solver-graph-wiring
+verdict: SUITABLE
+suitability_assessment: |-
+    Four exported functions in pkg/solver/graph.go have zero production callers. Three are genuine
+    wiring gaps; one is a speculative API that should be unexported. The work decomposes cleanly
+    across three files with disjoint ownership:
+
+    - Agent A: pkg/solver/solver.go (Gap 1 — delegate to ValidateRefs, remove inline duplicate)
+    - Agent B: pkg/solver/graph.go + pkg/solver/graph_test.go (Gap 2 — unexport detectCycles/transitiveDeps, doc comment on divergence)
+    - Agent C: pkg/protocol/solver_integration.go (Gap 3 — wire CriticalPath advisory check into ValidateWithSolver)
+
+    Gap 2 (DetectCycles adaptation): the analyzer's private detectCycles operates on
+    map[string][]string (file-level adjacency), while solver.DetectCycles operates on []DepNode
+    (agent-level). Input types are genuinely different and serve different domains. The right fix
+    is to unexport solver.DetectCycles (zero external callers confirmed by LSP + grep) and add a
+    doc comment noting the intentional separation. No import changes to pkg/analyzer are needed.
+
+    All three gaps have well-defined interfaces; contracts can be specified before implementation.
+    File ownership is fully disjoint (solver.go / graph.go / solver_integration.go are separate files).
+    Build+test cycle is moderate (~5–10s for Go). Parallelization benefit: moderate — mostly surgical
+    edits, but the three agents are fully independent in Wave 1.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents × ~8 min avg, all parallel in Wave 1 = ~8 min
+    - Merge and verification: ~3 min
+    Total SAW time: ~21 min
+
+    Sequential baseline: ~3 × 8 min = ~24 min
+    Time savings: ~3 min (12% faster). Coordination value: documents the DetectCycles divergence
+    decision in the IMPL trail.
+test_command: go test ./pkg/solver/... ./pkg/protocol/...
+lint_command: go vet ./pkg/solver/... ./pkg/protocol/...
+file_ownership:
+    - file: pkg/solver/solver.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/solver/solver_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/solver/graph.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/solver/graph_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/solver_integration.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/solver_critical_path_test.go
+      agent: C
+      wave: 1
+      action: new
+interface_contracts:
+    - name: ValidateRefs
+      description: |-
+        Existing function in pkg/solver/graph.go. Agent A must call this from Solve() instead of
+        the inline missing-reference check at solver.go:29-39. No signature change.
+      definition: |
+        func ValidateRefs(nodes []DepNode) []string
+        // Returns nil if all DependsOn refs are valid.
+        // Returns sorted error strings for any invalid reference.
+      location: pkg/solver/graph.go
+    - name: detectCycles (unexported)
+      description: |-
+        Agent B renames DetectCycles -> detectCycles (unexported). The function is called internally
+        by CriticalPath (same file, same package — no import change needed). graph_test.go is in
+        package solver (white-box tests) so it continues to compile after the unexport.
+        External callers confirmed zero via grep and LSP findReferences.
+      definition: |
+        func detectCycles(nodes []DepNode) [][]string
+        // Was: func DetectCycles(nodes []DepNode) [][]string
+      location: pkg/solver/graph.go
+    - name: transitiveDeps (unexported)
+      description: |-
+        Agent B renames TransitiveDeps -> transitiveDeps (unexported). No callers outside the
+        package. graph_test.go is in package solver and calls it without the solver. prefix,
+        so tests continue to compile after the rename.
+      definition: |
+        func transitiveDeps(nodes []DepNode, agentID string) []string
+        // Was: func TransitiveDeps(nodes []DepNode, agentID string) []string
+      location: pkg/solver/graph.go
+    - name: checkCriticalPath (new advisory check in ValidateWithSolver)
+      description: |-
+        Agent C adds a new private helper checkCriticalPath and calls it from ValidateWithSolver
+        after the solver succeeds. Compares len(m.Waves) against len(CriticalPath(nodes)) to
+        detect over-sequenced manifests (scout wrote more waves than the graph requires).
+        This is advisory only (severity: "warning") — it must not block wave execution.
+      definition: |
+        // checkCriticalPath returns a warning SAWError if the manifest has more waves than
+        // the critical path requires. Returns nil if the graph is cyclic (CriticalPath returns nil)
+        // or if len(m.Waves) == len(CriticalPath(nodes)) (optimal or valid over-wave).
+        //
+        // Error code: "SOLVER_OVER_SEQUENCED"
+        // Severity:   "warning"
+        // Field:      "waves"
+        func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.SAWError
+      location: pkg/protocol/solver_integration.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Context
+
+            You are working on pkg/solver/solver.go. The goal is to eliminate the inline
+            missing-reference check in Solve() and delegate to the existing ValidateRefs() function
+            in graph.go. This closes Gap 1 identified by the inspector.
+
+            ## Files owned
+            - pkg/solver/solver.go
+
+            ## What to implement
+
+            ### Step 1 — Replace the inline missing-reference check in Solve()
+
+            In pkg/solver/solver.go, lines 28–40 contain:
+
+            ```go
+            // Validate: all DependsOn references must exist.
+            var missingErrs []string
+            for _, n := range nodes {
+            	for _, dep := range n.DependsOn {
+            		if _, ok := nodeSet[dep]; !ok {
+            			missingErrs = append(missingErrs, fmt.Sprintf("missing dep: agent %s references unknown agent %s", n.AgentID, dep))
+            		}
+            	}
+            }
+            if len(missingErrs) > 0 {
+            	sort.Strings(missingErrs)
+            	return SolveResult{Valid: false, Errors: missingErrs}
+            }
+            ```
+
+            Replace that entire block with a call to ValidateRefs:
+
+            ```go
+            // Validate: all DependsOn references must exist.
+            if refErrs := ValidateRefs(nodes); refErrs != nil {
+            	return SolveResult{Valid: false, Errors: refErrs}
+            }
+            ```
+
+            ValidateRefs is in the same package (graph.go), so no import is needed.
+
+            ### Step 2 — Remove now-unused imports if any
+
+            After the substitution, check whether fmt and/or any other import in solver.go became
+            unused. The fmt package is also used by the cycle-detection error message on line ~107:
+              `fmt.Sprintf("dependency cycle detected: agents %s are in a cycle", ...)`
+            so fmt likely remains used. Verify and remove only truly unused imports.
+
+            ## Tests
+
+            The existing test TestSolve_MissingDependency in pkg/solver/solver_test.go checks
+            the error message produced when a dependency reference is missing. After delegating
+            to ValidateRefs, the message format changes:
+
+            - Old inline format: `missing dep: agent A references unknown agent Z`
+            - New ValidateRefs format: `agent "A" depends on "Z" which does not exist`
+
+            The new format contains neither "missing" nor "unknown", so the existing test
+            assertion at solver_test.go:140 will FAIL. You MUST update TestSolve_MissingDependency
+            in pkg/solver/solver_test.go to check for the new format. Replace the
+            strings.Contains checks for "missing" and "unknown" with checks for
+            "does not exist" or "depends on":
+
+            ```go
+            // Before (fails with ValidateRefs output):
+            if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") {
+            // After (matches ValidateRefs message format):
+            if strings.Contains(lower, "does not exist") || strings.Contains(lower, "depends on") {
+            ```
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/solver/...
+            go vet ./pkg/solver/...
+            go test ./pkg/solver/... -run TestSolve
+            ```
+
+            Postconditions:
+            ```
+            # The inline missing-dep loop must be gone from solver.go
+            grep -c "missingErrs" pkg/solver/solver.go
+            # expected: 0
+
+            # ValidateRefs must be called from Solve
+            grep -c "ValidateRefs" pkg/solver/solver.go
+            # expected: 1
+            ```
+
+            ## Constraints
+            - Do NOT modify graph.go, graph_test.go, or solver_integration.go — those are owned by Agents B and C.
+            - Do NOT change the Solve() function signature or SolveResult type.
+            - Do NOT change the behavior for cycle detection; only the missing-ref check changes.
+          files:
+            - pkg/solver/solver.go
+            - pkg/solver/solver_test.go
+        - id: B
+          task: |-
+            ## Context
+
+            You are working on pkg/solver/graph.go and pkg/solver/graph_test.go. The goals are:
+            1. Unexport DetectCycles (rename to detectCycles) — zero external callers confirmed.
+            2. Unexport TransitiveDeps (rename to transitiveDeps) — zero external callers confirmed.
+            3. Add a doc comment to the unexported detectCycles explaining why it is separate from
+               pkg/analyzer's private detectCycles function (different input types, different domains).
+
+            ## Files owned
+            - pkg/solver/graph.go
+            - pkg/solver/graph_test.go
+
+            ## What to implement
+
+            ### Step 1 — Unexport DetectCycles in graph.go
+
+            Find this function declaration:
+
+            ```go
+            // DetectCycles uses DFS with a recursion stack to find all cycles in the
+            // dependency graph. Returns a slice of cycle paths, where each path is a
+            // slice of agent IDs forming the cycle (e.g. ["A", "B", "A"]). Returns nil
+            // if no cycles exist. Cycles are reported in sorted order (by first element)
+            // for determinism.
+            func DetectCycles(nodes []DepNode) [][]string {
+            ```
+
+            Rename to `detectCycles` and update the doc comment to explain the intentional separation:
+
+            ```go
+            // detectCycles uses DFS with a recursion stack to find all cycles in the
+            // dependency graph. Returns a slice of cycle paths, where each path is a
+            // slice of agent IDs forming the cycle (e.g. ["A", "B", "A"]). Returns nil
+            // if no cycles exist. Cycles are reported in sorted order (by first element)
+            // for determinism.
+            //
+            // Note: pkg/analyzer also has a private detectCycles function operating on
+            // map[string][]string (file-level adjacency). The two are intentionally separate:
+            // this function operates on []DepNode (agent-level dependency graph), while the
+            // analyzer operates on file import graphs. The input types differ by design.
+            func detectCycles(nodes []DepNode) [][]string {
+            ```
+
+            ### Step 2 — Update CriticalPath to call unexported detectCycles
+
+            In CriticalPath, the first line calls DetectCycles:
+
+            ```go
+            func CriticalPath(nodes []DepNode) []string {
+            	if cycles := DetectCycles(nodes); cycles != nil {
+            ```
+
+            Change to:
+
+            ```go
+            func CriticalPath(nodes []DepNode) []string {
+            	if cycles := detectCycles(nodes); cycles != nil {
+            ```
+
+            ### Step 3 — Unexport TransitiveDeps in graph.go
+
+            Find:
+
+            ```go
+            // TransitiveDeps returns all transitive dependencies of the given agent
+            // (not just direct deps). Result is sorted alphabetically for determinism.
+            // Returns nil if agentID is not found in the node set or has no transitive deps.
+            func TransitiveDeps(nodes []DepNode, agentID string) []string {
+            ```
+
+            Rename to `transitiveDeps` and update the doc comment:
+
+            ```go
+            // transitiveDeps returns all transitive dependencies of the given agent
+            // (not just direct deps). Result is sorted alphabetically for determinism.
+            // Returns nil if agentID is not found in the node set or has no transitive deps.
+            // Unexported: no production callers exist outside this package.
+            func transitiveDeps(nodes []DepNode, agentID string) []string {
+            ```
+
+            ### Step 4 — Update graph_test.go call sites
+
+            graph_test.go is in package solver (white-box), so it calls these functions without
+            the `solver.` prefix. Update every call site:
+            - `DetectCycles(` → `detectCycles(`
+            - `TransitiveDeps(` → `transitiveDeps(`
+
+            The test function names (TestDetectCycles_*, TestTransitiveDeps_*) should remain
+            unchanged — they describe what is being tested, not the symbol name.
+
+            ### Step 5 — Do NOT touch pkg/analyzer/graph.go
+
+            The analyzer has its own private detectCycles. It is a different function in a different
+            package operating on different types. Leave it untouched. The doc comment added in Step 1
+            is sufficient documentation of the intentional divergence.
+
+            ## Tests
+
+            All existing tests in graph_test.go must pass after the rename — the only change needed
+            is updating the call sites in the test file (Step 4). No new tests are required.
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/solver/...
+            go vet ./pkg/solver/...
+            go test ./pkg/solver/... -run "TestDetectCycles|TestTransitiveDeps|TestCriticalPath|TestValidateRefs"
+            ```
+
+            Postconditions:
+            ```
+            # DetectCycles must not appear as an exported declaration in graph.go
+            grep -c "^func DetectCycles" pkg/solver/graph.go
+            # expected: 0
+
+            # TransitiveDeps must not appear as an exported declaration in graph.go
+            grep -c "^func TransitiveDeps" pkg/solver/graph.go
+            # expected: 0
+
+            # detectCycles (unexported) must exist
+            grep -c "^func detectCycles" pkg/solver/graph.go
+            # expected: 1
+
+            # transitiveDeps (unexported) must exist
+            grep -c "^func transitiveDeps" pkg/solver/graph.go
+            # expected: 1
+
+            # CriticalPath must call unexported detectCycles
+            grep -c "detectCycles(" pkg/solver/graph.go
+            # expected: 2  (declaration + call from CriticalPath)
+            ```
+
+            ## Constraints
+            - Do NOT modify solver.go or solver_integration.go — those are owned by Agents A and C.
+            - Do NOT modify pkg/analyzer/graph.go — it is intentionally separate.
+            - CriticalPath and ValidateRefs remain exported (they have caller-shaped holes or are wired by Agent C).
+            - Do NOT add new exported functions or types.
+          files:
+            - pkg/solver/graph.go
+            - pkg/solver/graph_test.go
+        - id: C
+          task: |-
+            ## Context
+
+            You are working on pkg/protocol/solver_integration.go. The goal is to add an advisory
+            CriticalPath check inside ValidateWithSolver() so that over-sequenced manifests (more
+            waves than the graph's critical path requires) produce a SOLVER_OVER_SEQUENCED warning.
+            This is advisory only — it must not block wave execution.
+
+            ## Files owned
+            - pkg/protocol/solver_integration.go
+
+            ## What to implement
+
+            ### Step 1 — Add a checkCriticalPath helper
+
+            Add a new private function after the existing compareAssignments function:
+
+            ```go
+            // checkCriticalPath returns a warning SAWError if the manifest declares more waves
+            // than the dependency graph's critical path requires. This indicates the scout wrote
+            // an over-sequenced wave structure (e.g., 3 waves for a graph whose longest chain is 2).
+            // Returns nil if:
+            //   - the graph has cycles (CriticalPath returns nil — cycle errors are reported elsewhere)
+            //   - len(m.Waves) <= len(critical path) (manifest is optimal or under-waved relative to solver)
+            func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.SAWError {
+            	cp := solver.CriticalPath(nodes)
+            	if cp == nil {
+            		// Cyclic graph — cycle errors are already reported by the solver.
+            		return nil
+            	}
+            	minWaves := len(cp)
+            	if len(m.Waves) <= minWaves {
+            		return nil
+            	}
+            	return &result.SAWError{
+            		Code:     "SOLVER_OVER_SEQUENCED",
+            		Message:  fmt.Sprintf("manifest has %d waves but critical path requires only %d; consider collapsing waves", len(m.Waves), minWaves),
+            		Severity: "warning",
+            		Field:    "waves",
+            	}
+            }
+            ```
+
+            ### Step 2 — Call checkCriticalPath from ValidateWithSolver
+
+            In ValidateWithSolver, after the mismatch loop and before the base Validate() call,
+            add the advisory check. Find this exact text:
+
+            ```go
+            	// Append standard validation errors.
+            	errs = append(errs, Validate(m)...)
+            	return errs
+            ```
+
+            Insert before it:
+
+            ```go
+            	// Advisory: check if the manifest is over-sequenced relative to the critical path.
+            	if cpErr := checkCriticalPath(m, nodes); cpErr != nil {
+            		errs = append(errs, *cpErr)
+            	}
+
+            	// Append standard validation errors.
+            	errs = append(errs, Validate(m)...)
+            	return errs
+            ```
+
+            Note: this insertion goes in the "solver succeeded" branch (after the early return for
+            solver failure). The nodes variable is already in scope (assigned at line 28 of the
+            current file: `nodes := manifestToNodes(m)`).
+
+            ### Step 3 — Verify no import changes needed
+
+            solver_integration.go already imports:
+            - "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+            - "github.com/blackwell-systems/scout-and-wave-go/pkg/solver"
+            - "fmt"
+
+            No new imports are needed.
+
+            ## Tests
+
+            Add the following test to pkg/protocol/solver_integration_test.go:
+
+            ```go
+            func TestValidateWithSolver_OverSequenced(t *testing.T) {
+            	// A->B->C is a linear chain: critical path length = 3, minimum waves = 3.
+            	// Putting them in 3 waves is optimal — should NOT warn.
+            	m := buildManifest("Test", "test", "SUITABLE",
+            		[]Wave{
+            			makeWave(1, agentSpec{"A", nil, []string{"a.go"}}),
+            			makeWave(2, agentSpec{"B", []string{"A"}, []string{"b.go"}}),
+            			makeWave(3, agentSpec{"C", []string{"B"}, []string{"c.go"}}),
+            		},
+            		[]FileOwnership{
+            			makeFO("a.go", "A", 1),
+            			makeFO("b.go", "B", 2, "A"),
+            			makeFO("c.go", "C", 3, "B"),
+            		},
+            	)
+            	errs := ValidateWithSolver(m)
+            	for _, e := range errs {
+            		if e.Code == "SOLVER_OVER_SEQUENCED" {
+            			t.Errorf("unexpected SOLVER_OVER_SEQUENCED for optimal manifest: %+v", e)
+            		}
+            	}
+            }
+
+            func TestValidateWithSolver_OverSequencedWarns(t *testing.T) {
+            	// A and B are independent (no deps). Critical path = 1 agent = 1 minimum wave.
+            	// Putting them in 2 separate waves is over-sequenced.
+            	m := buildManifest("Test", "test", "SUITABLE",
+            		[]Wave{
+            			makeWave(1, agentSpec{"A", nil, []string{"a.go"}}),
+            			makeWave(2, agentSpec{"B", nil, []string{"b.go"}}),
+            		},
+            		[]FileOwnership{
+            			makeFO("a.go", "A", 1),
+            			makeFO("b.go", "B", 2),
+            		},
+            	)
+            	errs := ValidateWithSolver(m)
+            	found := false
+            	for _, e := range errs {
+            		if e.Code == "SOLVER_OVER_SEQUENCED" {
+            			found = true
+            			if e.Severity != "warning" {
+            				t.Errorf("expected severity=warning, got %s", e.Severity)
+            			}
+            		}
+            	}
+            	if !found {
+            		t.Errorf("expected SOLVER_OVER_SEQUENCED warning, got: %+v", errs)
+            	}
+            }
+            ```
+
+            Note: the test file is NOT in your file_ownership list. Add the tests to
+            pkg/protocol/solver_integration_test.go. Wait — solver_integration_test.go is in
+            package protocol (same package), so you can add tests there. You own
+            solver_integration.go; add the new tests as an append-only addition to
+            solver_integration_test.go. If that conflicts with this constraint, create a new file
+            pkg/protocol/solver_critical_path_test.go instead and own it explicitly.
+
+            CORRECTION: To avoid file ownership conflicts, create a NEW test file:
+            pkg/protocol/solver_critical_path_test.go
+
+            This file is yours to create. It should have `package protocol` at the top and
+            contain only the two new test functions above (plus any imports needed).
+
+            ## Verification gate
+
+            ```
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run "TestValidateWithSolver"
+            ```
+
+            Postconditions:
+            ```
+            # SOLVER_OVER_SEQUENCED must appear in solver_integration.go
+            grep -c "SOLVER_OVER_SEQUENCED" pkg/protocol/solver_integration.go
+            # expected: 1
+
+            # checkCriticalPath must be declared
+            grep -c "func checkCriticalPath" pkg/protocol/solver_integration.go
+            # expected: 1
+
+            # solver.CriticalPath must be called
+            grep -c "solver.CriticalPath" pkg/protocol/solver_integration.go
+            # expected: 1
+            ```
+
+            ## Constraints
+            - Do NOT modify solver.go or graph.go — those are owned by Agents A and B.
+            - The new check must be advisory only (severity: "warning"). Do NOT use severity "error".
+            - Do NOT block wave execution — SOLVER_OVER_SEQUENCED is informational.
+            - Do NOT modify the function signature of ValidateWithSolver or any other exported function.
+            - Create pkg/protocol/solver_critical_path_test.go for new tests; do NOT modify solver_integration_test.go.
+          files:
+            - pkg/protocol/solver_integration.go
+            - pkg/protocol/solver_critical_path_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./pkg/solver/... ./pkg/protocol/...
+          required: true
+        - type: test
+          command: go test ./pkg/solver/... ./pkg/protocol/...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent A changes the missing-ref error message format by delegating to ValidateRefs.
+            The new message is 'agent "X" depends on "Y" which does not exist' vs the old
+            'missing dep: agent X references unknown agent Y'. If solver_integration.go parses
+            the error string for "missing" or "unknown", it would still match. But if any other
+            code does string-contains matching on the exact old format, it would break.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            solver_integration.go checks strings.Contains(lower, "missing") || strings.Contains(lower, "unknown")
+            — both match the new format. Grep confirms no other code parses solver error strings.
+            Agent A should run the full test suite for pkg/solver/... and pkg/protocol/... to catch
+            any string-matching regressions.
+        - scenario: |-
+            Agent B unexports DetectCycles but misses a caller in a worktree or stale binary.
+            External callers at grep time: zero. But the worktrees under .claude/worktrees/ contain
+            stale copies with the exported names.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Worktrees are not production code and not compiled by go build ./.... The rename is safe.
+            Agents run in isolated worktrees themselves, so the main branch is the only concern.
+        - scenario: |-
+            Agent C's checkCriticalPath emits SOLVER_OVER_SEQUENCED for manifests where the scout
+            deliberately used more waves for human-readability reasons (e.g., wave 1: foundations,
+            wave 2: features, wave 3: integration — even though foundations and features are independent).
+            This would produce spurious warnings on valid manifests.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            The check is advisory (severity: "warning") and does not block wave execution.
+            The warning message includes the manifest wave count and critical path count so users
+            can evaluate whether the extra waves are intentional. No action needed beyond ensuring
+            severity is "warning" not "error".
+        - scenario: |-
+            CriticalPath returns a path of length 1 for a flat graph (all agents in wave 1, no deps).
+            A manifest with len(m.Waves) == 1 would match and not warn. But a manifest with 2+ waves
+            where all agents are in wave 1 would be flagged — which is valid behavior.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            The condition `len(m.Waves) <= minWaves` correctly handles this. If minWaves=1 and
+            len(m.Waves)=1, no warning. The test TestValidateWithSolver_OverSequencedWarns covers
+            the case where independent agents are unnecessarily sequenced.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: |-
+        All agent briefs are accurate. The previously flagged symbol_accuracy error on Agent A has
+        been corrected: the brief now explicitly instructs Agent A to update TestSolve_MissingDependency
+        to check for "does not exist" or "depends on" instead of "missing" or "unknown", matching the
+        ValidateRefs message format. pkg/solver/solver_test.go has been added to Agent A's owned files.
+    reviewed_at: "2026-04-05T05:23:12Z"
+    issue_count: 0
+state: SCOUT_PENDING

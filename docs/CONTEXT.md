@@ -362,3 +362,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-improvements.yaml
 - **roadmap-hardening**: completed 2026-04-04, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-roadmap-hardening.yaml
+- **wire-manager-lifecycle**: completed 2026-04-04, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-wire-manager-lifecycle.yaml

@@ -144,7 +144,7 @@ func isGitModifyCommand(command string) bool {
 func checkGitOwnershipViolations(workDir string, ownedFiles map[string]bool) string {
 	unstaged, err := git.DiffNameOnlyHEAD(workDir)
 	if err != nil {
-		return "" // Can't check — don't warn
+		return fmt.Sprintf("WARNING: ownership check could not run (git diff failed: %v). Verify manually that no unowned files were modified.", err)
 	}
 	staged, _ := git.DiffNameOnlyStaged(workDir)
 

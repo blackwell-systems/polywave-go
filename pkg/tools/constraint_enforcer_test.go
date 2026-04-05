@@ -174,7 +174,7 @@ func TestConstraintEnforcer_I6_ScoutAllowedPathSucceeds(t *testing.T) {
 		AgentRole:           "scout",
 		AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
 	}
-	mw := newRolePathMiddleware("write_file", c)
+	mw := RolePathMiddleware("write_file", c)
 	wrapped := mw(enforcerPassthrough())
 
 	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
@@ -195,7 +195,7 @@ func TestConstraintEnforcer_I6_ScoutBlocksSourceCode(t *testing.T) {
 		AgentRole:           "scout",
 		AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
 	}
-	mw := newRolePathMiddleware("write_file", c)
+	mw := RolePathMiddleware("write_file", c)
 	wrapped := mw(enforcerPassthrough())
 
 	_, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
@@ -222,7 +222,7 @@ func TestConstraintEnforcer_I6_EmptyPrefixesPassthrough(t *testing.T) {
 		AgentRole:           "wave",
 		AllowedPathPrefixes: nil,
 	}
-	mw := newRolePathMiddleware("write_file", c)
+	mw := RolePathMiddleware("write_file", c)
 	wrapped := mw(enforcerPassthrough())
 
 	result, err := wrapped.Execute(context.Background(), ExecutionContext{}, map[string]interface{}{
@@ -252,7 +252,7 @@ func TestConstraintEnforcer_Composition(t *testing.T) {
 	base := enforcerPassthrough()
 	// Apply in the same order as WithConstraints: role -> freeze -> ownership (innermost)
 	wrapped := Apply(base,
-		newRolePathMiddleware("write_file", c),
+		RolePathMiddleware("write_file", c),
 		newFreezeMiddleware("write_file", c),
 		newOwnershipMiddleware("write_file", c),
 	)
@@ -302,14 +302,14 @@ func TestConstraintEnforcer_Composition(t *testing.T) {
 	}
 }
 
-// TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath verifies that newRolePathMiddleware
+// TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath verifies that RolePathMiddleware
 // blocks scout writes to paths with the right prefix but wrong extension.
 func TestConstraintEnforcer_I6_ScoutBlocksNonYamlIMPLPath(t *testing.T) {
 	c := Constraints{
 		AgentRole:           "scout",
 		AllowedPathPrefixes: []string{"docs/IMPL/IMPL-"},
 	}
-	mw := newRolePathMiddleware("edit_file", c)
+	mw := RolePathMiddleware("edit_file", c)
 	wrapped := mw(enforcerPassthrough())
 
 	// Right prefix but not .yaml — should be blocked
