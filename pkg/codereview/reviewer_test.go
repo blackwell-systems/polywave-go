@@ -1,11 +1,14 @@
 package codereview
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 )
 
@@ -29,6 +32,17 @@ func mockAnthropicResponse(text string) []byte {
 	}
 	data, _ := json.Marshal(resp)
 	return data
+}
+
+// runGit is a test helper that runs a git command in dir and returns combined output.
+func runGit(dir string, args ...string) (string, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = &buf
+	err := cmd.Run()
+	return buf.String(), err
 }
 
 // TestAllDimensionsConstant verifies AllDimensions has exactly 5 entries.
@@ -281,5 +295,103 @@ func TestReviewDiffEmptyDiffScore(t *testing.T) {
 	}
 	if !got.Skipped {
 		t.Error("empty diff: expected Skipped=true")
+	}
+}
+
+// TestValidateReviewResponseOutOfRangeScore verifies that a dimension score
+// outside [0,100] causes validateReviewResponse to fail via ReviewDiff.
+func TestValidateReviewResponseOutOfRangeScore(t *testing.T) {
+	// Score 150 is above the valid maximum of 100.
+	reviewJSON := `{
+		"dimensions": [
+			{"name": "code_quality", "score": 150, "rationale": "Exceeds max."}
+		],
+		"overall": 80,
+		"summary": "Score out of range."
+	}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(mockAnthropicResponse(reviewJSON))
+	}))
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+
+	res := ReviewDiff(context.Background(), "some diff", ReviewOpts{BaseURL: srv.URL})
+	if !res.IsFatal() {
+		t.Error("expected fatal result for out-of-range dimension score (150)")
+	}
+}
+
+// TestValidateReviewResponseEmptySummary verifies that an empty summary in the
+// LLM response triggers a fatal validation result via ReviewDiff.
+func TestValidateReviewResponseEmptySummary(t *testing.T) {
+	reviewJSON := `{
+		"dimensions": [
+			{"name": "code_quality", "score": 80, "rationale": "Good."}
+		],
+		"overall": 80,
+		"summary": ""
+	}`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write(mockAnthropicResponse(reviewJSON))
+	}))
+	defer srv.Close()
+
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+
+	res := ReviewDiff(context.Background(), "some diff", ReviewOpts{BaseURL: srv.URL})
+	if !res.IsFatal() {
+		t.Error("expected fatal result for empty summary in LLM response")
+	}
+}
+
+// TestRunCodeReviewNoAPIKey verifies that RunCodeReview with a valid git repo
+// (single commit) but no ANTHROPIC_API_KEY set returns a fatal result.
+// The git diff step succeeds; the failure comes from ReviewDiff detecting a
+// missing key before attempting any network call.
+func TestRunCodeReviewNoAPIKey(t *testing.T) {
+	// Build a minimal git repo with one commit so git show HEAD succeeds.
+	repoDir := t.TempDir()
+
+	gitCommands := [][]string{
+		{"init"},
+		{"config", "user.email", "test@example.com"},
+		{"config", "user.name", "Test User"},
+	}
+	for _, args := range gitCommands {
+		out, err := runGit(repoDir, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Write a file and commit it.
+	if err := os.WriteFile(filepath.Join(repoDir, "main.go"), []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"add", "."},
+		{"commit", "-m", "initial"},
+	} {
+		out, err := runGit(repoDir, args...)
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	// Ensure no API key is set for this test.
+	t.Setenv("ANTHROPIC_API_KEY", "")
+
+	cfg := CodeReviewConfig{
+		Enabled:   true,
+		Threshold: 70,
+	}
+	res := RunCodeReview(context.Background(), repoDir, cfg)
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when ANTHROPIC_API_KEY is not set")
 	}
 }

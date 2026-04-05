@@ -626,17 +626,104 @@ waves:
 		assert.Equal(t, result.CodeCollisionInvalidWave, res.Errors[0].Code)
 	})
 
-	// Note: Full integration test with real git repos and IMPL manifests is skipped
-	// because protocol.Load has complex file validation logic that requires specific
-	// directory structure. The unit tests for getChangedGoFiles, extractTypesFromFiles,
-	// and detectCollisionsInTypes provide comprehensive coverage of the collision
-	// detection logic.
-	t.Run("successful collision detection integration", func(t *testing.T) {
-		t.Skip("Integration test requires complex IMPL manifest setup - covered by unit tests")
+	t.Run("no collisions integration", func(t *testing.T) {
+		repoDir := t.TempDir()
+		initTestRepo(t, repoDir)
+
+		const slug = "test-feature"
+		const waveNum = 1
+
+		// Create agent A branch with a unique type.
+		branchA := "saw/" + slug + "/wave1-agent-A"
+		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
+		require.NoError(t, err)
+		fileA := filepath.Join(repoDir, "pkg", "svc", "handler.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(fileA), 0755))
+		require.NoError(t, os.WriteFile(fileA, []byte("package svc\n\ntype Handler struct{}\n"), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add Handler")
+		require.NoError(t, err)
+
+		// Create agent B branch with a distinct type.
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+		branchB := "saw/" + slug + "/wave1-agent-B"
+		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
+		require.NoError(t, err)
+		fileB := filepath.Join(repoDir, "pkg", "svc", "logger.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(fileB), 0755))
+		require.NoError(t, os.WriteFile(fileB, []byte("package svc\n\ntype Logger interface{ Log(string) }\n"), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add Logger")
+		require.NoError(t, err)
+
+		// Return to main before running DetectCollisions.
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+
+		// Write a minimal IMPL manifest referencing agents A and B.
+		manifestPath := filepath.Join(repoDir, "IMPL.yaml")
+		manifestContent := "title: Test\nfeature_slug: " + slug + "\nverdict: SUITABLE\nwaves:\n  - number: 1\n    agents:\n      - id: A\n        task: test\n        files: []\n      - id: B\n        task: test\n        files: []\n"
+		require.NoError(t, os.WriteFile(manifestPath, []byte(manifestContent), 0644))
+
+		res := DetectCollisions(context.Background(), manifestPath, waveNum, repoDir)
+		require.True(t, res.IsSuccess(), "DetectCollisions should succeed: %v", res.Errors)
+		report := res.GetData()
+		assert.True(t, report.Valid, "no type collisions expected")
+		assert.Empty(t, report.Collisions)
 	})
 
-	t.Run("no collisions integration", func(t *testing.T) {
-		t.Skip("Integration test requires complex IMPL manifest setup - covered by unit tests")
+	t.Run("successful collision detection integration", func(t *testing.T) {
+		repoDir := t.TempDir()
+		initTestRepo(t, repoDir)
+
+		const slug = "collision-feature"
+		const waveNum = 1
+
+		// Both agents define the same type in the same package — a collision.
+		const sharedType = "package svc\n\ntype SharedEntry struct{ ID string }\n"
+
+		branchA := "saw/" + slug + "/wave1-agent-A"
+		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
+		require.NoError(t, err)
+		fileA := filepath.Join(repoDir, "pkg", "svc", "entry.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(fileA), 0755))
+		require.NoError(t, os.WriteFile(fileA, []byte(sharedType), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add SharedEntry (agent A)")
+		require.NoError(t, err)
+
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+		branchB := "saw/" + slug + "/wave1-agent-B"
+		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
+		require.NoError(t, err)
+		fileB := filepath.Join(repoDir, "pkg", "svc", "entry.go")
+		require.NoError(t, os.MkdirAll(filepath.Dir(fileB), 0755))
+		require.NoError(t, os.WriteFile(fileB, []byte(sharedType), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add SharedEntry (agent B)")
+		require.NoError(t, err)
+
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+
+		manifestPath := filepath.Join(repoDir, "IMPL.yaml")
+		manifestContent := "title: Test\nfeature_slug: " + slug + "\nverdict: SUITABLE\nwaves:\n  - number: 1\n    agents:\n      - id: A\n        task: test\n        files: []\n      - id: B\n        task: test\n        files: []\n"
+		require.NoError(t, os.WriteFile(manifestPath, []byte(manifestContent), 0644))
+
+		res := DetectCollisions(context.Background(), manifestPath, waveNum, repoDir)
+		require.True(t, res.IsSuccess(), "DetectCollisions should succeed: %v", res.Errors)
+		report := res.GetData()
+		assert.False(t, report.Valid, "collision expected between agents A and B")
+		require.Len(t, report.Collisions, 1)
+		assert.Equal(t, "SharedEntry", report.Collisions[0].TypeName)
+		assert.Equal(t, "pkg/svc", report.Collisions[0].Package)
+		assert.Equal(t, []string{"A", "B"}, report.Collisions[0].Agents)
 	})
 }
 
@@ -742,6 +829,48 @@ func TestRootPackageCollision(t *testing.T) {
 	})
 
 	t.Run("integration test with real repo and root package types", func(t *testing.T) {
-		t.Skip("Integration test requires complex IMPL manifest setup - covered by unit tests")
+		repoDir := t.TempDir()
+		initTestRepo(t, repoDir)
+
+		const slug = "rootpkg-feature"
+		const waveNum = 1
+
+		// Both agents define AppConfig in the root package (no subdirectory).
+		const rootType = "package main\n\ntype AppConfig struct{ Port int }\n"
+
+		branchA := "saw/" + slug + "/wave1-agent-A"
+		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "config.go"), []byte(rootType), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add AppConfig (agent A)")
+		require.NoError(t, err)
+
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+		branchB := "saw/" + slug + "/wave1-agent-B"
+		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
+		require.NoError(t, err)
+		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "config.go"), []byte(rootType), 0644))
+		_, err = igit.Run(repoDir, "add", ".")
+		require.NoError(t, err)
+		_, err = igit.Run(repoDir, "commit", "-m", "Add AppConfig (agent B)")
+		require.NoError(t, err)
+
+		_, err = igit.Run(repoDir, "checkout", "main")
+		require.NoError(t, err)
+
+		manifestPath := filepath.Join(repoDir, "IMPL.yaml")
+		manifestContent := "title: Test\nfeature_slug: " + slug + "\nverdict: SUITABLE\nwaves:\n  - number: 1\n    agents:\n      - id: A\n        task: test\n        files: []\n      - id: B\n        task: test\n        files: []\n"
+		require.NoError(t, os.WriteFile(manifestPath, []byte(manifestContent), 0644))
+
+		res := DetectCollisions(context.Background(), manifestPath, waveNum, repoDir)
+		require.True(t, res.IsSuccess(), "DetectCollisions should succeed: %v", res.Errors)
+		report := res.GetData()
+		assert.False(t, report.Valid, "collision expected for root package types")
+		require.Len(t, report.Collisions, 1)
+		assert.Equal(t, "AppConfig", report.Collisions[0].TypeName)
+		assert.Equal(t, "", report.Collisions[0].Package, "root package should have empty package path")
 	})
 }
