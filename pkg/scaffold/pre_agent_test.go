@@ -2,6 +2,7 @@ package scaffold
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -402,6 +403,28 @@ func TestDetectScaffoldsPreAgent_EmptyContracts(t *testing.T) {
 
 	if len(result.ScaffoldsNeeded) != 0 {
 		t.Errorf("expected empty result for empty contracts, got %d scaffolds", len(result.ScaffoldsNeeded))
+	}
+}
+
+func TestExtractTypeDefinition_NestedBraceTruncation(t *testing.T) {
+	// Documents known limitation: [^}]* regex truncates on nested braces.
+	// See pre_agent.go:87-90 comment.
+	definition := `type Outer struct {
+	Field1 string
+	Inner  struct {
+		Nested string
+	}
+	Field2 int
+}`
+	got := extractTypeDefinition(definition, "Outer")
+	// The regex matches up to the first closing brace, truncating nested content.
+	// This is the documented limitation — the test ensures we don't silently change behavior.
+	if got == definition {
+		t.Error("expected truncated extraction due to nested brace limitation, but got full definition")
+	}
+	// Should at least contain the type name and struct keyword
+	if !strings.Contains(got, "Outer") || !strings.Contains(got, "struct") {
+		t.Errorf("expected partial extraction containing type name, got: %s", got)
 	}
 }
 

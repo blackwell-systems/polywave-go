@@ -5,7 +5,10 @@
 //   - Pre-agent: analyzes interface contracts to find types referenced by ≥2 agents
 //   - Post-agent: parses agent tasks to detect duplicate type definitions
 //
-// Both modes are invoked via CLI: sawtools detect-scaffolds --stage {pre-agent|post-agent}
+// Both modes are available as Go API functions:
+//   - DetectScaffoldsPreAgent(contracts) — analyzes interface contracts
+//   - DetectScaffoldsPostAgent(manifest) — parses agent task fields
+//   - DetectScaffolds(ctx, implPath) — convenience wrapper that loads the manifest
 //
 // Design rationale and determinism guarantees are documented in determinism-roadmap.md.
 package scaffold

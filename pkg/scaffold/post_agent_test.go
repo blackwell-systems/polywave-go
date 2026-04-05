@@ -214,7 +214,7 @@ func TestDetectScaffoldsPostAgent_SameNameDifferentKind(t *testing.T) {
 	}
 }
 
-func TestExtractTypeDefinitions(t *testing.T) {
+func TestExtractTypeNames_PostAgent(t *testing.T) {
 	tests := []struct {
 		name     string
 		taskText string
@@ -285,7 +285,7 @@ interface SessionManager {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractTypeDefinitions(tt.taskText)
+			result := extractTypeNames(tt.taskText)
 
 			if len(result) != len(tt.expected) {
 				t.Errorf("expected %d types, got %d: %v", len(tt.expected), len(result), result)
