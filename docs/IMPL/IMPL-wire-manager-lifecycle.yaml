@@ -619,5 +619,5 @@ critic_report:
     summary: 'Both agent briefs are accurate against the codebase. All exact ''find'' text blocks in manager.go and orchestrator.go match the current source. All referenced symbols exist with correct signatures: git.BranchExists(repoPath, branch), result.CodeBranchExists, result.CodeWorktreeCreateFailed, result.CodeWorktreeRemoveFailed, result.SAWError.Message, cleanupResult.IsFatal(), cleanupResult.IsPartial(), and o.log(). One warning is raised for each agent: structured_wave_test.go contains 8 calls to worktree.New that are not in Agent B''s file_ownership table — after Agent A changes the New signature these test files will break. These are test files (*_test.go) so they are advisory warnings per the caller exhaustiveness check, not errors. Wave execution may proceed.'
     reviewed_at: "2026-04-05T02:47:06Z"
     issue_count: 2
-state: SCOUT_PENDING
+state: "REVIEWED"
 injection_method: manual-fallback
