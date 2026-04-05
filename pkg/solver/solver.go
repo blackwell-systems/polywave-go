@@ -26,17 +26,8 @@ func Solve(nodes []DepNode) SolveResult {
 	}
 
 	// Validate: all DependsOn references must exist.
-	var missingErrs []string
-	for _, n := range nodes {
-		for _, dep := range n.DependsOn {
-			if _, ok := nodeSet[dep]; !ok {
-				missingErrs = append(missingErrs, fmt.Sprintf("missing dep: agent %s references unknown agent %s", n.AgentID, dep))
-			}
-		}
-	}
-	if len(missingErrs) > 0 {
-		sort.Strings(missingErrs)
-		return SolveResult{Valid: false, Errors: missingErrs}
+	if refErrs := ValidateRefs(nodes); refErrs != nil {
+		return SolveResult{Valid: false, Errors: refErrs}
 	}
 
 	// Build adjacency list (dependee -> dependents) and in-degree map.
