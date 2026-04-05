@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
@@ -852,4 +853,103 @@ func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, ma
 		Detail: detail,
 		Data:   results,
 	}, results, nil
+}
+
+// StepCommitState commits uncommitted SAW-owned state files (IMPL docs,
+// .saw-state/) before merge-agents runs. Non-fatal on failure — reports
+// warning and continues. This prevents dirty working directory from blocking
+// git merge.
+func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
+	manifest *protocol.IMPLManifest, onEvent EventCallback) (*StepResult, error) {
+	const stepName = "commit-state"
+	emitStepEvent(onEvent, stepName, "running", "")
+
+	status, err := git.StatusPorcelain(opts.RepoPath)
+	if err != nil {
+		emitStepEvent(onEvent, stepName, "warning", fmt.Sprintf("git status failed: %v", err))
+		return &StepResult{
+			Step:   stepName,
+			Status: "warning",
+			Detail: fmt.Sprintf("git status failed: %v", err),
+		}, nil
+	}
+
+	if status == "" {
+		detail := "working directory clean — no SAW state to commit"
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: detail,
+		}, nil
+	}
+
+	var sawFiles []string
+	var userFileCount int
+	for _, line := range strings.Split(status, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if isSAWOwnedPath(line, opts.IMPLPath, opts.RepoPath) {
+			sawFiles = append(sawFiles, line)
+		} else {
+			userFileCount++
+		}
+	}
+
+	if userFileCount > 0 {
+		emitStepEvent(onEvent, stepName, "warning",
+			fmt.Sprintf("%d non-SAW file(s) also dirty (ignored for pre-merge commit)", userFileCount))
+	}
+
+	if len(sawFiles) == 0 {
+		detail := "no SAW-owned files dirty"
+		emitStepEvent(onEvent, stepName, "complete", detail)
+		return &StepResult{
+			Step:   stepName,
+			Status: "success",
+			Detail: detail,
+		}, nil
+	}
+
+	// Stage each SAW-owned file individually
+	for _, f := range sawFiles {
+		// Trim the 2-char git status prefix (e.g. "M " or "?? ")
+		trimmed := f
+		if len(f) > 2 {
+			trimmed = strings.TrimSpace(f[2:])
+		}
+		if err := git.AddForce(opts.RepoPath, trimmed); err != nil {
+			emitStepEvent(onEvent, stepName, "warning", fmt.Sprintf("staging failed for %s: %v", trimmed, err))
+			return &StepResult{
+				Step:   stepName,
+				Status: "warning",
+				Detail: fmt.Sprintf("staging failed for %s: %v", trimmed, err),
+			}, nil
+		}
+	}
+
+	// Build commit message
+	commitMsg := "chore: commit SAW state (pre-merge commit)"
+	if manifest.State != "" {
+		commitMsg = fmt.Sprintf("chore: advance IMPL state to %s (pre-merge commit)", manifest.State)
+	}
+
+	if err := gitCommitAllowMain(opts.RepoPath, "-m", commitMsg); err != nil {
+		emitStepEvent(onEvent, stepName, "warning", fmt.Sprintf("commit failed: %v", err))
+		return &StepResult{
+			Step:   stepName,
+			Status: "warning",
+			Detail: fmt.Sprintf("commit failed: %v", err),
+		}, nil
+	}
+
+	detail := fmt.Sprintf("committed %d SAW state file(s)", len(sawFiles))
+	emitStepEvent(onEvent, stepName, "complete", detail)
+	return &StepResult{
+		Step:   stepName,
+		Status: "success",
+		Detail: detail,
+	}, nil
 }
