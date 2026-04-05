@@ -38,7 +38,7 @@
 //
 // Load reads a YAML manifest from disk:
 //
-//	manifest, err := protocol.Load("/path/to/IMPL-feature.yaml")
+//	manifest, err := protocol.Load(ctx, "/path/to/IMPL-feature.yaml")
 //	if err != nil {
 //	    log.Fatalf("Load failed: %v", err)
 //	}
@@ -46,10 +46,11 @@
 //	fmt.Printf("Title: %s\n", manifest.Title)
 //	fmt.Printf("Waves: %d\n", len(manifest.Waves))
 //
-// Save writes a manifest back to disk:
+// Save writes a manifest back to disk (returns result.Result, not error):
 //
-//	if err := protocol.Save(manifest, "/path/to/IMPL-feature.yaml"); err != nil {
-//	    log.Fatalf("Save failed: %v", err)
+//	res := protocol.Save(ctx, manifest, "/path/to/IMPL-feature.yaml")
+//	if res.IsFatal() {
+//	    log.Fatalf("Save failed: %v", res.Errors)
 //	}
 //
 // # Validation

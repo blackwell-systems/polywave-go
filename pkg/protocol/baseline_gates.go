@@ -81,9 +81,6 @@ type CrossRepoBaselineData struct {
 	Results map[string]*BaselineData `json:"results"` // repo name → result
 }
 
-// CrossRepoBaselineResult is a backward-compatible alias for CrossRepoBaselineData.
-// Deprecated: Use CrossRepoBaselineData directly.
-
 // RunCrossRepoBaselineGates runs baseline gates on all repos targeted by a
 // cross-repo IMPL manifest (E21B). For each repo, it uses per-repo gate
 // commands from configRepos if available, falling back to the IMPL's

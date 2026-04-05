@@ -39,6 +39,7 @@ func Validate(m *IMPLManifest) []result.SAWError {
 	errs = append(errs, validateI5CommitBeforeReport(m)...)
 	errs = append(errs, validateE9MergeState(m)...)
 	errs = append(errs, validateSM01StateValid(m)...)
+	errs = append(errs, validateStateMergeStateConsistency(m)...)
 	errs = append(errs, validateAgentIDs(m)...)
 	errs = append(errs, validateGateTypes(m)...)
 	errs = append(errs, ValidateWorktreeNames(m)...)
@@ -470,6 +471,46 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 	return errs
 }
 
+// validateStateMergeStateConsistency checks that State and MergeState are not
+// in an illegal combination. For example, MergeState=in_progress requires
+// State=WAVE_MERGING, and State=REVIEWED cannot have MergeState=completed.
+func validateStateMergeStateConsistency(m *IMPLManifest) []result.SAWError {
+	var errs []result.SAWError
+
+	// Skip if either field is empty (backward compat)
+	if strings.TrimSpace(string(m.State)) == "" || strings.TrimSpace(string(m.MergeState)) == "" {
+		return errs
+	}
+
+	switch m.MergeState {
+	case MergeStateInProgress:
+		if m.State != StateWaveMerging {
+			errs = append(errs, result.SAWError{
+				Code:     result.CodeInvalidMergeState,
+				Message:  fmt.Sprintf("merge_state is %q but state is %q — in_progress requires WAVE_MERGING", m.MergeState, m.State),
+				Severity: "error",
+				Field:    "merge_state",
+			})
+		}
+	case MergeStateCompleted:
+		allowed := map[ProtocolState]bool{
+			StateWaveVerified: true,
+			StateWavePending:  true,
+			StateComplete:     true,
+		}
+		if !allowed[m.State] {
+			errs = append(errs, result.SAWError{
+				Code:     result.CodeInvalidMergeState,
+				Message:  fmt.Sprintf("merge_state is %q but state is %q — completed requires WAVE_VERIFIED, WAVE_PENDING, or COMPLETE", m.MergeState, m.State),
+				Severity: "error",
+				Field:    "merge_state",
+			})
+		}
+	}
+
+	return errs
+}
+
 // validateAgentIDs checks that all agent IDs conform to the protocol regex: ^[A-Z][2-9]?$
 // Valid examples: "A", "B", "C2", "D9"
 // Invalid examples: "a", "AB", "A1", "A10", "1A", ""
@@ -648,6 +689,9 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 		return errs
 	}
 
+	validTimings := map[string]bool{"": true, "pre-merge": true, "post-merge": true}
+	validPhases := map[GatePhase]bool{"": true, GatePhasePre: true, GatePhaseMain: true, GatePhasePost: true}
+
 	for i, gate := range m.QualityGates.Gates {
 		if !ValidGateTypes[gate.Type] {
 			errs = append(errs, result.SAWError{
@@ -655,6 +699,22 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 				Message:  fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, format, custom", gate.Type),
 				Severity: "error",
 				Field:    fmt.Sprintf("quality_gates.gates[%d].type", i),
+			})
+		}
+		if !validTimings[gate.Timing] {
+			errs = append(errs, result.SAWError{
+				Code:     result.CodeInvalidGateType,
+				Message:  fmt.Sprintf("quality gate timing %q is invalid — must be one of: pre-merge, post-merge (or empty for pre-merge default)", gate.Timing),
+				Severity: "error",
+				Field:    fmt.Sprintf("quality_gates.gates[%d].timing", i),
+			})
+		}
+		if !validPhases[gate.Phase] {
+			errs = append(errs, result.SAWError{
+				Code:     result.CodeInvalidGateType,
+				Message:  fmt.Sprintf("quality gate phase %q is invalid — must be one of: PRE_VALIDATION, VALIDATION, POST_VALIDATION (or empty for VALIDATION default)", gate.Phase),
+				Severity: "error",
+				Field:    fmt.Sprintf("quality_gates.gates[%d].phase", i),
 			})
 		}
 	}

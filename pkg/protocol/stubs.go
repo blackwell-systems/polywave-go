@@ -53,9 +53,10 @@ func ScanStubs(files []string) result.Result[ScanStubsData] {
 		// Open the file
 		f, err := os.Open(file)
 		if err != nil {
-			// Skip files that can't be read
+			// Skip files that can't be read (E20: informational only)
 			continue
 		}
+		defer f.Close()
 
 		scanner := bufio.NewScanner(f)
 		lineNum := 0
@@ -81,7 +82,6 @@ func ScanStubs(files []string) result.Result[ScanStubsData] {
 			}
 		}
 
-		f.Close()
 	}
 
 	return result.NewSuccess(data)
