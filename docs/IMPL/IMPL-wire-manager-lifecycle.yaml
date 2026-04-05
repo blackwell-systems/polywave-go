@@ -1,0 +1,623 @@
+title: Wire Manager Lifecycle
+feature_slug: wire-manager-lifecycle
+verdict: SUITABLE
+suitability_assessment: |
+    All six fixes decompose cleanly into two disjoint agents:
+    - Agent A owns pkg/worktree/ (manager internals: validation, TOCTOU, error propagation, doc fix, tests)
+    - Agent B owns pkg/orchestrator/orchestrator.go (wiring CleanupAll and Remove into RunWave/RunAgent)
+
+    No interface changes cross agent boundaries — Manager method signatures are unchanged;
+    Agent B calls the existing wm.CleanupAll() that Agent A hardens internally. Single wave,
+    fully parallel execution.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: 2 agents x ~10 min avg = ~10 min with parallelism
+    - Merge and verification: ~3 min
+    Total SAW time: ~28 min
+
+    Sequential baseline: ~25 min (2 agents x ~12 min sequential)
+    Time savings: Marginal on time; primary value is coordination clarity and parallel execution.
+
+    Recommendation: SUITABLE. Proceed — 2 independent agents, disjoint files, clear interface.
+test_command: go test ./pkg/worktree/... ./pkg/orchestrator/...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/worktree/manager.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/worktree/manager_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/orchestrator_test.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/orchestrator/structured_wave_test.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: Manager.New
+      description: |-
+        Add empty-string validation for repoPath and slug. Change signature from
+        returning *Manager to returning (*Manager, error). Return a non-nil error
+        when repoPath == "" or slug == "".
+      definition: |
+        func New(repoPath, slug string) (*Manager, error)
+        // Returns non-nil error if repoPath == "" or slug == ""
+      location: pkg/worktree/manager.go
+    - name: Manager.Create TOCTOU fix
+      description: |-
+        After the os.Stat check, add a git.BranchExists check before calling
+        git.WorktreeAdd. If the branch already exists, return result.CodeBranchExists
+        (G004_BRANCH_EXISTS), which already exists in pkg/result/codes.go.
+        Do not add a new error code.
+      definition: |
+        if git.BranchExists(m.repoPath, branch) {
+            return result.NewFailure[CreateData]([]result.SAWError{
+                result.NewFatal(result.CodeBranchExists,
+                    fmt.Sprintf("worktree: branch %q already exists; remove it before retrying", branch)),
+            })
+        }
+      location: pkg/worktree/manager.go
+    - name: CleanupAll error propagation fix
+      description: |-
+        CleanupAll currently discards the original SAWError from failed Remove calls
+        and builds a generic error. Fix: capture r.Errors from the Remove result
+        and append them directly into the failure error slice.
+      definition: |
+        // Replace failedPaths []string with failedErrs []result.SAWError.
+        // When r.IsFatal(), append r.Errors... to failedErrs.
+        // Use failedErrs in NewPartial and NewFailure calls.
+      location: pkg/worktree/manager.go
+    - name: worktree.New callers in orchestrator
+      description: |-
+        Both call sites of worktree.New in orchestrator.go must handle the new
+        (*Manager, error) return. The first call site is in RunWave; the second
+        is in RunAgent. Both must check the error and return a Fatal result on
+        failure using result.CodeWorktreeCreateFailed.
+      definition: |
+        wm, wmErr := worktree.New(o.repoPath, slug)
+        if wmErr != nil {
+            return result.NewFailure[WaveData]([]result.SAWError{
+                result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
+            })
+        }
+      location: pkg/orchestrator/orchestrator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Fix four issues in `pkg/worktree/manager.go` and add/update tests in
+            `pkg/worktree/manager_test.go`.
+
+            ### Fix 1: Add empty-value validation in New
+
+            Change the signature of `New` from returning `*Manager` to returning
+            `(*Manager, error)`. Return a non-nil error when `repoPath == ""` or
+            `slug == ""`.
+
+            Find this exact text in manager.go:
+            ```go
+            func New(repoPath, slug string) *Manager {
+            	return &Manager{
+            		repoPath: repoPath,
+            		slug:     slug,
+            		active:   make(map[string]string),
+            	}
+            }
+            ```
+
+            Replace with:
+            ```go
+            func New(repoPath, slug string) (*Manager, error) {
+            	if repoPath == "" {
+            		return nil, fmt.Errorf("worktree: repoPath must not be empty")
+            	}
+            	if slug == "" {
+            		return nil, fmt.Errorf("worktree: slug must not be empty")
+            	}
+            	return &Manager{
+            		repoPath: repoPath,
+            		slug:     slug,
+            		active:   make(map[string]string),
+            	}, nil
+            }
+            ```
+
+            ### Fix 2: TOCTOU — add branch existence check in Create
+
+            In `Manager.Create`, between the `os.Stat` check and the `git.WorktreeAdd`
+            call, add a `git.BranchExists` check. Use `result.CodeBranchExists`
+            ("G004_BRANCH_EXISTS") — do NOT add a new error code.
+
+            Find this exact text in manager.go:
+            ```go
+            	if _, err := os.Stat(wtPath); err == nil {
+            		return result.NewFailure[CreateData]([]result.SAWError{
+            			result.NewFatal(result.CodeWorktreeCreateFailed,
+            				fmt.Sprintf("worktree: worktree path %q already exists; remove it or use a different wave/agent combination before retrying", wtPath)),
+            		})
+            	}
+
+            	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
+            ```
+
+            Replace with (inserting the BranchExists check between the two blocks):
+            ```go
+            	if _, err := os.Stat(wtPath); err == nil {
+            		return result.NewFailure[CreateData]([]result.SAWError{
+            			result.NewFatal(result.CodeWorktreeCreateFailed,
+            				fmt.Sprintf("worktree: worktree path %q already exists; remove it or use a different wave/agent combination before retrying", wtPath)),
+            		})
+            	}
+
+            	if git.BranchExists(m.repoPath, branch) {
+            		return result.NewFailure[CreateData]([]result.SAWError{
+            			result.NewFatal(result.CodeBranchExists,
+            				fmt.Sprintf("worktree: branch %q already exists; remove it before retrying", branch)),
+            		})
+            	}
+
+            	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
+            ```
+
+            ### Fix 3: Fix CleanupAll error detail loss
+
+            Currently CleanupAll collects `failedPaths []string` and then builds
+            generic errors from them, discarding the original error detail from the
+            Remove call. Fix this by collecting the errors directly.
+
+            Find this exact text in manager.go:
+            ```go
+            	var removedPaths []string
+            	var failedPaths []string
+
+            	for _, path := range paths {
+            		r := m.Remove(path)
+            		if r.IsFatal() {
+            			failedPaths = append(failedPaths, path)
+            			m.log().Warn("worktree: cleanup error", "path", path)
+            		} else {
+            			removedPaths = append(removedPaths, path)
+            		}
+            	}
+            ```
+
+            Replace with:
+            ```go
+            	var removedPaths []string
+            	var failedErrs []result.SAWError
+
+            	for _, path := range paths {
+            		r := m.Remove(path)
+            		if r.IsFatal() {
+            			failedErrs = append(failedErrs, r.Errors...)
+            			m.log().Warn("worktree: cleanup error", "path", path)
+            		} else {
+            			removedPaths = append(removedPaths, path)
+            		}
+            	}
+            ```
+
+            Then find this exact text:
+            ```go
+            	if len(failedPaths) == 0 {
+            		return result.NewSuccess(data)
+            	}
+
+            	// Build errors from failed paths in a single pass.
+            	errs := make([]result.SAWError, 0, len(failedPaths))
+            	for _, p := range failedPaths {
+            		errs = append(errs, result.NewFatal(result.CodeWorktreeCleanup,
+            			fmt.Sprintf("worktree: failed to remove worktree %q", p)))
+            	}
+
+            	if len(removedPaths) == 0 {
+            		// All removals failed — total failure.
+            		return result.NewFailure[CleanupData](errs)
+            	}
+            	// Some succeeded, some failed — partial.
+            	return result.NewPartial(data, errs)
+            ```
+
+            Replace with:
+            ```go
+            	if len(failedErrs) == 0 {
+            		return result.NewSuccess(data)
+            	}
+
+            	if len(removedPaths) == 0 {
+            		// All removals failed — total failure.
+            		return result.NewFailure[CleanupData](failedErrs)
+            	}
+            	// Some succeeded, some failed — partial.
+            	return result.NewPartial(data, failedErrs)
+            ```
+
+            ### Fix 4: Fix doc drift on Manager.Remove
+
+            Update the godoc comment on `Remove`. Find this exact text:
+            ```go
+            // Remove removes the worktree at the given absolute path and deletes its branch.
+            // Returns a result.Result[RemoveData] with the removed path on success, or a
+            // Fatal result if the path is not tracked or the filesystem removal fails.
+            ```
+
+            Replace with:
+            ```go
+            // Remove removes the worktree at the given absolute path and attempts to
+            // delete its branch. Branch deletion is best-effort: if it fails the failure
+            // is logged but does not affect the returned result.
+            // Returns a result.Result[RemoveData] with the removed path on success, or a
+            // Fatal result if the path is not tracked or the filesystem removal fails.
+            ```
+
+            ## Tests to add/update in manager_test.go
+
+            ### Update existing tests for new New signature
+
+            All existing calls to `New(...)` in manager_test.go currently use the
+            single-return form `m := New(...)`. Update each to handle
+            `(*Manager, error)`. For example, `TestManagerNew` must become:
+
+            ```go
+            m, err := New("/some/repo/path", "my-feature")
+            if err != nil {
+                t.Fatalf("New returned error: %v", err)
+            }
+            ```
+
+            Also add a validation block at the end of `TestManagerNew`:
+            ```go
+            // Empty repoPath returns error.
+            _, err = New("", "my-feature")
+            if err == nil {
+                t.Error("New with empty repoPath should return error")
+            }
+            // Empty slug returns error.
+            _, err = New("/some/repo", "")
+            if err == nil {
+                t.Error("New with empty slug should return error")
+            }
+            ```
+
+            Update ALL other functions in manager_test.go that call New(...) —
+            search for `New(` and update each occurrence to the two-return form.
+
+            ### Add TestCreateBranchAlreadyExists
+
+            Add a new test that creates a real worktree, removes the worktree
+            directory manually (bypassing the Manager), then calls Create again
+            expecting CodeBranchExists:
+
+            ```go
+            func TestCreateBranchAlreadyExists(t *testing.T) {
+                repoDir := setupGitRepo(t)
+                m, err := New(repoDir, "branch-exists-test")
+                if err != nil {
+                    t.Fatalf("New: %v", err)
+                }
+                // Create worktree once successfully.
+                r1 := m.Create(1, "Z")
+                if r1.IsFatal() {
+                    t.Fatalf("First Create failed: %v", r1.Errors)
+                }
+                wtPath := r1.GetData().Path
+
+                // Remove the worktree directory via git (force) but keep the branch.
+                if out, err := exec.Command("git", "-C", repoDir, "worktree", "remove", "--force", wtPath).CombinedOutput(); err != nil {
+                    t.Fatalf("git worktree remove: %v: %s", err, out)
+                }
+                // Also remove from the Manager's tracking so os.Stat check passes.
+                delete(m.active, wtPath)
+
+                // Branch still exists — Create should return CodeBranchExists.
+                r2 := m.Create(1, "Z")
+                if !r2.IsFatal() {
+                    t.Fatal("Create with existing branch should return Fatal")
+                }
+                if len(r2.Errors) == 0 {
+                    t.Fatal("Create should have errors")
+                }
+                if r2.Errors[0].Code != result.CodeBranchExists {
+                    t.Errorf("error code = %q; want %q", r2.Errors[0].Code, result.CodeBranchExists)
+                }
+            }
+            ```
+
+            ### Add TestCleanupAllErrorPropagation
+
+            Verify that CleanupAll propagates the original error code from Remove
+            rather than emitting a generic cleanup code:
+
+            ```go
+            func TestCleanupAllErrorPropagation(t *testing.T) {
+                m, err := New("/some/repo", "err-prop-test")
+                if err != nil {
+                    t.Fatalf("New: %v", err)
+                }
+                // Inject a fake tracked path that has no real worktree (Remove will fail).
+                fakePath := "/tmp/nonexistent-for-error-prop-test"
+                m.active[fakePath] = "saw/err-prop-test/wave1-agent-fake"
+
+                r := m.CleanupAll()
+                // All removals failed — expect Fatal.
+                if !r.IsFatal() {
+                    t.Fatalf("CleanupAll should be Fatal when all removals fail; got code=%q", r.Code)
+                }
+                if len(r.Errors) == 0 {
+                    t.Fatal("CleanupAll should have errors")
+                }
+                // Error code must be from Remove (G008), not the old generic cleanup code (G007).
+                for _, e := range r.Errors {
+                    if e.Code != result.CodeWorktreeRemoveFailed {
+                        t.Errorf("error code = %q; want %q (original Remove error must be propagated)",
+                            e.Code, result.CodeWorktreeRemoveFailed)
+                    }
+                }
+            }
+            ```
+
+            ## Verification gate
+            ```
+            go build ./pkg/worktree/...
+            go vet ./pkg/worktree/...
+            go test ./pkg/worktree/... -run TestManagerNew -v
+            go test ./pkg/worktree/... -run TestCreateBranchAlreadyExists -v
+            go test ./pkg/worktree/... -run TestCleanupAllErrorPropagation -v
+            go test ./pkg/worktree/... -count=1
+            ```
+
+            Postconditions (run after tests pass):
+            ```
+            grep "(\*Manager, error)" pkg/worktree/manager.go
+            # Expected: one line containing the new func New signature
+
+            grep "CodeBranchExists" pkg/worktree/manager.go
+            # Expected: at least one matching line
+
+            grep "failedErrs" pkg/worktree/manager.go
+            # Expected: at least two matching lines (declaration + usage)
+            ```
+
+            ## Constraints
+            - Do NOT modify pkg/orchestrator/orchestrator.go — that file is owned by Agent B.
+            - Do NOT add a new error code for the branch-exists case; use result.CodeBranchExists
+              ("G004_BRANCH_EXISTS") which already exists in pkg/result/codes.go.
+            - Do NOT change the Manager.Remove or Manager.CleanupAll method signatures.
+            - Do NOT modify any file outside pkg/worktree/manager.go and
+              pkg/worktree/manager_test.go.
+          files:
+            - pkg/worktree/manager.go
+            - pkg/worktree/manager_test.go
+        - id: B
+          task: |
+            ## What to implement
+
+            Wire Manager.CleanupAll and handle the new worktree.New error return
+            in `pkg/orchestrator/orchestrator.go`.
+
+            IMPORTANT: Agent A changes worktree.New from returning *Manager to
+            returning (*Manager, error). You must update both call sites in
+            orchestrator.go to handle this new signature. Write code for the new
+            two-return signature — your worktree will compile correctly after merge.
+
+            ### Fix 1: Update worktree.New call site in RunWave
+
+            Find this exact text in orchestrator.go:
+            ```go
+            	// Build the worktree manager and default agent runner.
+            	slug := o.implSlug(ctx)
+            	wm := worktree.New(o.repoPath, slug)
+            ```
+
+            Replace with:
+            ```go
+            	// Build the worktree manager and default agent runner.
+            	slug := o.implSlug(ctx)
+            	wm, wmErr := worktree.New(o.repoPath, slug)
+            	if wmErr != nil {
+            		return result.NewFailure[WaveData]([]result.SAWError{
+            			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
+            		})
+            	}
+            ```
+
+            ### Fix 2: Wire CleanupAll after agents complete in RunWave
+
+            After agents complete successfully (after eg.Wait() returns nil),
+            call wm.CleanupAll() as a best-effort cleanup and log any errors.
+            Do NOT return failure from RunWave due to CleanupAll errors.
+
+            Find this exact text in orchestrator.go:
+            ```go
+            	if err := eg.Wait(); err != nil {
+            		return result.NewFailure[WaveData]([]result.SAWError{
+            			result.NewFatal(result.CodeAgentLaunchFailed, err.Error()),
+            		})
+            	}
+
+            	// All agents in the wave completed successfully.
+            	o.publish(OrchestratorEvent{
+            		Event: "wave_complete",
+            ```
+
+            Replace with:
+            ```go
+            	if err := eg.Wait(); err != nil {
+            		return result.NewFailure[WaveData]([]result.SAWError{
+            			result.NewFatal(result.CodeAgentLaunchFailed, err.Error()),
+            		})
+            	}
+
+            	// Best-effort cleanup of any worktrees tracked by this Manager instance.
+            	// merge.go handles removal of worktrees after merge; this catches any
+            	// that were created before merge runs or that merge.go missed.
+            	if cleanupResult := wm.CleanupAll(); cleanupResult.IsFatal() || cleanupResult.IsPartial() {
+            		for _, e := range cleanupResult.Errors {
+            			o.log().Warn("orchestrator.RunWave: worktree cleanup warning", "code", e.Code, "msg", e.Message)
+            		}
+            	}
+
+            	// All agents in the wave completed successfully.
+            	o.publish(OrchestratorEvent{
+            		Event: "wave_complete",
+            ```
+
+            ### Fix 3: Update worktree.New call site in RunAgent
+
+            Find this exact text in orchestrator.go:
+            ```go
+            	// Build worktree manager and backend.
+            	wm := worktree.New(o.repoPath, o.implSlug(ctx))
+            ```
+
+            Replace with:
+            ```go
+            	// Build worktree manager and backend.
+            	wm, wmErr := worktree.New(o.repoPath, o.implSlug(ctx))
+            	if wmErr != nil {
+            		return result.NewFailure[AgentData]([]result.SAWError{
+            			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
+            		})
+            	}
+            ```
+
+            ## Verification gate
+            ```
+            go build ./pkg/orchestrator/...
+            go vet ./pkg/orchestrator/...
+            go test ./pkg/orchestrator/... -count=1
+            ```
+
+            Postconditions (run after tests pass):
+            ```
+            grep -c "worktree\.New" pkg/orchestrator/orchestrator.go
+            # Expected: 2 (both call sites updated)
+
+            grep "wmErr" pkg/orchestrator/orchestrator.go | wc -l
+            # Expected: at least 4 lines (two captures, two checks)
+
+            grep "CleanupAll" pkg/orchestrator/orchestrator.go | wc -l
+            # Expected: at least 1 line
+            ```
+
+            ### Fix 4: Update worktree.New calls in structured_wave_test.go
+
+            `pkg/orchestrator/structured_wave_test.go` has 8 calls to `worktree.New`
+            using the old single-return form. Update all of them to handle the new
+            `(*Manager, error)` return. Search for `worktree.New(` in that file and
+            update each occurrence. Pattern:
+
+            ```go
+            // Before:
+            wm := worktree.New(repoPath, slug)
+
+            // After:
+            wm, err := worktree.New(repoPath, slug)
+            if err != nil {
+                t.Fatalf("worktree.New: %v", err)
+            }
+            ```
+
+            Run `go build ./pkg/orchestrator/...` after to confirm all call sites compile.
+
+            ## Constraints
+            - Do NOT modify pkg/worktree/manager.go or pkg/worktree/manager_test.go
+              — those files are owned by Agent A.
+            - Do NOT modify pkg/orchestrator/merge.go — merge.go already handles
+              per-worktree removal after merge via git.WorktreeRemove directly.
+              The CleanupAll call in RunWave is a safety net only.
+            - Do NOT return a fatal error from RunWave due to CleanupAll failures;
+              log them as warnings only.
+            - Do NOT modify pkg/orchestrator/orchestrator_test.go — it is in scope for reading and compilation verification only; do not add or change any tests in it.
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/structured_wave_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/worktree/... ./pkg/orchestrator/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            Agent B writes wm, wmErr := worktree.New(...) but the compiler sees
+            the old single-return signature in its isolated worktree (Agent A's
+            branch not yet merged). Build fails in Agent B's worktree.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent B should write code for the new two-return signature regardless.
+            The build failure in isolation is expected and resolves at merge time
+            when Agent A's changes are merged first. Agent B must document the
+            compilation state in its completion report if worktrees are merged
+            sequentially. Alternatively, orchestrate Agent A's merge before
+            launching Agent B, treating this as a two-step wave.
+        - scenario: |-
+            Agent A changes CleanupAll error collection logic and accidentally
+            breaks the partial vs. total-failure distinction.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            The existing TestCleanupAllPartial test covers this distinction.
+            Agent A must run the full pkg/worktree/... test suite and verify it
+            passes. The new TestCleanupAllErrorPropagation test explicitly checks
+            the error code is G008 (not G007).
+        - scenario: |-
+            Agent B calls wm.CleanupAll() in RunWave but the Manager active map
+            is empty because merge.go already removed the worktrees. CleanupAll
+            logs no-op result with RemovedCount=0.
+          likelihood: high
+          impact: low
+          mitigation: |-
+            This is acceptable. CleanupAll on an empty active map returns Success
+            with RemovedCount=0 (covered by TestCleanupAllEmpty). The CleanupAll
+            call is a safety net for early-exit cases, not the primary removal path.
+            No additional handling needed.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+            issues:
+                - check: caller_exhaustiveness
+                  severity: warning
+                  description: structured_wave_test.go contains 8 calls to worktree.New using the old single-return form. After Agent A changes New to return (*Manager, error), these test calls will fail to compile. The file is a test file (*_test.go) and is not in file_ownership, so this is a warning only. Expect a test cascade that will need a follow-up fix.
+                  file: pkg/orchestrator/structured_wave_test.go
+                  symbol: worktree.New
+        B:
+            agent_id: B
+            verdict: PASS
+            issues:
+                - check: caller_exhaustiveness
+                  severity: warning
+                  description: 'structured_wave_test.go calls worktree.New 8 times with the old single-return form. Agent B is not assigned this file, and it is a test file (*_test.go). These calls will fail to compile once Agent A merges the signature change. Advisory: consider adding structured_wave_test.go to file_ownership or handling in a follow-up wave.'
+                  file: pkg/orchestrator/structured_wave_test.go
+                  symbol: worktree.New
+    summary: 'Both agent briefs are accurate against the codebase. All exact ''find'' text blocks in manager.go and orchestrator.go match the current source. All referenced symbols exist with correct signatures: git.BranchExists(repoPath, branch), result.CodeBranchExists, result.CodeWorktreeCreateFailed, result.CodeWorktreeRemoveFailed, result.SAWError.Message, cleanupResult.IsFatal(), cleanupResult.IsPartial(), and o.log(). One warning is raised for each agent: structured_wave_test.go contains 8 calls to worktree.New that are not in Agent B''s file_ownership table — after Agent A changes the New signature these test files will break. These are test files (*_test.go) so they are advisory warnings per the caller exhaustiveness check, not errors. Wave execution may proceed.'
+    reviewed_at: "2026-04-05T02:47:06Z"
+    issue_count: 2
+state: SCOUT_PENDING
+injection_method: manual-fallback
