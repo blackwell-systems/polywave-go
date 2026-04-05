@@ -529,6 +529,7 @@ waves:
           files:
             - pkg/protocol/solver_integration.go
             - pkg/protocol/solver_critical_path_test.go
+      base_commit: c3ae9c34d224c37e8a4cf650da5b33bd375645fd
 quality_gates:
     level: standard
     gates:
@@ -541,6 +542,38 @@ quality_gates:
         - type: test
           command: go test ./pkg/solver/... ./pkg/protocol/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/solver-graph-wiring/wave1-agent-A
+        commit: 51e27c3
+        files_changed:
+            - pkg/solver/solver.go
+            - pkg/solver/solver_test.go
+        verification: PASS
+        notes: Replaced inline missing-ref loop with ValidateRefs call. Updated TestSolve_MissingDependency assertion to match new error format. All 10 TestSolve tests pass.
+    B:
+        status: complete
+        branch: saw/solver-graph-wiring/wave1-agent-B
+        commit: 3c6ce8f
+        files_changed:
+            - pkg/solver/graph.go
+            - pkg/solver/graph_test.go
+        verification: PASS
+        notes: Unexported DetectCycles->detectCycles and TransitiveDeps->transitiveDeps. Added doc comment explaining intentional separation from pkg/analyzer detectCycles. All 11 tests pass. All postconditions verified.
+    C:
+        status: complete
+        branch: saw/solver-graph-wiring/wave1-agent-C
+        commit: fa9ac9d
+        files_changed:
+            - pkg/protocol/solver_integration.go
+        files_created:
+            - pkg/protocol/solver_critical_path_test.go
+        tests_added:
+            - TestValidateWithSolver_OverSequenced
+            - TestValidateWithSolver_OverSequencedWarns
+        verification: PASS
+        notes: checkCriticalPath helper added; advisory SOLVER_OVER_SEQUENCED warning wired into ValidateWithSolver. All 8 solver tests pass.
 pre_mortem:
     overall_risk: low
     rows:
@@ -607,4 +640,10 @@ critic_report:
         ValidateRefs message format. pkg/solver/solver_test.go has been added to Agent A's owned files.
     reviewed_at: "2026-04-05T05:23:12Z"
     issue_count: 0
-state: SCOUT_PENDING
+state: REVIEWED
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
