@@ -91,6 +91,11 @@ func TestNCodesFollowNamingPattern(t *testing.T) {
 		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
 		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
 		{"CodeCallerCascadeHotfixFailed", CodeCallerCascadeHotfixFailed},
+		{"CodeManifestSaveFailed", CodeManifestSaveFailed},
+		{"CodeReportSetFailed", CodeReportSetFailed},
+		{"CodePipelineRunFailed", CodePipelineRunFailed},
+		{"CodeStepExecutionFailed", CodeStepExecutionFailed},
+		{"CodeRequiredKeyMissing", CodeRequiredKeyMissing},
 	}
 	for _, tc := range ncodes {
 		t.Run(tc.name, func(t *testing.T) {
@@ -157,6 +162,7 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeRepoMismatch", CodeRepoMismatch},
 		{"CodeParseError", CodeParseError},
 		{"CodeTrivialScope", CodeTrivialScope},
+		{"CodeGateTargetsNewFile", CodeGateTargetsNewFile},
 		// W codes
 		{"CodeAgentScopeLarge", CodeAgentScopeLarge},
 		{"CodeCompletionVerificationWarning", CodeCompletionVerificationWarning},
@@ -282,6 +288,11 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeEngineAlreadyInitialized", CodeEngineAlreadyInitialized},
 		{"CodeFinalizeStepFailed", CodeFinalizeStepFailed},
 		{"CodeCallerCascadeHotfixFailed", CodeCallerCascadeHotfixFailed},
+		{"CodeManifestSaveFailed", CodeManifestSaveFailed},
+		{"CodeReportSetFailed", CodeReportSetFailed},
+		{"CodePipelineRunFailed", CodePipelineRunFailed},
+		{"CodeStepExecutionFailed", CodeStepExecutionFailed},
+		{"CodeRequiredKeyMissing", CodeRequiredKeyMissing},
 		// Q codes
 		{"CodeQueueAddFailed", CodeQueueAddFailed},
 		{"CodeQueueListFailed", CodeQueueListFailed},
@@ -300,6 +311,9 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeTypeCollisionFatal", CodeTypeCollisionFatal},
 		{"CodeCriticGateFailed", CodeCriticGateFailed},
 		{"CodeTierConflictDetected", CodeTierConflictDetected},
+		{"CodeWaveNotFound", CodeWaveNotFound},
+		{"CodeUnknownAgentInOwnership", CodeUnknownAgentInOwnership},
+		{"CodeAmendBlocked", CodeAmendBlocked},
 		// T codes
 		{"CodeToolError", CodeToolError},
 		{"CodeParsePanic", CodeParsePanic},
@@ -384,6 +398,24 @@ func TestAllCodesAreUnique(t *testing.T) {
 		{"CodeAnalyzeManifestNil", CodeAnalyzeManifestNil},
 		{"CodeAnalyzeCircularAgentDep", CodeAnalyzeCircularAgentDep},
 		{"CodeAnalyzeWalkFailed", CodeAnalyzeWalkFailed},
+		// J codes
+		{"CodeJournalArchiveCreateFailed", CodeJournalArchiveCreateFailed},
+		{"CodeJournalArchiveMetaFailed", CodeJournalArchiveMetaFailed},
+		{"CodeJournalArchiveExtractFailed", CodeJournalArchiveExtractFailed},
+		{"CodeJournalArchiveListFailed", CodeJournalArchiveListFailed},
+		{"CodeJournalArchiveCleanupFailed", CodeJournalArchiveCleanupFailed},
+		{"CodeJournalCheckpointInvalidName", CodeJournalCheckpointInvalidName},
+		{"CodeJournalCheckpointCreateFailed", CodeJournalCheckpointCreateFailed},
+		{"CodeJournalCheckpointAlreadyExists", CodeJournalCheckpointAlreadyExists},
+		{"CodeJournalCheckpointNotFound", CodeJournalCheckpointNotFound},
+		{"CodeJournalCheckpointCopyFailed", CodeJournalCheckpointCopyFailed},
+		{"CodeJournalCheckpointDeleteFailed", CodeJournalCheckpointDeleteFailed},
+		{"CodeJournalObserverCursorFailed", CodeJournalObserverCursorFailed},
+		{"CodeJournalObserverAppendFailed", CodeJournalObserverAppendFailed},
+		{"CodeJournalObserverUpdateFailed", CodeJournalObserverUpdateFailed},
+		// O codes
+		{"CodeObsEmitFailed", CodeObsEmitFailed},
+		{"CodeObsQueryFailed", CodeObsQueryFailed},
 	}
 
 	seen := make(map[string]string) // value -> constant name
