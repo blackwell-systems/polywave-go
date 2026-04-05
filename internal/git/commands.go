@@ -540,6 +540,45 @@ func Add(repoPath string, paths ...string) error {
 	return nil
 }
 
+// AddForce stages paths using "git add -f", bypassing .gitignore rules.
+// Use this when staging files that are tracked but have been gitignored
+// (e.g. SAW state files where .gitignore was added after initial tracking).
+func AddForce(repoPath string, paths ...string) error {
+	args := append([]string{"add", "-f"}, paths...)
+	_, err := Run(repoPath, args...)
+	if err != nil {
+		return fmt.Errorf("git add -f failed: %w", err)
+	}
+	return nil
+}
+
+// CheckIgnored returns the subset of paths that are gitignored according to
+// the repository's .gitignore rules. Exit code 1 from git check-ignore means
+// no paths are ignored — this is not an error.
+func CheckIgnored(repoPath string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	cmd := exec.Command("git", "check-ignore", "--stdin")
+	cmd.Dir = repoPath
+	cmd.Stdin = strings.NewReader(strings.Join(paths, "\n"))
+	out, err := cmd.Output()
+	// Exit code 1 means no paths are ignored — not an error
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("git check-ignore failed: %w", err)
+	}
+	var ignored []string
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if line != "" {
+			ignored = append(ignored, line)
+		}
+	}
+	return ignored, nil
+}
+
 // CommitWithMessage creates a commit with the given message in the repository
 // at repoPath. Unlike Commit(), this does NOT pass --no-verify, so pre-commit
 // hooks run. Use this for protocol-layer commits (state transitions) where

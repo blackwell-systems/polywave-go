@@ -405,8 +405,34 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		recordStep(res, opts.OnEvent, "working_dir_check", "warning",
 			fmt.Sprintf("could not check git status: %v", err))
 	} else if len(out) > 0 {
-		// Working directory is dirty
-		modifiedFiles := strings.Split(strings.TrimSpace(string(out)), "\n")
+		// Working directory is dirty — but filter out gitignored tracked files.
+		// These show in git status --porcelain because they were committed before
+		// being added to .gitignore. They cannot be re-staged without -f, and
+		// blocking wave preparation on them causes a deadlock.
+		allFiles := strings.Split(strings.TrimSpace(string(out)), "\n")
+		rawPaths := make([]string, 0, len(allFiles))
+		for _, f := range allFiles {
+			trimmed := strings.TrimSpace(f)
+			if len(trimmed) > 2 {
+				rawPaths = append(rawPaths, strings.TrimSpace(trimmed[2:]))
+			}
+		}
+		ignoredPaths, _ := git.CheckIgnored(projectRoot, rawPaths)
+		ignoredSet := make(map[string]bool, len(ignoredPaths))
+		for _, p := range ignoredPaths {
+			ignoredSet[p] = true
+		}
+		var modifiedFiles []string
+		for _, f := range allFiles {
+			trimmed := strings.TrimSpace(f)
+			path := ""
+			if len(trimmed) > 2 {
+				path = strings.TrimSpace(trimmed[2:])
+			}
+			if !ignoredSet[path] {
+				modifiedFiles = append(modifiedFiles, f)
+			}
+		}
 		fileCount := len(modifiedFiles)
 
 		if opts.CommitBaseline {
@@ -456,7 +482,10 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 					if len(trimmed) > 3 {
 						trimmed = strings.TrimSpace(trimmed[2:])
 					}
-					if _, addErr := git.Run(projectRoot, "add", trimmed); addErr != nil {
+					// Use AddForce so gitignored-but-tracked files (e.g.
+					// .saw-state/gate-cache.json committed before the path was
+					// added to .gitignore) can still be staged without deadlock.
+					if addErr := git.AddForce(projectRoot, trimmed); addErr != nil {
 						recordStep(res, opts.OnEvent, "commit_state", "failed",
 							fmt.Sprintf("failed to stage %s: %v", trimmed, addErr))
 						return res, fmt.Errorf("failed to stage SAW state file %s: %w", trimmed, addErr)
