@@ -374,3 +374,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-retry-silent-failures.yaml
 - **result-queue-error-fixes**: completed 2026-04-04, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-result-queue-error-fixes.yaml
+- **protocol-behavioral-fixes**: completed 2026-04-05, 1 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-protocol-behavioral-fixes.yaml

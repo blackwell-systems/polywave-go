@@ -1,3 +1,4 @@
+completion_date: "2026-04-05"
 title: Protocol Inspector Behavioral Fixes (F1, F6, F10)
 feature_slug: protocol-behavioral-fixes
 verdict: SUITABLE
@@ -745,7 +746,7 @@ critic_report:
     summary: Skipped by operator (--skip-critic)
     reviewed_at: "2026-04-05T12:19:10Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 injection_method: hook
 integration_reports:
     wave1:
