@@ -35,6 +35,15 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) result.R
 		})
 	}
 
+	if _, err := os.Stat(repoRoot); err != nil {
+		sawErr := result.SAWError{
+			Code:     result.CodeSuitabilityFileStatFailed,
+			Message:  fmt.Sprintf("repo root does not exist or is not accessible: %s", repoRoot),
+			Severity: "fatal",
+		}.WithCause(err)
+		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
+	}
+
 	scanResult := SuitabilityResult{
 		PreImplementation: PreImplStatus{
 			TotalItems: len(requirements),
@@ -61,6 +70,10 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) result.R
 		case "PARTIAL":
 			scanResult.PreImplementation.Partial++
 		case "TODO":
+			scanResult.PreImplementation.Todo++
+		default:
+			// Unknown or zero-value status: count as Todo to preserve
+			// the Done+Partial+Todo==TotalItems invariant.
 			scanResult.PreImplementation.Todo++
 		}
 	}
@@ -89,7 +102,7 @@ func classifyRequirement(repoRoot string, req Requirement) (ItemStatus, error) {
 	for _, file := range req.Files {
 		status, err := ClassifyFile(filepath.Join(repoRoot, file), req)
 		if err != nil {
-			return ItemStatus{Missing: []string{}}, err
+			return ItemStatus{ID: req.ID, File: filepath.Join(repoRoot, file), Missing: []string{}}, err
 		}
 		fileStatuses = append(fileStatuses, status)
 	}
@@ -186,7 +199,11 @@ func ClassifyFile(filePath string, req Requirement) (ItemStatus, error) {
 			status.Missing = append(status.Missing, "file does not exist")
 			return status, nil
 		}
-		return status, fmt.Errorf("failed to read file %s: %w", filePath, err)
+		return status, result.SAWError{
+			Code:     result.CodeSuitabilityFileReadFailed,
+			Message:  fmt.Sprintf("failed to read file %s", filePath),
+			Severity: "fatal",
+		}.WithCause(err)
 	}
 
 	contentStr := string(content)

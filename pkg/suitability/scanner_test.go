@@ -1,10 +1,13 @@
 package suitability
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 func TestScanPreImplementation_AllDone(t *testing.T) {
@@ -672,6 +675,95 @@ Location: migrations/001_init.sql
 	}
 	if reqs[1].Files[0] != "migrations/001_init.sql" {
 		t.Errorf("expected file='migrations/001_init.sql', got %q", reqs[1].Files[0])
+	}
+}
+
+func TestScanPreImplementation_RepoRootNotExist(t *testing.T) {
+	nonexistent := "/nonexistent/path/that/does/not/exist"
+	r := ScanPreImplementation(nonexistent, []Requirement{
+		{ID: "R1", Description: "test", Files: []string{"foo.go"}},
+	})
+	if !r.IsFatal() {
+		t.Fatal("expected fatal result for non-existent repoRoot")
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
+	}
+	if r.Errors[0].Code != result.CodeSuitabilityFileStatFailed {
+		t.Errorf("expected code %s, got %s",
+			result.CodeSuitabilityFileStatFailed, r.Errors[0].Code)
+	}
+}
+
+func TestScanPreImplementation_CountInvariant(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Write a partial file (has a TODO marker)
+	partialContent := "package x\n\nfunc F() {\n\t// TODO: implement\n}\n"
+	if err := os.WriteFile(filepath.Join(tmpDir, "partial.go"), []byte(partialContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	reqs := []Requirement{
+		{ID: "R1", Description: "partial req", Files: []string{"partial.go"}},
+		{ID: "R2", Description: "missing req", Files: []string{"missing.go"}},
+	}
+	r := ScanPreImplementation(tmpDir, reqs)
+	if r.IsFatal() {
+		t.Fatalf("unexpected fatal: %v", r.Errors)
+	}
+	d := r.GetData()
+	total := d.PreImplementation.TotalItems
+	counted := d.PreImplementation.Done + d.PreImplementation.Partial + d.PreImplementation.Todo
+	if counted != total {
+		t.Errorf("count invariant violated: Done(%d)+Partial(%d)+Todo(%d)=%d != TotalItems(%d)",
+			d.PreImplementation.Done, d.PreImplementation.Partial,
+			d.PreImplementation.Todo, counted, total)
+	}
+}
+
+func TestClassifyFile_UnreadableFilePopulatesIDAndFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can read mode-0000 files; skip unreadable-file test")
+	}
+	tmpDir := t.TempDir()
+	unreadable := filepath.Join(tmpDir, "unreadable.go")
+	if err := os.WriteFile(unreadable, []byte("package x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unreadable, 0000); err != nil {
+		t.Fatal(err)
+	}
+	r := ScanPreImplementation(tmpDir, []Requirement{
+		{ID: "R1", Description: "unreadable", Files: []string{"unreadable.go"}},
+	})
+	if !r.IsFatal() {
+		t.Fatal("expected fatal result for unreadable file")
+	}
+}
+
+func TestClassifyFile_NonExistReadErrorUsesS004(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can read mode-0000 files; skip unreadable-file test")
+	}
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "locked.go")
+	if err := os.WriteFile(f, []byte("package x\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(f, 0000); err != nil {
+		t.Fatal(err)
+	}
+	req := Requirement{ID: "T1", Description: "locked", Files: []string{f}}
+	_, err := ClassifyFile(f, req)
+	if err == nil {
+		t.Fatal("expected error for unreadable file")
+	}
+	var sawErr result.SAWError
+	if !errors.As(err, &sawErr) {
+		t.Fatalf("expected result.SAWError, got %T: %v", err, err)
+	}
+	if sawErr.Code != result.CodeSuitabilityFileReadFailed {
+		t.Errorf("expected code %s, got %s",
+			result.CodeSuitabilityFileReadFailed, sawErr.Code)
 	}
 }
 
