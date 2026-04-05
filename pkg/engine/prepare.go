@@ -14,6 +14,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -892,6 +893,17 @@ func extractBriefsAndInitJournals(
 
 		if agentTask == "" {
 			return nil, fmt.Errorf("agent %s not found in wave %d", agentID, opts.WaveNum)
+		}
+
+		// Pre-launch gate: validate preconditions before writing brief.
+		// wtInfo.Path is the worktree path for this agent.
+		gateRes := hooks.PreLaunchGate(doc, opts.WaveNum, agentID, opts.RepoPath, wtInfo.Path)
+		if gateRes.IsPartial() || !gateRes.IsSuccess() {
+			var errParts []string
+			for _, e := range gateRes.Errors {
+				errParts = append(errParts, e.Message)
+			}
+			return nil, fmt.Errorf("pre-launch gate failed for agent %s: %s", agentID, strings.Join(errParts, "; "))
 		}
 
 		// Extract interface contracts

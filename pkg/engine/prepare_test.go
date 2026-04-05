@@ -274,3 +274,26 @@ func TestPrepareWave_CommitState_UserCodeDirty(t *testing.T) {
 		t.Errorf("expected .saw-state/gate-cache.json to be classified as SAW-owned")
 	}
 }
+
+func TestPrepareWave_PreLaunchGate_StepMessageFormat(t *testing.T) {
+	// Verify that when PrepareWave fails early (before reaching extract_briefs),
+	// the error does not contain "pre-launch gate" — the gate only fires
+	// inside extractBriefsAndInitJournals which runs after worktree creation.
+	// This test guards against false positives in error message detection.
+	res, err := PrepareWave(context.Background(), PrepareWaveOpts{
+		IMPLPath: "/tmp/nonexistent-impl-gate-test.yaml",
+		RepoPath: "/tmp/nonexistent-repo",
+		WaveNum:  1,
+	})
+
+	if err == nil {
+		t.Fatal("expected error for nonexistent paths")
+	}
+	if res == nil {
+		t.Fatal("expected partial result")
+	}
+	// Error should be a dep_check or load_manifest failure, not a gate failure
+	if strings.Contains(err.Error(), "pre-launch gate") {
+		t.Errorf("unexpected pre-launch gate error at early pipeline stage: %v", err)
+	}
+}
