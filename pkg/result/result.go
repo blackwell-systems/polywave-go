@@ -56,10 +56,12 @@ func (e SAWError) IsFatal() bool { return e.Severity == "fatal" }
 
 // WithContext returns a copy of the error with an additional context key-value pair.
 func (e SAWError) WithContext(key, value string) SAWError {
-	if e.Context == nil {
-		e.Context = make(map[string]string)
+	newCtx := make(map[string]string, len(e.Context)+1)
+	for k, v := range e.Context {
+		newCtx[k] = v
 	}
-	e.Context[key] = value
+	newCtx[key] = value
+	e.Context = newCtx
 	return e
 }
 
@@ -82,6 +84,11 @@ func NewFatal(code, message string) SAWError {
 // NewWarning creates a SAWError with severity "warning".
 func NewWarning(code, message string) SAWError {
 	return SAWError{Code: code, Message: message, Severity: "warning"}
+}
+
+// NewInfo creates a SAWError with severity "info".
+func NewInfo(code, message string) SAWError {
+	return SAWError{Code: code, Message: message, Severity: "info"}
 }
 
 // IsSuccess returns true when Code is "SUCCESS" and no errors exist.
