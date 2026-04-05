@@ -1,0 +1,692 @@
+title: Protocol Inspector Behavioral Fixes (F1, F6, F10)
+feature_slug: protocol-behavioral-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    Three independent inspector findings affecting pkg/protocol with minimal overlap.
+
+    F1 (FailureCategory/FailureTypeEnum unification): Two types with 4/5 overlapping
+    values. FailureCategory is used only in types.go (definition) and pkg/resume/recovery.go
+    (consumer). FailureTypeEnum is used in failure.go (definition), completion_report.go,
+    reactions_validation, and pkg/orchestrator/failure.go. Web app has NO Go source usage
+    of either type (only old IMPL doc references). Unification is safe within Go SDK.
+
+    F6 (context.Context threading): PrepareTier uses context.TODO() at 3 call sites.
+    ValidateProgramImportMode uses context.TODO() at 1 call site. Split into 3 agents
+    (B=definitions, D=cmd/engine callers, E=tests) to stay under LOC budget.
+
+    F10 (state guard): allowedTransitions permits WAVE_EXECUTING -> COMPLETE directly.
+    This is intentional for solo-wave (IsSoloWave helper exists). Guard needs to warn
+    when multi-agent waves use this shortcut with unmerged branches.
+
+    Cross-repo check: Web app has zero Go source references to FailureCategory or
+    FailureTypeEnum. All callers of ValidateProgramImportMode and PrepareTier are within
+    scout-and-wave-go. No cross-repo changes needed.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~5 min (5 agents, single wave, parallel)
+    - Merge & verification: ~3 min
+    Total SAW time: ~16 min
+    Sequential baseline: ~25 min
+    Time savings: ~9 min (36% faster)
+    Recommendation: Clear speedup from parallel execution + coordination value.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/failure.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/failure_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/resume/recovery.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/resume/recovery_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/completion_report.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_prepare.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_validation.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/protocol/full_validate.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/prepare_tier_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: cmd/sawtools/validate_program_cmd.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/engine/program_tier_loop.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/engine/import_impls.go
+      agent: D
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_tier_prepare_test.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/program_validation_test.go
+      agent: E
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: pkg/protocol/state_transition_test.go
+      agent: C
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: FailureCategory type alias
+      description: |
+        After unification, FailureCategory becomes a type alias for FailureTypeEnum.
+        Add FailureUnknown constant to FailureTypeEnum.
+      definition: |
+        type FailureCategory = FailureTypeEnum
+        FailureUnknown FailureTypeEnum = "unknown"
+      location: pkg/protocol/types.go
+    - name: PrepareTierOpts.Ctx field
+      description: |
+        Add Ctx context.Context to PrepareTierOpts, threaded to all Load/Save calls.
+      definition: |
+        type PrepareTierOpts struct {
+            Ctx                 context.Context
+            ProgramManifestPath string
+            TierNumber          int
+            RepoDir             string
+            SkipCritic          bool
+            RunPrepareWave      bool
+            WaveNum             int
+            MergeTarget         string
+        }
+      location: pkg/protocol/program_tier_prepare.go
+    - name: ValidateProgramImportMode ctx parameter
+      description: |
+        Add ctx context.Context as first parameter.
+      definition: |
+        func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, repoPath string) []result.SAWError
+      location: pkg/protocol/program_validation.go
+    - name: ValidateStateTransitionContext guard
+      description: |
+        New function that performs conditional validation on WAVE_EXECUTING -> COMPLETE.
+      definition: |
+        func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolState) []result.SAWError
+      location: pkg/protocol/state_transition.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## F1: Unify FailureCategory and FailureTypeEnum
+
+            ### What to implement
+
+            Two string types represent the same concept (failure classification):
+            - `FailureCategory` (types.go:221): values "transient", "fixable",
+              "needs_replan", "timeout", "unknown"
+            - `FailureTypeEnum` (failure.go:4): values "transient", "fixable",
+              "needs_replan", "escalate", "timeout"
+
+            Unify into `FailureTypeEnum` as canonical type. Make `FailureCategory`
+            a type alias.
+
+            **Step 1: Add `FailureUnknown` to failure.go**
+
+            In `pkg/protocol/failure.go`, add inside the existing const block.
+
+            Find this exact text:
+            ```go
+            	// FailureTimeout indicates the agent ran out of time and should retry with scope reduction.
+            	FailureTimeout FailureTypeEnum = "timeout"
+            )
+            ```
+
+            Replace with:
+            ```go
+            	// FailureTimeout indicates the agent ran out of time and should retry with scope reduction.
+            	FailureTimeout FailureTypeEnum = "timeout"
+
+            	// FailureUnknown indicates an unclassified failure (legacy "unknown" category).
+            	FailureUnknown FailureTypeEnum = "unknown"
+            )
+            ```
+
+            **Step 2: Update ValidFailureType in failure.go**
+
+            Find this exact text:
+            ```go
+            	case FailureTransient, FailureFixable, FailureNeedsReplan, FailureEscalate, FailureTimeout:
+            		return true
+            ```
+
+            Change to:
+            ```go
+            	case FailureTransient, FailureFixable, FailureNeedsReplan, FailureEscalate, FailureTimeout, FailureUnknown:
+            		return true
+            ```
+
+            **Step 3: Convert FailureCategory to type alias in types.go**
+
+            Find this exact text:
+            ```go
+            // FailureCategory classifies an agent failure for recovery step generation.
+            type FailureCategory string
+
+            const (
+            	FailureCategoryTransient   FailureCategory = "transient"
+            	FailureCategoryFixable     FailureCategory = "fixable"
+            	FailureCategoryNeedsReplan FailureCategory = "needs_replan"
+            	FailureCategoryTimeout     FailureCategory = "timeout"
+            	FailureCategoryUnknown     FailureCategory = "unknown"
+            )
+            ```
+
+            Replace with:
+            ```go
+            // FailureCategory is a deprecated alias for FailureTypeEnum.
+            // Use FailureTypeEnum directly in new code.
+            type FailureCategory = FailureTypeEnum
+
+            // Backward-compatible constants mapping FailureCategory names to FailureTypeEnum values.
+            const (
+            	FailureCategoryTransient   = FailureTransient
+            	FailureCategoryFixable     = FailureFixable
+            	FailureCategoryNeedsReplan = FailureNeedsReplan
+            	FailureCategoryTimeout     = FailureTimeout
+            	FailureCategoryUnknown     = FailureUnknown
+            	FailureCategoryEscalate    = FailureEscalate
+            )
+            ```
+
+            **Step 4: Verify recovery.go compiles**
+
+            In `pkg/resume/recovery.go`, the code assigns to `FailureCategory` (now
+            an alias for FailureTypeEnum). No code changes needed — verify it compiles.
+
+            **Step 5: Update failure_test.go**
+
+            Update `TestShouldRetry_Unknown` (line 35) which uses
+            `FailureTypeEnum("unknown")` — change to `FailureUnknown` constant.
+
+            Add test: `ValidFailureType("unknown")` should return true.
+
+            **Step 6: Verify completion_report.go**
+
+            Check for hardcoded failure type lists in comments; update to include "unknown".
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/protocol/... ./pkg/resume/... ./pkg/orchestrator/...
+            go vet ./pkg/protocol/... ./pkg/resume/...
+            go test ./pkg/protocol/ -run "TestShouldRetry|TestMaxRetries|TestActionRequired|TestValidFailureType" -count=1
+            go test ./pkg/resume/ -count=1
+            ```
+
+            Postconditions:
+            ```bash
+            grep -c 'FailureUnknown FailureTypeEnum = "unknown"' pkg/protocol/failure.go
+            # Expected: 1
+            grep -c 'type FailureCategory = FailureTypeEnum' pkg/protocol/types.go
+            # Expected: 1
+            grep -c 'type FailureCategory string' pkg/protocol/types.go
+            # Expected: 0
+            ```
+
+            ### Constraints
+            - Do NOT modify files outside your ownership list.
+            - Do NOT change FailureTypeEnum to a different name.
+            - Do NOT remove the FailureCategory* constant names — they remain as aliases.
+            - Do NOT change the RecoveryStep struct field type — the alias handles it.
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/failure.go
+            - pkg/protocol/failure_test.go
+            - pkg/resume/recovery.go
+            - pkg/resume/recovery_test.go
+            - pkg/protocol/completion_report.go
+        - id: B
+          task: |
+            ## F6 Part 1: Thread context.Context — definition sites
+
+            ### What to implement
+
+            Add context.Context to PrepareTier (via opts) and ValidateProgramImportMode
+            (via parameter). Update the internal full_validate.go caller.
+
+            **Step 1: Add Ctx to PrepareTierOpts**
+
+            In `pkg/protocol/program_tier_prepare.go`, find:
+            ```go
+            type PrepareTierOpts struct {
+            	ProgramManifestPath string
+            	TierNumber          int
+            	RepoDir             string
+            ```
+
+            Replace with:
+            ```go
+            type PrepareTierOpts struct {
+            	Ctx                 context.Context // Context for Load/Save calls; nil defaults to context.Background()
+            	ProgramManifestPath string
+            	TierNumber          int
+            	RepoDir             string
+            ```
+
+            **Step 2: Thread ctx in PrepareTier body**
+
+            At the top of `func PrepareTier(opts PrepareTierOpts)`, after opening brace, add:
+            ```go
+            	ctx := opts.Ctx
+            	if ctx == nil {
+            		ctx = context.Background()
+            	}
+            ```
+
+            Then replace all three `context.TODO()` calls:
+
+            Find: `m, err := Load(context.TODO(), implPath)`
+            Replace: `m, err := Load(ctx, implPath)`
+
+            Find: `if saveRes := Save(context.TODO(), m, implPath); saveRes.IsFatal() {`
+            Replace: `if saveRes := Save(ctx, m, implPath); saveRes.IsFatal() {`
+
+            Find: `skipRes := SkipCriticForIMPL(context.TODO(), implPath, m)`
+            Replace: `skipRes := SkipCriticForIMPL(ctx, implPath, m)`
+
+            **Step 3: Update ValidateProgramImportMode signature**
+
+            In `pkg/protocol/program_validation.go`, find:
+            ```go
+            func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []result.SAWError {
+            ```
+
+            Replace with:
+            ```go
+            func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, repoPath string) []result.SAWError {
+            ```
+
+            Then find: `implDoc, err := Load(context.TODO(), resolvedPath)`
+            Replace: `implDoc, err := Load(ctx, resolvedPath)`
+
+            **Step 4: Update full_validate.go**
+
+            In `pkg/protocol/full_validate.go`, find:
+            ```go
+            		importErrs := ValidateProgramImportMode(manifest, rd)
+            ```
+
+            Replace with:
+            ```go
+            		importErrs := ValidateProgramImportMode(context.Background(), manifest, rd)
+            ```
+
+            Add `"context"` to imports if not present.
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            ```
+
+            Postconditions:
+            ```bash
+            grep -c 'context.TODO()' pkg/protocol/program_tier_prepare.go
+            # Expected: 0
+            grep -c 'context.TODO()' pkg/protocol/program_validation.go
+            # Expected: 0
+            grep -c 'Ctx.*context.Context' pkg/protocol/program_tier_prepare.go
+            # Expected: 1
+            ```
+
+            ### Constraints
+            - Do NOT modify files outside your ownership list.
+            - Do NOT thread context through FullValidateProgram — use context.Background().
+          files:
+            - pkg/protocol/program_tier_prepare.go
+            - pkg/protocol/program_validation.go
+            - pkg/protocol/full_validate.go
+        - id: D
+          task: |
+            ## F6 Part 2: Update cmd/ and engine/ callers
+
+            ### What to implement
+
+            Agent B changes PrepareTierOpts (adds Ctx field) and ValidateProgramImportMode
+            (adds ctx first parameter). Update all callers in cmd/ and pkg/engine/.
+
+            **NOTE:** This branch will NOT compile in isolation. Agent B makes the
+            definition changes. Make caller changes as specified; build runs post-merge.
+
+            **Step 1: Update prepare_tier_cmd.go**
+
+            In `cmd/sawtools/prepare_tier_cmd.go`, find:
+            ```go
+            			prepRes := protocol.PrepareTier(protocol.PrepareTierOpts{
+            				ProgramManifestPath: manifestPath,
+            				TierNumber:          tierNum,
+            				RepoDir:             repoDir,
+            ```
+
+            Replace with:
+            ```go
+            			prepRes := protocol.PrepareTier(protocol.PrepareTierOpts{
+            				Ctx:                 cmd.Context(),
+            				ProgramManifestPath: manifestPath,
+            				TierNumber:          tierNum,
+            				RepoDir:             repoDir,
+            ```
+
+            **Step 2: Update validate_program_cmd.go**
+
+            Find:
+            ```go
+            				importErrs := protocol.ValidateProgramImportMode(manifest, rd)
+            ```
+
+            Replace with:
+            ```go
+            				importErrs := protocol.ValidateProgramImportMode(cmd.Context(), manifest, rd)
+            ```
+
+            **Step 3: Update program_tier_loop.go**
+
+            In `pkg/engine/program_tier_loop.go`, find:
+            ```go
+            			validationErrs := protocol.ValidateProgramImportMode(manifest, opts.RepoPath)
+            ```
+
+            Check if the surrounding function has a `ctx context.Context` parameter.
+            If yes, use it. If not, use `context.Background()`. Add `"context"` import
+            if needed.
+
+            **Step 4: Update import_impls.go**
+
+            In `pkg/engine/import_impls.go`, find:
+            ```go
+            	importErrs := protocol.ValidateProgramImportMode(manifest, opts.RepoDir)
+            ```
+
+            Check if the surrounding function has a `ctx context.Context` parameter.
+            If yes, use it. If not, use `context.Background()`. Add `"context"` import
+            if needed.
+
+            ### Verification gate
+
+            This branch does NOT compile alone. Postcondition checks only:
+            ```bash
+            grep -c 'Ctx:.*cmd.Context()' cmd/sawtools/prepare_tier_cmd.go
+            # Expected: 1
+            grep -c 'ValidateProgramImportMode(cmd.Context()' cmd/sawtools/validate_program_cmd.go
+            # Expected: 1
+            ```
+
+            ### Constraints
+            - Do NOT modify files outside your ownership list.
+            - Do NOT add stub definitions — Agent B owns the signatures.
+            - Prefer existing ctx from surrounding function over context.Background().
+          files:
+            - cmd/sawtools/prepare_tier_cmd.go
+            - cmd/sawtools/validate_program_cmd.go
+            - pkg/engine/program_tier_loop.go
+            - pkg/engine/import_impls.go
+        - id: E
+          task: |
+            ## F6 Part 3: Update test files for context threading
+
+            ### What to implement
+
+            Agent B changes PrepareTierOpts (adds Ctx field) and ValidateProgramImportMode
+            (adds ctx first parameter). Update all test call sites.
+
+            **NOTE:** This branch will NOT compile in isolation. Agent B makes the
+            definition changes. Make test changes as specified; build runs post-merge.
+
+            **Step 1: Update program_tier_prepare_test.go**
+
+            In `pkg/protocol/program_tier_prepare_test.go`, find every call to
+            `PrepareTier(PrepareTierOpts{...})` and add `Ctx: context.Background(),`
+            as the first field in the struct literal. There are approximately 7 call
+            sites. Search for `PrepareTier(PrepareTierOpts{` to find them all.
+
+            Also find the `SkipCriticForIMPL(context.TODO(),` call (around line 434)
+            and leave it as-is (that function's signature is not changing in this IMPL).
+
+            Add `"context"` to the import block if not already present.
+
+            **Step 2: Update program_validation_test.go**
+
+            In `pkg/protocol/program_validation_test.go`, find every call to
+            `ValidateProgramImportMode(manifest, ...)` and change to
+            `ValidateProgramImportMode(context.Background(), manifest, ...)`.
+            There are approximately 4 call sites. Search for
+            `ValidateProgramImportMode(` to find them all.
+
+            Add `"context"` to the import block if not already present.
+
+            ### Verification gate
+
+            This branch does NOT compile alone. Postcondition checks only:
+            ```bash
+            grep -c 'context.TODO()' pkg/protocol/program_tier_prepare_test.go
+            # Expected: 1 (only the SkipCriticForIMPL call, not PrepareTier)
+            grep -c 'context.Background()' pkg/protocol/program_validation_test.go
+            # Expected: >= 4
+            ```
+
+            ### Constraints
+            - Do NOT modify files outside your ownership list.
+            - Do NOT change test logic or assertions — only add context parameters.
+            - Do NOT change the SkipCriticForIMPL call's context.TODO() — that
+              function's signature is NOT changing in this IMPL.
+          files:
+            - pkg/protocol/program_tier_prepare_test.go
+            - pkg/protocol/program_validation_test.go
+        - id: C
+          task: |
+            ## F10: Guard WAVE_EXECUTING -> COMPLETE state transition
+
+            ### What to implement
+
+            The `allowedTransitions` map permits `StateWaveExecuting -> StateComplete`
+            directly. This is intentional for solo-wave IMPLs but could allow multi-agent
+            waves to skip merge. Add an advisory guard.
+
+            **Step 1: Add ValidateStateTransitionContext function**
+
+            In `pkg/protocol/state_transition.go`, after `SetImplState` (after line 155),
+            add:
+
+            ```go
+            // ValidateStateTransitionContext checks whether a state transition is
+            // semantically appropriate given the manifest context. Returns warning-level
+            // SAWErrors for transitions that are technically allowed but potentially
+            // dangerous (e.g., WAVE_EXECUTING -> COMPLETE with multiple agents).
+            func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolState) []result.SAWError {
+            	var warnings []result.SAWError
+
+            	if from == StateWaveExecuting && to == StateComplete {
+            		var currentWave *Wave
+            		for i := range manifest.Waves {
+            			w := &manifest.Waves[i]
+            			if len(w.Agents) > 0 {
+            				if currentWave == nil || w.Number > currentWave.Number {
+            					currentWave = w
+            				}
+            			}
+            		}
+
+            		if currentWave != nil && !IsSoloWave(currentWave) {
+            			warnings = append(warnings, result.SAWError{
+            				Code:     result.CodeStateTransition,
+            				Message:  fmt.Sprintf("WAVE_EXECUTING -> COMPLETE bypasses merge/verify for wave %d with %d agents; consider WAVE_MERGING -> WAVE_VERIFIED -> COMPLETE path", currentWave.Number, len(currentWave.Agents)),
+            				Severity: "warning",
+            			})
+            		}
+            	}
+
+            	return warnings
+            }
+            ```
+
+            **Step 2: Wire into SetImplState**
+
+            Find this exact text:
+            ```go
+            	// Write the new state atomically
+            	if err := updateManifestState(manifestPath, newState); err != nil {
+            ```
+
+            Insert before it:
+            ```go
+            	// Advisory check: warn about potentially dangerous transitions.
+            	_ = ValidateStateTransitionContext(manifest, previousState, newState)
+
+            ```
+
+            **Step 3: Add tests in state_transition_test.go**
+
+            ```go
+            func TestValidateStateTransitionContext_SoloWaveNoWarning(t *testing.T) {
+            	m := &IMPLManifest{
+            		Waves: []Wave{
+            			{Number: 1, Agents: []Agent{{ID: "A", Task: "solo"}}},
+            		},
+            	}
+            	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateComplete)
+            	if len(warnings) != 0 {
+            		t.Errorf("expected no warnings for solo-wave, got %d: %v", len(warnings), warnings)
+            	}
+            }
+
+            func TestValidateStateTransitionContext_MultiAgentWarning(t *testing.T) {
+            	m := &IMPLManifest{
+            		Waves: []Wave{
+            			{Number: 1, Agents: []Agent{
+            				{ID: "A", Task: "first"},
+            				{ID: "B", Task: "second"},
+            			}},
+            		},
+            	}
+            	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateComplete)
+            	if len(warnings) != 1 {
+            		t.Fatalf("expected 1 warning for multi-agent wave, got %d", len(warnings))
+            	}
+            	if warnings[0].Severity != "warning" {
+            		t.Errorf("expected severity=warning, got %q", warnings[0].Severity)
+            	}
+            }
+
+            func TestValidateStateTransitionContext_NormalTransitionNoWarning(t *testing.T) {
+            	m := &IMPLManifest{
+            		Waves: []Wave{
+            			{Number: 1, Agents: []Agent{
+            				{ID: "A", Task: "first"},
+            				{ID: "B", Task: "second"},
+            			}},
+            		},
+            	}
+            	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateWaveMerging)
+            	if len(warnings) != 0 {
+            		t.Errorf("expected no warnings for normal transition, got %d", len(warnings))
+            	}
+            }
+            ```
+
+            ### Verification gate
+
+            ```bash
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/ -run "TestValidateStateTransitionContext|TestSetImplState|TestIsValidTransition" -count=1
+            ```
+
+            Postconditions:
+            ```bash
+            grep -c 'func ValidateStateTransitionContext' pkg/protocol/state_transition.go
+            # Expected: 1
+            grep -c 'IsSoloWave' pkg/protocol/state_transition.go
+            # Expected: 1
+            ```
+
+            ### Constraints
+            - Do NOT modify files outside your ownership list.
+            - Do NOT remove WAVE_EXECUTING -> COMPLETE from allowedTransitions.
+            - Do NOT make warnings blocking — severity must be "warning".
+            - Do NOT change SetImplState return type.
+          files:
+            - pkg/protocol/state_transition.go
+            - pkg/protocol/state_transition_test.go
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A type alias breaks compilation in pkg/orchestrator
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Type alias (=) means FailureCategory IS FailureTypeEnum at compile time.
+            Orchestrator uses FailureTypeEnum directly, never references FailureCategory.
+        - scenario: Agents B+D+E context changes cause build failure in isolation
+          likelihood: high
+          impact: low
+          mitigation: |
+            Agents D and E change callers/tests while B changes definitions. No branch
+            compiles alone — expected for same-wave splits. Post-merge build gate catches
+            any mismatches.
+        - scenario: Agent C guard function finds current wave incorrectly
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Guard selects highest wave number with agents. Advisory-only, so wrong
+            selection produces spurious warning, not state machine failure.
+        - scenario: Agent D misses a caller of ValidateProgramImportMode
+          likelihood: low
+          impact: medium
+          mitigation: |
+            All callers listed explicitly. go build ./... post-merge fails if missed.
+critic_report:
+    verdict: PASS
+    agent_reviews: {}
+    summary: Skipped by operator (--skip-critic)
+    reviewed_at: "2026-04-05T12:19:10Z"
+    issue_count: 0
+state: SCOUT_PENDING
+injection_method: hook
