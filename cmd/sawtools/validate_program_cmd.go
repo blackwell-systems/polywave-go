@@ -50,7 +50,7 @@ func newValidateProgramCmd() *cobra.Command {
 				if rd == "" {
 					rd, _ = os.Getwd()
 				}
-				importErrs := protocol.ValidateProgramImportMode(manifest, rd)
+				importErrs := protocol.ValidateProgramImportMode(cmd.Context(), manifest, rd)
 				validationErrs = append(validationErrs, importErrs...)
 			}
 
