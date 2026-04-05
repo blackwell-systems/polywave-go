@@ -1,0 +1,428 @@
+completion_date: "2026-04-04"
+title: 'Fix pkg/scaffold warnings: context propagation, dead alias, doc drift, regex perf, missing test, error wrapping'
+feature_slug: scaffold-warning-fixes
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    Seven inspector warnings in pkg/scaffold/ — all are small, well-specified fixes.
+    All changes are confined to a single package (pkg/scaffold/) touching 5 files.
+    Single agent is appropriate; no parallelization benefit (1 wave, 1 agent).
+    Value is coordination/audit trail, not speed.
+
+    All 7 items are confirmed TODO by reading the source files:
+    - wrapper.go:11 uses context.TODO() instead of accepting ctx
+    - post_agent.go:94 extractTypeDefinitions is a trivial alias for extractTypeNames
+    - doc.go:8 references CLI flags that differ between binaries
+    - pre_agent.go:102-104 regexp.MustCompile called in loop
+    - pre_agent.go:83-111 nested brace limitation documented but untested
+    - wrapper.go has no unit test
+    - wrapper.go:13-14 bare error return without wrapping
+
+    Cross-repo note: Warning 1 changes the exported signature of DetectScaffolds.
+    The web repo caller at scout-and-wave-web/cmd/saw/detect_scaffolds.go:38 will
+    need a corresponding update. This IMPL scopes to the Go repo only.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~8 min (1 agent, 7 fixes across 5 files)
+    - Merge & verification: ~2 min
+    Total SAW time: ~15 min
+    Sequential baseline: ~10 min (single developer, no coordination overhead)
+    Time savings: -5 min (overhead dominates for single agent)
+    Recommendation: Coordination value — IMPL doc serves as audit trail for the
+    inspector report fixes and documents the cross-repo breaking change.
+test_command: go test ./pkg/scaffold/...
+lint_command: go vet ./pkg/scaffold/...
+file_ownership:
+    - file: pkg/scaffold/wrapper.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/wrapper_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/scaffold/post_agent.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/post_agent_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/pre_agent.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/pre_agent_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/scaffold/doc.go
+      agent: A
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: DetectScaffolds
+      description: |
+        Updated signature accepts context.Context as first parameter instead of
+        creating context.TODO() internally. This is a breaking change for callers.
+      definition: |
+        func DetectScaffolds(ctx context.Context, implPath string) (*PreAgentResult, error)
+      location: pkg/scaffold/wrapper.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            Fix 7 inspector warnings in pkg/scaffold/. All changes are within this package.
+
+            ## Warning 1: Context propagation in wrapper.go
+
+            Change `DetectScaffolds` signature to accept `context.Context` as first parameter.
+            Forward ctx to `protocol.Load`.
+
+            Current code at pkg/scaffold/wrapper.go:
+            ```go
+            func DetectScaffolds(implPath string) (*PreAgentResult, error) {
+            	manifest, err := protocol.Load(context.TODO(), implPath)
+            	if err != nil {
+            		return nil, err
+            	}
+            	return DetectScaffoldsPreAgent(manifest.InterfaceContracts)
+            }
+            ```
+
+            Replace with:
+            ```go
+            func DetectScaffolds(ctx context.Context, implPath string) (*PreAgentResult, error) {
+            	manifest, err := protocol.Load(ctx, implPath)
+            	if err != nil {
+            		return nil, fmt.Errorf("scaffold detection: load manifest: %w", err)
+            	}
+            	return DetectScaffoldsPreAgent(manifest.InterfaceContracts)
+            }
+            ```
+
+            This also fixes Warning 7 (error wrapping). Add `"fmt"` to imports.
+
+            ## Warning 2: Remove dead alias extractTypeDefinitions in post_agent.go
+
+            The function `extractTypeDefinitions` at line 94 is a trivial one-line
+            delegation to `extractTypeNames`. Remove it and update the caller at line 34
+            to call `extractTypeNames` directly.
+
+            Current call site at post_agent.go:34:
+            ```go
+            			typeNames := extractTypeDefinitions(agent.Task)
+            ```
+            Replace with:
+            ```go
+            			typeNames := extractTypeNames(agent.Task)
+            ```
+
+            Then delete lines 91-96:
+            ```go
+            // extractTypeDefinitions searches for type definitions in agent task text.
+            // It delegates to extractTypeNames which uses a package-level compiled regex,
+            // avoiding repeated regex compilation on the hot path.
+            func extractTypeDefinitions(taskText string) []string {
+            	return extractTypeNames(taskText)
+            }
+            ```
+
+            Update post_agent_test.go: The test `TestExtractTypeDefinitions` at line 217
+            calls `extractTypeDefinitions`. Rename the test to `TestExtractTypeNames` and
+            change the call at line 288 from `extractTypeDefinitions(tt.taskText)` to
+            `extractTypeNames(tt.taskText)`.
+
+            ## Warning 3: Fix doc.go CLI reference drift
+
+            Replace the current doc.go content:
+            ```go
+            // Both modes are invoked via CLI: sawtools detect-scaffolds --stage {pre-agent|post-agent}
+            ```
+
+            With a description of the Go API:
+            ```go
+            // Both modes are available as Go API functions:
+            //   - DetectScaffoldsPreAgent(contracts) — analyzes interface contracts
+            //   - DetectScaffoldsPostAgent(manifest) — parses agent task fields
+            //   - DetectScaffolds(ctx, implPath) — convenience wrapper that loads the manifest
+            ```
+
+            ## Warning 4: Add test for nested-brace limitation in pre_agent.go
+
+            Add a test to pre_agent_test.go documenting the nested-brace truncation:
+
+            ```go
+            func TestExtractTypeDefinition_NestedBraceTruncation(t *testing.T) {
+            	// Documents known limitation: [^}]* regex truncates on nested braces.
+            	// See pre_agent.go:87-90 comment.
+            	definition := `type Outer struct {
+            	Field1 string
+            	Inner  struct {
+            		Nested string
+            	}
+            	Field2 int
+            }`
+            	got := extractTypeDefinition(definition, "Outer")
+            	// The regex matches up to the first closing brace, truncating nested content.
+            	// This is the documented limitation — the test ensures we don't silently change behavior.
+            	if got == definition {
+            		t.Error("expected truncated extraction due to nested brace limitation, but got full definition")
+            	}
+            	// Should at least contain the type name and struct keyword
+            	if !strings.Contains(got, "Outer") || !strings.Contains(got, "struct") {
+            		t.Errorf("expected partial extraction containing type name, got: %s", got)
+            	}
+            }
+            ```
+
+            Add `"strings"` to the imports in pre_agent_test.go if not already present.
+
+            ## Warning 5: Pre-compile regex patterns in pre_agent.go
+
+            The `extractTypeDefinition` function at lines 102-104 calls
+            `regexp.MustCompile(patternStr)` inside a loop, recompiling 4 regexes per
+            type name per call.
+
+            Fix: Pre-compile the 4 pattern templates at package level using a placeholder,
+            then build per-type patterns with string replacement at call time.
+
+            Add package-level compiled patterns after the existing `typeNameRe` in types.go
+            or at the top of pre_agent.go (choose pre_agent.go since that's where they're used):
+
+            ```go
+            // typeDefPatterns are pre-compiled regex patterns for extracting type definitions.
+            // Each pattern uses a placeholder that gets replaced with the quoted type name.
+            // The placeholder approach avoids recompiling 4 regexes per type per call.
+            var typeDefPatterns []*regexp.Regexp
+
+            func init() {
+            	templates := []string{
+            		`(?s)type\s+TYPENAME_PLACEHOLDER\s+struct\s*\{[^}]*\}`,
+            		`(?s)type\s+TYPENAME_PLACEHOLDER\s+interface\s*\{[^}]*\}`,
+            		`(?s)interface\s+TYPENAME_PLACEHOLDER\s*\{[^}]*\}`,
+            		`(?s)class\s+TYPENAME_PLACEHOLDER\s*\{[^}]*\}`,
+            	}
+            	for _, tmpl := range templates {
+            		typeDefPatterns = append(typeDefPatterns, regexp.MustCompile(tmpl))
+            	}
+            }
+            ```
+
+            Wait — the patterns contain the type name, so they can't be fully pre-compiled
+            as package-level vars. Instead, use `regexp.Compile` (not MustCompile) for
+            defense-in-depth, and cache compiled patterns in a sync.Map keyed by typeName:
+
+            ```go
+            var typeDefCache sync.Map // map[string][]*regexp.Regexp
+
+            func getTypeDefPatterns(typeName string) []*regexp.Regexp {
+            	if cached, ok := typeDefCache.Load(typeName); ok {
+            		return cached.([]*regexp.Regexp)
+            	}
+            	quoted := regexp.QuoteMeta(typeName)
+            	patterns := make([]*regexp.Regexp, 0, 4)
+            	templates := []string{
+            		`(?s)type\s+` + quoted + `\s+struct\s*\{[^}]*\}`,
+            		`(?s)type\s+` + quoted + `\s+interface\s*\{[^}]*\}`,
+            		`(?s)interface\s+` + quoted + `\s*\{[^}]*\}`,
+            		`(?s)class\s+` + quoted + `\s*\{[^}]*\}`,
+            	}
+            	for _, tmpl := range templates {
+            		re, err := regexp.Compile(tmpl)
+            		if err != nil {
+            			continue // defense-in-depth: skip bad patterns
+            		}
+            		patterns = append(patterns, re)
+            	}
+            	typeDefCache.Store(typeName, patterns)
+            	return patterns
+            }
+            ```
+
+            Then update `extractTypeDefinition` to use `getTypeDefPatterns`:
+            ```go
+            func extractTypeDefinition(definition, typeName string) string {
+            	for _, pattern := range getTypeDefPatterns(typeName) {
+            		if match := pattern.FindString(definition); match != "" {
+            			return strings.TrimSpace(match)
+            		}
+            	}
+            	return "type " + typeName + " struct { /* see contract definition */ }"
+            }
+            ```
+
+            Add `"sync"` to imports in pre_agent.go. Remove the `"regexp"` import if
+            it's no longer used directly in that file (check — typeNameRe is in types.go,
+            so regexp may no longer be needed in pre_agent.go).
+
+            ## Warning 6: Add wrapper unit test
+
+            Create pkg/scaffold/wrapper_test.go:
+
+            ```go
+            package scaffold
+
+            import (
+            	"context"
+            	"os"
+            	"path/filepath"
+            	"strings"
+            	"testing"
+
+            	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            )
+
+            func TestDetectScaffolds_Success(t *testing.T) {
+            	tmpDir := t.TempDir()
+            	manifestPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+
+            	manifest := &protocol.IMPLManifest{
+            		Title:       "Test",
+            		FeatureSlug: "test",
+            		Verdict:     "SUITABLE",
+            		InterfaceContracts: []protocol.InterfaceContract{
+            			{
+            				Name:       "C1",
+            				Definition: "type Foo struct { X int }",
+            				Location:   "pkg/a/a.go",
+            			},
+            			{
+            				Name:       "C2",
+            				Definition: "type Foo struct { X int }",
+            				Location:   "pkg/b/b.go",
+            			},
+            		},
+            		FileOwnership: []protocol.FileOwnership{},
+            		Waves:         []protocol.Wave{},
+            	}
+
+            	if saveRes := protocol.Save(context.Background(), manifest, manifestPath); saveRes.IsFatal() {
+            		t.Fatalf("save: %v", saveRes.Errors)
+            	}
+
+            	result, err := DetectScaffolds(context.Background(), manifestPath)
+            	if err != nil {
+            		t.Fatalf("unexpected error: %v", err)
+            	}
+            	if len(result.ScaffoldsNeeded) != 1 {
+            		t.Fatalf("expected 1 scaffold, got %d", len(result.ScaffoldsNeeded))
+            	}
+            	if result.ScaffoldsNeeded[0].TypeName != "Foo" {
+            		t.Errorf("expected Foo, got %s", result.ScaffoldsNeeded[0].TypeName)
+            	}
+            }
+
+            func TestDetectScaffolds_FileNotFound(t *testing.T) {
+            	_, err := DetectScaffolds(context.Background(), "/nonexistent/IMPL-test.yaml")
+            	if err == nil {
+            		t.Fatal("expected error for nonexistent file")
+            	}
+            	if !strings.Contains(err.Error(), "scaffold detection: load manifest:") {
+            		t.Errorf("expected wrapped error message, got: %v", err)
+            	}
+            }
+
+            func TestDetectScaffolds_InvalidYAML(t *testing.T) {
+            	tmpDir := t.TempDir()
+            	badFile := filepath.Join(tmpDir, "IMPL-bad.yaml")
+            	if err := os.WriteFile(badFile, []byte("not: [valid: yaml: content"), 0644); err != nil {
+            		t.Fatalf("write: %v", err)
+            	}
+            	_, err := DetectScaffolds(context.Background(), badFile)
+            	if err == nil {
+            		t.Fatal("expected error for invalid YAML")
+            	}
+            	if !strings.Contains(err.Error(), "scaffold detection: load manifest:") {
+            		t.Errorf("expected wrapped error message, got: %v", err)
+            	}
+            }
+            ```
+
+            ## Verification
+
+            Run these commands to verify:
+            ```bash
+            go build ./pkg/scaffold/...
+            go vet ./pkg/scaffold/...
+            go test ./pkg/scaffold/... -count=1
+            ```
+
+            Postcondition checks:
+            - grep -c "context.TODO" pkg/scaffold/wrapper.go  => expect 0
+            - grep -c "extractTypeDefinitions" pkg/scaffold/post_agent.go  => expect 0
+            - grep -c "func DetectScaffolds(ctx context.Context" pkg/scaffold/wrapper.go  => expect 1
+            - grep -c "scaffold detection: load manifest:" pkg/scaffold/wrapper.go  => expect 1
+            - grep -c "typeDefCache" pkg/scaffold/pre_agent.go  => expect >= 1
+            - grep -c "NestedBrace" pkg/scaffold/pre_agent_test.go  => expect 1
+
+            ## Constraints
+            - Do NOT modify files outside pkg/scaffold/
+            - Do NOT modify types.go (the typeNameRe regex there is correct; only pre_agent.go
+              patterns need caching)
+            - Do NOT change the behavior of extractTypeDefinition — only its performance
+              characteristics (caching). The nested-brace limitation is intentional and documented.
+          files:
+            - pkg/scaffold/wrapper.go
+            - pkg/scaffold/wrapper_test.go
+            - pkg/scaffold/post_agent.go
+            - pkg/scaffold/post_agent_test.go
+            - pkg/scaffold/pre_agent.go
+            - pkg/scaffold/pre_agent_test.go
+            - pkg/scaffold/doc.go
+          context_source: prepared-brief
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./pkg/scaffold/...
+          required: true
+        - type: lint
+          command: go vet ./pkg/scaffold/...
+          required: true
+        - type: test
+          command: go test ./pkg/scaffold/... -count=1
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/scaffold-warning-fixes/wave1-agent-A
+        commit: cb6a4b7
+        files_changed:
+            - pkg/scaffold/wrapper.go
+            - pkg/scaffold/post_agent.go
+            - pkg/scaffold/post_agent_test.go
+            - pkg/scaffold/pre_agent.go
+            - pkg/scaffold/pre_agent_test.go
+            - pkg/scaffold/doc.go
+        files_created:
+            - pkg/scaffold/wrapper_test.go
+        tests_added:
+            - TestDetectScaffolds_Success
+            - TestDetectScaffolds_FileNotFound
+            - TestDetectScaffolds_InvalidYAML
+            - TestExtractTypeDefinition_NestedBraceTruncation
+            - TestExtractTypeNames_PostAgent
+        verification: PASS
+        notes: All 7 warnings fixed. TestExtractTypeDefinitions renamed to TestExtractTypeNames_PostAgent (not TestExtractTypeNames) to avoid collision with existing test of same name in pre_agent_test.go. DetectScaffolds signature is a breaking change - callers outside pkg/scaffold must be updated to pass context.Context.
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent removes extractTypeDefinitions but misses the test reference in post_agent_test.go
+          likelihood: low
+          impact: medium
+          mitigation: Task explicitly lists the test rename at line 217/288 with exact before/after
+        - scenario: sync.Map caching in pre_agent.go introduces import cycle or build error
+          likelihood: low
+          impact: low
+          mitigation: sync is stdlib; no import cycle possible within same package
+        - scenario: Web repo caller breaks after signature change (cross-repo)
+          likelihood: high
+          impact: low
+          mitigation: |
+            Out of scope for this IMPL. Document needed web repo update:
+            scout-and-wave-web/cmd/saw/detect_scaffolds.go:38 must pass ctx.
+            This is a compile-time error — immediately visible when web repo builds.
+state: COMPLETE

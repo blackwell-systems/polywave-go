@@ -1,0 +1,424 @@
+title: "Fix pkg/retry remaining inspector findings"
+feature_slug: retry-silent-failures
+verdict: SUITABLE_WITH_CAVEATS
+state: REVIEWED
+
+suitability_assessment: |
+  All 6 findings are confined to pkg/retry/ (loop.go, attempt.go, types.go) plus
+  their test files. The changes are tightly coupled — removing the nil ctx guard
+  in loop.go requires updating the test that exercises it, and the gate status fix
+  in attempt.go requires updating test assertions. A single agent is the correct
+  scope.
+
+  Parallelization value: Low. Single agent, single package, fast build/test cycle.
+  The IMPL doc value here is coordination/audit trail, not speed.
+
+  Caveat: 1 agent means no parallelization benefit. SAW overhead is justified by
+  the structured task spec and verification gates.
+
+  Estimated times:
+  - Scout phase: ~5 min
+  - Agent execution: ~5 min (1 agent, straightforward fixes)
+  - Merge & verification: ~2 min
+  Total SAW time: ~12 min
+  Sequential baseline: ~8 min
+  Time savings: -4 min (overhead dominates)
+  Recommendation: Coordination value justifies SAW; no speed gain expected.
+
+test_command: "go test ./pkg/retry/..."
+lint_command: "go vet ./pkg/retry/..."
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./pkg/retry/..."
+      required: true
+    - type: lint
+      command: "go vet ./pkg/retry/..."
+      required: true
+    - type: test
+      command: "go test ./pkg/retry/..."
+      required: true
+
+scaffolds: []
+
+interface_contracts:
+  - name: "filesFromIMPL warning event"
+    description: |
+      filesFromIMPL emits a warning event via onEvent when protocol.Load fails,
+      instead of silently returning nil.
+    definition: |
+      // filesFromIMPL gains an onEvent parameter to emit warnings.
+      // Signature change: func (rl *RetryLoop) filesFromIMPL(ctx context.Context, onEvent func(Event)) []string
+      // When protocol.Load fails, emits Event{Event: "retry_file_resolution_failed", Data: map[string]interface{}{"impl_path": ..., "error": ...}}
+      // Still returns nil on failure (caller handles empty list), but now caller is informed.
+    location: pkg/retry/loop.go
+
+  - name: "gateCommandFromIMPL warning event"
+    description: |
+      gateCommandFromIMPL emits a warning event when falling back to default command.
+    definition: |
+      // gateCommandFromIMPL gains an onEvent parameter to emit warnings.
+      // Signature change: func gateCommandFromIMPL(ctx context.Context, implPath string, onEvent func(Event)) string
+      // When protocol.Load fails or test_command is empty, emits Event{Event: "retry_gate_command_fallback", Data: map[string]interface{}{"impl_path": ..., "fallback": "go build ./..."}}
+    location: pkg/retry/loop.go
+
+  - name: "gatePassed empty status fix"
+    description: |
+      Empty report.Status no longer treated as gate-passed. Only "complete" means passed.
+    definition: |
+      // Before: gatePassed := report.Status == "complete" || report.Status == ""
+      // After:  gatePassed := report.Status == "complete"
+    location: pkg/retry/attempt.go
+
+  - name: "gateResults derived status"
+    description: |
+      Gate results derive status from completion report instead of hardcoding "unknown".
+    definition: |
+      // Before: status := "unknown" (always)
+      // After:  Derive from report. If report.Status == "complete" -> "passed",
+      //         if report.Status == "partial" or "failed" -> "failed",
+      //         otherwise -> "unknown"
+    location: pkg/retry/attempt.go
+
+file_ownership:
+  - file: pkg/retry/loop.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/attempt.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/loop_test.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/attempt_test.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          Fix 6 remaining inspector findings in pkg/retry/. All changes are in
+          loop.go, attempt.go, and their test files. Do NOT modify types.go or
+          impl_generator.go.
+
+          ## Finding 1: filesFromIMPL silent failure (loop.go:171-177)
+
+          `filesFromIMPL` silently returns nil when `protocol.Load` fails. Add an
+          `onEvent func(Event)` parameter and emit a warning event on failure.
+
+          Current signature at loop.go:171:
+          ```go
+          func (rl *RetryLoop) filesFromIMPL(ctx context.Context) []string {
+          ```
+
+          Change to:
+          ```go
+          func (rl *RetryLoop) filesFromIMPL(ctx context.Context, onEvent func(Event)) []string {
+          ```
+
+          In the `err != nil` branch (line 176-177), before returning nil, emit:
+          ```go
+          if onEvent != nil {
+              onEvent(Event{
+                  Event: "retry_file_resolution_failed",
+                  Data: map[string]interface{}{
+                      "impl_path": rl.cfg.IMPLPath,
+                      "error":     err.Error(),
+                  },
+              })
+          }
+          ```
+
+          Update the caller at loop.go:102 to pass onEvent:
+          ```go
+          failedFiles = rl.filesFromIMPL(ctx, onEvent)
+          ```
+
+          ## Finding 2: gateResults always "unknown" (attempt.go:78-83)
+
+          The loop at attempt.go:78-83 always sets status to literal "unknown":
+          ```go
+          for _, gate := range m.QualityGates.Gates {
+              status := "unknown"
+              gateResults = append(gateResults, fmt.Sprintf("%s: %s", gate.Type, status))
+          }
+          ```
+
+          Derive status from the completion report. Use this logic:
+          ```go
+          for _, gate := range m.QualityGates.Gates {
+              status := "unknown"
+              switch report.Status {
+              case "complete":
+                  status = "passed"
+              case "partial", "failed":
+                  status = "failed"
+              }
+              gateResults = append(gateResults, fmt.Sprintf("%s: %s", gate.Type, status))
+          }
+          ```
+
+          ## Finding 3: empty status treated as gate-passed (attempt.go:86)
+
+          Current code at attempt.go:86:
+          ```go
+          gatePassed := report.Status == "complete" || report.Status == ""
+          ```
+
+          Change to:
+          ```go
+          gatePassed := report.Status == "complete"
+          ```
+
+          Empty/missing status should NOT be treated as success.
+
+          ## Finding 4: nil ctx guard (loop.go:50-52)
+
+          Remove the nil context guard at loop.go:50-52:
+          ```go
+          if ctx == nil {
+              ctx = context.Background()
+          }
+          ```
+
+          Delete these 3 lines. Per Go convention, nil context is a programming error
+          and should panic naturally at the select statement. This removes a caller-bug
+          masking path.
+
+          ## Finding 5: doc drift on Run return type (loop.go:39-40)
+
+          Current doc at loop.go:39-40:
+          ```go
+          // ctx is checked for cancellation before each significant step; if cancelled,
+          // Run returns ctx.Err() immediately.
+          ```
+
+          Update to:
+          ```go
+          // ctx is checked for cancellation before each significant step; if cancelled,
+          // Run returns a fatal Result wrapping ctx.Err().
+          ```
+
+          ## Finding 6: gateCommandFromIMPL silent fallback (loop.go:209-221)
+
+          Add an `onEvent func(Event)` parameter to `gateCommandFromIMPL`.
+
+          Current signature at loop.go:209:
+          ```go
+          func gateCommandFromIMPL(ctx context.Context, implPath string) string {
+          ```
+
+          Change to:
+          ```go
+          func gateCommandFromIMPL(ctx context.Context, implPath string, onEvent func(Event)) string {
+          ```
+
+          Emit a warning event when falling back to default. In the empty implPath branch
+          (line 210-211) and the load error branch (line 214-215), add:
+          ```go
+          if onEvent != nil {
+              onEvent(Event{
+                  Event: "retry_gate_command_fallback",
+                  Data: map[string]interface{}{
+                      "impl_path": implPath,
+                      "fallback":  "go build ./...",
+                  },
+              })
+          }
+          ```
+
+          Also emit when m.TestCommand is empty (line 219-220):
+          ```go
+          if m.TestCommand != "" {
+              return m.TestCommand
+          }
+          if onEvent != nil {
+              onEvent(Event{
+                  Event: "retry_gate_command_fallback",
+                  Data: map[string]interface{}{
+                      "impl_path": implPath,
+                      "fallback":  "go build ./...",
+                      "reason":    "test_command empty in manifest",
+                  },
+              })
+          }
+          return "go build ./..."
+          ```
+
+          Update the caller in GenerateRetryIMPL method (loop.go:138) to pass nil
+          (the method-form caller does not have access to onEvent):
+          ```go
+          gateCommand := gateCommandFromIMPL(ctx, rl.cfg.IMPLPath, nil)
+          ```
+
+          ## Test Updates
+
+          ### loop_test.go changes
+
+          1. Update `TestRetryLoop_Run_NilContext` (line 516-536): This test passes nil
+             context expecting success. After removing the nil guard, nil context will
+             panic. Change this test to verify that nil context panics:
+             ```go
+             func TestRetryLoop_Run_NilContext(t *testing.T) {
+                 tmpDir := t.TempDir()
+                 cfg := RetryConfig{MaxRetries: 2, RepoPath: tmpDir}
+                 loop := NewRetryLoop(cfg)
+
+                 gate := QualityGateFailure{
+                     GateType:    "build",
+                     Command:     "go build ./...",
+                     Output:      "error",
+                     FailedFiles: []string{"file.go"},
+                 }
+
+                 defer func() {
+                     if r := recover(); r == nil {
+                         t.Fatal("Run with nil context should panic")
+                     }
+                 }()
+                 loop.Run(nil, gate, nil)
+             }
+             ```
+
+          2. Update `TestRetryLoop_filesFromIMPL_LoadError` (line 602-615): Now needs
+             to pass onEvent (can pass nil since we're testing the return value):
+             ```go
+             files := loop.filesFromIMPL(context.Background(), nil)
+             ```
+
+          3. Add a new test `TestRetryLoop_filesFromIMPL_EmitsEvent` that verifies the
+             warning event is emitted on load error:
+             ```go
+             func TestRetryLoop_filesFromIMPL_EmitsEvent(t *testing.T) {
+                 tmpDir := t.TempDir()
+                 invalidPath := filepath.Join(tmpDir, "nonexistent.yaml")
+                 cfg := RetryConfig{IMPLPath: invalidPath, RepoPath: tmpDir}
+                 loop := NewRetryLoop(cfg)
+
+                 var events []Event
+                 files := loop.filesFromIMPL(context.Background(), func(e Event) {
+                     events = append(events, e)
+                 })
+                 if files != nil {
+                     t.Errorf("expected nil files, got: %v", files)
+                 }
+                 if len(events) != 1 || events[0].Event != "retry_file_resolution_failed" {
+                     t.Errorf("expected retry_file_resolution_failed event, got: %v", events)
+                 }
+             }
+             ```
+
+          4. Update `TestRetryLoop_gateCommandFromIMPL_LoadError` (line 617-625):
+             ```go
+             cmd := gateCommandFromIMPL(context.Background(), invalidPath, nil)
+             ```
+
+          5. Add `TestRetryLoop_gateCommandFromIMPL_EmitsEvent` to verify fallback event.
+
+          ### attempt_test.go changes
+
+          6. Update `TestBuildRetryAttempt_Complete` (line 37-72): The test creates a
+             manifest with `status: "partial"` and currently expects `GatePassed` to
+             be derived. After the fix, `status: "partial"` means `GatePassed = false`.
+             Check that `ra.GatePassed` is `false`:
+             ```go
+             if ra.GatePassed {
+                 t.Error("GatePassed should be false for status 'partial'")
+             }
+             ```
+
+             Also check that GateResults contains "failed" not "unknown":
+             ```go
+             for _, gr := range ra.GateResults {
+                 if strings.Contains(gr, "unknown") {
+                     t.Errorf("GateResults should not contain 'unknown', got: %s", gr)
+                 }
+             }
+             ```
+
+          7. Add `TestBuildRetryAttempt_EmptyStatusNotPassed` to verify empty status
+             is not treated as passed:
+             ```go
+             func TestBuildRetryAttempt_EmptyStatusNotPassed(t *testing.T) {
+                 // Create manifest with empty status completion report
+                 dir := t.TempDir()
+                 manifestPath := filepath.Join(dir, "impl.yaml")
+                 yaml := `title: "T"
+             feature_slug: "f"
+             verdict: "SUITABLE"
+             test_command: "go test"
+             lint_command: "go vet"
+             file_ownership: []
+             interface_contracts: []
+             waves:
+               - number: 1
+                 agents:
+                   - id: "A"
+                     task: "t"
+                     files: []
+             completion_reports:
+               A:
+                 status: ""
+                 notes: "no info"
+                 verification: "none"
+             `
+                 if err := os.WriteFile(manifestPath, []byte(yaml), 0644); err != nil {
+                     t.Fatal(err)
+                 }
+                 res := retry.BuildRetryAttempt(context.Background(), manifestPath, "A", 1)
+                 if res.IsFatal() {
+                     t.Fatalf("unexpected error: %v", res.Errors[0])
+                 }
+                 if res.GetData().GatePassed {
+                     t.Error("GatePassed should be false for empty status")
+                 }
+             }
+             ```
+
+          ## Constraints
+          - Do NOT modify pkg/retry/types.go — Event struct is unchanged.
+          - Do NOT modify pkg/retry/impl_generator.go or impl_generator_test.go.
+          - Do NOT modify pkg/retry/classify.go or classify_test.go.
+          - Do NOT modify files outside pkg/retry/.
+          - Do NOT add new error codes to pkg/result/codes.go — use event emission, not result errors, for warnings.
+        files:
+          - pkg/retry/loop.go
+          - pkg/retry/attempt.go
+          - pkg/retry/loop_test.go
+          - pkg/retry/attempt_test.go
+        dependencies: []
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "Removing nil ctx guard causes unexpected panics in callers outside pkg/retry"
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Only RetryLoop.Run calls exist in pkg/engine and orchestrator.
+        Both always pass non-nil contexts. The test update verifies panic behavior.
+    - scenario: "Changing gatePassed semantics breaks downstream consumers expecting empty=passed"
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Only BuildRetryAttempt in attempt.go sets this field. The RetryAttempt struct
+        is consumed by the retry loop and CLI build-retry-context command. Both should
+        treat missing status as unknown/failed, not as success.
+    - scenario: "Adding onEvent parameter to internal functions breaks callers"
+      likelihood: low
+      impact: low
+      mitigation: |
+        filesFromIMPL and gateCommandFromIMPL are unexported. Only called within
+        loop.go itself. No external callers to update.

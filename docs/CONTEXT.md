@@ -368,3 +368,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-solver-graph-wiring.yaml
 - **retry-context-propagation**: completed 2026-04-04, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-retry-context-propagation.yaml
+- **scaffold-warning-fixes**: completed 2026-04-04, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-scaffold-warning-fixes.yaml
