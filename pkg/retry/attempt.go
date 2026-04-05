@@ -47,7 +47,7 @@ func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string,
 			result.NewFatal("RETRY_CONTEXT_CANCELLED", err.Error()).WithCause(err),
 		})
 	}
-	m, err := protocol.Load(context.TODO(), manifestPath)
+	m, err := protocol.Load(ctx, manifestPath)
 	if err != nil {
 		return result.NewFailure[*RetryAttempt]([]result.SAWError{
 			result.NewFatal(result.CodeRetryLoadManifestFailed, fmt.Sprintf("failed to load manifest at %s: %s", manifestPath, err.Error())).WithCause(err),
