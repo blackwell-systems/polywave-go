@@ -37,17 +37,19 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	// Step 2: Import resolution (check if imports exist)
 	// Determine repo root before checking imports
 	root := repoRoot
+	skipImports := false
 	if root == "" {
 		var err error
 		root, err = findRepoRoot(filepath.Dir(implPath))
 		if err != nil {
 			vr.Imports.Status = "SKIP"
 			vr.Imports.Errors = []string{err.Error()}
+			skipImports = true
 			// Continue to type references and build steps
 		}
 	}
 
-	if vr.Imports.Status != "SKIP" {
+	if !skipImports {
 		imports := importsFromAST(astFile)
 		missingImports, err := checkImports(imports, root)
 		if err != nil {
