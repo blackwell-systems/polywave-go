@@ -366,3 +366,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-wire-manager-lifecycle.yaml
 - **solver-graph-wiring**: completed 2026-04-04, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-solver-graph-wiring.yaml
+- **retry-context-propagation**: completed 2026-04-04, 1 waves, 1 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-retry-context-propagation.yaml

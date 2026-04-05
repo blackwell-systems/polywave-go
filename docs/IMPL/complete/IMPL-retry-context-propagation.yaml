@@ -1,3 +1,4 @@
+completion_date: "2026-04-04"
 title: Fix pkg/retry context propagation gaps and dead code
 feature_slug: retry-context-propagation
 verdict: SUITABLE_WITH_CAVEATS
@@ -268,4 +269,4 @@ pre_mortem:
           likelihood: low
           impact: low
           mitigation: Code review confirms both branches assign identical value 'retrying'. The block is provably a no-op.
-state: REVIEWED
+state: COMPLETE
