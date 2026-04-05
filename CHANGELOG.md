@@ -6,6 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (inspector-findings-tools)
+- `CommitTracker.Count` field type changed from `int` to `int64` — required for correct `sync/atomic` access; three backend clients (`api`, `openai`, `bedrock`) updated to use `atomic.LoadInt64` in `CommitCount()` accordingly
+- Consolidated unexported `newRolePathMiddleware` into exported `RolePathMiddleware`; `rolePathMiddlewareFn` now wires directly to `RolePathMiddleware` — eliminates duplicate implementations that had diverged
+- Scout `.yaml` suffix check: changed `continue` to `break` in prefix loop — prevents a second matching prefix from bypassing the extension restriction
+- Removed passthrough stubs (`defaultOwnershipMiddleware`, `defaultFreezeMiddleware`, `defaultRolePathMiddleware`) from `workshop_constrained.go` — dead code immediately overwritten by `RegisterConstraintMiddleware()`
+- Unexported `ReadOnlyAllowed` → `readOnlyAllowed` (only used within package)
+- Unified I6 error format: `RolePathMiddleware` now emits `I6_VIOLATION:` instead of `BLOCKED:` — consistent with `newOwnershipMiddleware` (`I1_VIOLATION`) and `newFreezeMiddleware` (`I2_VIOLATION`)
+- `checkGitOwnershipViolations` now surfaces `git.DiffNameOnlyHEAD` failures as a warning instead of silently returning empty string
+- Clarified `doc.go` middleware execution order comment
+
+### Added (inspector-findings-tools)
+- Table-driven test for `isGitModifyCommand` and direct test for `StandardTools`
+
+### Fixed (inspector-findings-suitability)
+- `ScanPreImplementation` now validates `repoRoot` directory existence via `os.Stat`; returns `S003_FILE_STAT_FAILED` for non-existent or inaccessible paths
+- Added `default` branch to `status.Status` switch — unknown/zero-value statuses count as Todo, preserving the `Done+Partial+Todo==TotalItems` invariant
+- `classifyRequirement` error return now populates `ItemStatus.ID` and `ItemStatus.File` — callers can identify which requirement failed without inspecting the error message
+- `ClassifyFile` non-`IsNotExist` read failures now emit `result.SAWError` with `S004_FILE_READ_FAILED` instead of bare `fmt.Errorf` — wires the previously dead error code
+
+### Added (inspector-findings-suitability)
+- Four new tests: `TestScanPreImplementation_RepoRootNotExist`, `TestScanPreImplementation_CountInvariant`, `TestClassifyFile_UnreadableFilePopulatesIDAndFile`, `TestClassifyFile_NonExistReadErrorUsesS004`
+
 ### Fixed (2026-04-04)
 - **SA4004:** `finalize.go` closed-loop retry loop unconditionally broke after first agent; restructured to `if len(waveAgents) > 0` index access (semantically identical, lint-clean)
 
