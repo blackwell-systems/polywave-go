@@ -35,7 +35,12 @@ event := notify.Event{
 }
 
 // Format and dispatch to all adapters
-err := dispatcher.Dispatch(ctx, event, &notify.SlackFormatter{})
+res := dispatcher.Dispatch(ctx, event, &notify.SlackFormatter{})
+if res.IsFatal() {
+    log.Printf("dispatch failed: %v", res.Errors)
+} else if !res.IsSuccess() {
+    log.Printf("dispatch partial: %v", res.Errors)
+}
 ```
 
 ## Adapter Configuration
@@ -58,8 +63,9 @@ Posts messages as embeds with severity-based colors (blue=info, yellow=warning,
 red=error) and inline field arrays.
 
 ### Telegram
-Sends messages via the Bot API `sendMessage` endpoint with Markdown formatting.
-Titles are bold, fields are italicized key-value pairs.
+Sends messages via the Bot API `sendMessage` endpoint with HTML formatting
+(`parse_mode: "HTML"`). Titles are rendered as `<b>bold</b>`, fields as
+`<i>italic</i>` key-value pairs.
 
 ## Custom Adapters
 

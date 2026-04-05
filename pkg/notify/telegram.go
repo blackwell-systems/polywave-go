@@ -113,13 +113,27 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	}
 
 	var telegramResp struct {
-		OK     bool `json:"ok"`
-		Result struct {
+		OK          bool   `json:"ok"`
+		Description string `json:"description"` // populated when ok=false
+		Result      struct {
 			MessageID int `json:"message_id"`
 		} `json:"result"`
 	}
+	if err := json.NewDecoder(resp.Body).Decode(&telegramResp); err != nil {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "TELEGRAM_DECODE_ERROR", Message: fmt.Sprintf("telegram: decode response: %v", err), Severity: "fatal"},
+		})
+	}
+	// Telegram returns HTTP 200 for application-level errors (ok=false).
+	// Mirror the Slack bot token path: treat ok=false as a fatal failure.
+	if !telegramResp.OK {
+		return result.NewFailure[SendData]([]result.SAWError{
+			{Code: "TELEGRAM_API_ERROR", Message: fmt.Sprintf("telegram: API error: %s", telegramResp.Description), Severity: "fatal"},
+		})
+	}
+
 	var msgID string
-	if err := json.NewDecoder(resp.Body).Decode(&telegramResp); err == nil && telegramResp.OK && telegramResp.Result.MessageID > 0 {
+	if telegramResp.Result.MessageID > 0 {
 		msgID = fmt.Sprintf("%d", telegramResp.Result.MessageID)
 	}
 

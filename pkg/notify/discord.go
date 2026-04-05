@@ -78,6 +78,10 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 	if msg.Embeds != nil {
 		if embeds, ok := msg.Embeds.([]discordEmbed); ok {
 			p.Embeds = embeds
+		} else {
+			// Type assertion failed (e.g. wrong formatter used) — fall back to
+			// plain text so the payload is never silently empty.
+			p.Content = msg.Text
 		}
 	} else {
 		p.Content = msg.Text
