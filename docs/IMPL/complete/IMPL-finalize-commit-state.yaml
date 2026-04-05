@@ -1,3 +1,4 @@
+completion_date: "2026-04-05"
 title: Add commit_state step to finalize-wave before merge-agents
 feature_slug: finalize-commit-state
 verdict: SUITABLE
@@ -384,5 +385,5 @@ pre_mortem:
             hook rejection), the step returns a warning and finalize continues.
             The SAW_ALLOW_MAIN_COMMIT env var bypasses the SAW-specific pre-commit
             hook that blocks main-branch commits.
-state: REVIEWED
+state: COMPLETE
 injection_method: hook

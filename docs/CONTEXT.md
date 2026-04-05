@@ -376,3 +376,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-result-queue-error-fixes.yaml
 - **protocol-behavioral-fixes**: completed 2026-04-05, 1 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-protocol-behavioral-fixes.yaml
+- **finalize-commit-state**: completed 2026-04-05, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-finalize-commit-state.yaml
