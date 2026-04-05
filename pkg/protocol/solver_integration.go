@@ -62,6 +62,11 @@ func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
 		})
 	}
 
+	// Advisory: check if the manifest is over-sequenced relative to the critical path.
+	if cpErr := checkCriticalPath(m, nodes); cpErr != nil {
+		errs = append(errs, *cpErr)
+	}
+
 	// Append standard validation errors.
 	errs = append(errs, Validate(m)...)
 	return errs
@@ -245,4 +250,28 @@ func compareAssignments(m *IMPLManifest, solveResult solver.SolveResult) []waveM
 		return mismatches[i].agentID < mismatches[j].agentID
 	})
 	return mismatches
+}
+
+// checkCriticalPath returns a warning SAWError if the manifest declares more waves
+// than the dependency graph's critical path requires. This indicates the scout wrote
+// an over-sequenced wave structure (e.g., 3 waves for a graph whose longest chain is 2).
+// Returns nil if:
+//   - the graph has cycles (CriticalPath returns nil — cycle errors are reported elsewhere)
+//   - len(m.Waves) <= len(critical path) (manifest is optimal or under-waved relative to solver)
+func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.SAWError {
+	cp := solver.CriticalPath(nodes)
+	if cp == nil {
+		// Cyclic graph — cycle errors are already reported by the solver.
+		return nil
+	}
+	minWaves := len(cp)
+	if len(m.Waves) <= minWaves {
+		return nil
+	}
+	return &result.SAWError{
+		Code:     "SOLVER_OVER_SEQUENCED",
+		Message:  fmt.Sprintf("manifest has %d waves but critical path requires only %d; consider collapsing waves", len(m.Waves), minWaves),
+		Severity: "warning",
+		Field:    "waves",
+	}
 }
