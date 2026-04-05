@@ -118,7 +118,10 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
 
-	wm := worktree.New("/repo", "test-slug")
+	wm, err := worktree.New("/repo", "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(fake)
 
 	// Use the CLI model on the agent spec.
@@ -185,11 +188,14 @@ func TestLaunchAgentStructured_APIPath(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New(dir, "test-slug")
+	wm, err := worktree.New(dir, "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
 		t.Fatalf("launchAgentStructured returned error: %v", err)
 	}
@@ -278,11 +284,14 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New(dir, "test-slug")
+	wm, err := worktree.New(dir, "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(fake)
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
 		t.Fatalf("launchAgentStructured returned error: %v", err)
 	}
@@ -379,11 +388,14 @@ func TestLaunchAgentStructured_E19EscalateReturnsError(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New(dir, "test-slug")
+	wm, err := worktree.New(dir, "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err == nil {
 		t.Fatal("expected error for needs_replan blocked report, got nil")
 	}
@@ -433,11 +445,14 @@ func TestLaunchAgentStructured_WorktreeCreationFailure(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New("/repo", "test-slug")
+	wm, err := worktree.New("/repo", "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err == nil {
 		t.Fatal("expected error when worktree creation fails, got nil")
 	}
@@ -495,11 +510,14 @@ func TestLaunchAgentStructured_StructuredFunctionError(t *testing.T) {
 		mu.Unlock()
 	})
 
-	wm := worktree.New("/repo", "test-slug")
+	wm, err := worktree.New("/repo", "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err == nil {
 		t.Fatal("expected error from structured run failure, got nil")
 	}
@@ -577,11 +595,14 @@ func TestLaunchAgentStructured_OnChunkForwarding(t *testing.T) {
 		}
 	})
 
-	wm := worktree.New(dir, "test-slug")
+	wm, err := worktree.New(dir, "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 	agentSpec := protocol.Agent{ID: "A", Task: "do work"}
 
-	err := o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
+	err = o.launchAgentStructured(context.Background(), runner, wm, 1, agentSpec)
 	if err != nil {
 		t.Fatalf("launchAgentStructured returned error: %v", err)
 	}
@@ -627,7 +648,10 @@ func TestSetRunWaveAgentStructuredFunc(t *testing.T) {
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
-	wm := worktree.New("/repo", "test-slug")
+	wm, err := worktree.New("/repo", "test-slug")
+	if err != nil {
+		t.Fatalf("worktree.New: %v", err)
+	}
 	runner := agent.NewRunner(&fakeBackend{})
 
 	// The error is expected; we just want to verify it was called.

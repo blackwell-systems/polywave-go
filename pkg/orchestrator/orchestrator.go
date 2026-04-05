@@ -626,7 +626,12 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 
 	// Build the worktree manager and default agent runner.
 	slug := o.implSlug(ctx)
-	wm := worktree.New(o.repoPath, slug)
+	wm, wmErr := worktree.New(o.repoPath, slug)
+	if wmErr != nil {
+		return result.NewFailure[WaveData]([]result.SAWError{
+			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
+		})
+	}
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return result.NewFailure[WaveData]([]result.SAWError{
@@ -707,6 +712,15 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 		return result.NewFailure[WaveData]([]result.SAWError{
 			result.NewFatal(result.CodeAgentLaunchFailed, err.Error()),
 		})
+	}
+
+	// Best-effort cleanup of any worktrees tracked by this Manager instance.
+	// merge.go handles removal of worktrees after merge; this catches any
+	// that were created before merge runs or that merge.go missed.
+	if cleanupResult := wm.CleanupAll(); cleanupResult.IsFatal() || cleanupResult.IsPartial() {
+		for _, e := range cleanupResult.Errors {
+			o.log().Warn("orchestrator.RunWave: worktree cleanup warning", "code", e.Code, "msg", e.Message)
+		}
 	}
 
 	// All agents in the wave completed successfully.
@@ -1283,7 +1297,12 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 	}
 
 	// Build worktree manager and backend.
-	wm := worktree.New(o.repoPath, o.implSlug(ctx))
+	wm, wmErr := worktree.New(o.repoPath, o.implSlug(ctx))
+	if wmErr != nil {
+		return result.NewFailure[AgentData]([]result.SAWError{
+			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
+		})
+	}
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
 		return result.NewFailure[AgentData]([]result.SAWError{
