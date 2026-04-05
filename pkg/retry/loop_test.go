@@ -383,7 +383,7 @@ func TestRetryLoop_GenerateRetryIMPLMethod(t *testing.T) {
 	// Manually set attempt to test without calling Run
 	loop.attempt = 1
 
-	m := loop.GenerateRetryIMPL([]string{"pkg/method/m.go"}, "test failed")
+	m := loop.GenerateRetryIMPL(context.Background(), []string{"pkg/method/m.go"}, "test failed")
 
 	if m == nil {
 		t.Fatal("GenerateRetryIMPL method returned nil")
@@ -554,7 +554,7 @@ func TestRetryLoop_saveRetryIMPL_Errors(t *testing.T) {
 		Verdict:     "SUITABLE",
 	}
 
-	res := loop.saveRetryIMPL(m, "test-slug")
+	res := loop.saveRetryIMPL(context.Background(), m, "test-slug")
 	if !res.IsFatal() {
 		t.Fatal("expected error for MkdirAll failure")
 	}
@@ -590,7 +590,7 @@ func TestRetryLoop_saveRetryIMPL_SaveFailed(t *testing.T) {
 		Verdict:     "SUITABLE",
 	}
 
-	res := loop.saveRetryIMPL(m, "test-slug")
+	res := loop.saveRetryIMPL(context.Background(), m, "test-slug")
 	if !res.IsFatal() {
 		t.Fatal("expected error for protocol.Save failure")
 	}
@@ -608,7 +608,7 @@ func TestRetryLoop_filesFromIMPL_LoadError(t *testing.T) {
 	loop := NewRetryLoop(cfg)
 
 	// filesFromIMPL should return nil when protocol.Load fails
-	files := loop.filesFromIMPL()
+	files := loop.filesFromIMPL(context.Background())
 	if files != nil {
 		t.Errorf("filesFromIMPL should return nil for missing file, got: %v", files)
 	}
@@ -618,7 +618,7 @@ func TestRetryLoop_filesFromIMPL_LoadError(t *testing.T) {
 // returns default command when protocol.Load fails.
 func TestRetryLoop_gateCommandFromIMPL_LoadError(t *testing.T) {
 	invalidPath := "/nonexistent/path.yaml"
-	cmd := gateCommandFromIMPL(invalidPath)
+	cmd := gateCommandFromIMPL(context.Background(), invalidPath)
 	if cmd != "go build ./..." {
 		t.Errorf("gateCommandFromIMPL should return default on load error, got: %q", cmd)
 	}
