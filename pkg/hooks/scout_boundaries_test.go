@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func TestIsValidScoutPath(t *testing.T) {
+func TestValidScoutPath(t *testing.T) {
 	tests := []struct {
 		name     string
 		filePath string
@@ -29,9 +29,9 @@ func TestIsValidScoutPath(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := IsValidScoutPath(tt.filePath)
+			got := isValidScoutPath(tt.filePath)
 			if got != tt.want {
-				t.Errorf("IsValidScoutPath(%q) = %v, want %v", tt.filePath, got, tt.want)
+				t.Errorf("isValidScoutPath(%q) = %v, want %v", tt.filePath, got, tt.want)
 			}
 		})
 	}
@@ -184,7 +184,7 @@ func TestValidateScoutWrites(t *testing.T) {
 		res := ValidateScoutWrites(freshDir, badExpected, startTime)
 
 		// The valid IMPL file was written by Scout but it matches the boundary rule,
-		// so it should NOT be a violation (IsValidScoutPath(relPath) returns true).
+		// so it should NOT be a violation (isValidScoutPath(relPath) returns true).
 		// The function should return Success because the file is in docs/IMPL/.
 		if !res.IsSuccess() {
 			t.Errorf("Expected SUCCESS: file in docs/IMPL/ should be allowed regardless of expectedIMPLPath, got code=%q errors=%v", res.Code, res.Errors)

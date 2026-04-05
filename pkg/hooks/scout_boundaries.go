@@ -21,8 +21,15 @@ type ValidateData struct {
 // Call this after Scout execution completes.
 // Returns:
 //   - Success if no unexpected writes found
-//   - Partial if unexpected writes exist (non-fatal, reportable)
+//   - Partial if unexpected writes exist (treated as fatal by pkg/engine — the wave
+//     runner upgrades Partial to a failure to enforce the I6 scout boundary invariant)
 //   - Fatal on filesystem scan error
+//
+// UnexpectedWrites in ValidateData contains repo-relative paths. If filepath.Rel
+// fails (unusual), the absolute path is stored instead.
+//
+// expectedIMPLPath must be a cleaned absolute path; callers with relative or
+// uncleaned paths should pass filepath.Clean(filepath.Abs(path)) before calling.
 func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time) result.Result[ValidateData] {
 	docsDir := filepath.Join(repoPath, "docs")
 	if _, err := os.Stat(docsDir); os.IsNotExist(err) {
@@ -54,13 +61,14 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 			relPath = path
 		}
 
-		// Check if it's the expected IMPL doc
-		if path == expectedIMPLPath {
+		// Check if it's the expected IMPL doc.
+		// Normalize both sides to handle relative or uncleaned caller input.
+		if filepath.Clean(path) == filepath.Clean(expectedIMPLPath) {
 			return nil // Allowed
 		}
 
 		// Check if it's a valid IMPL doc in docs/IMPL/
-		if IsValidScoutPath(relPath) {
+		if isValidScoutPath(relPath) {
 			return nil // Allowed
 		}
 
@@ -102,10 +110,9 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 	return result.NewSuccess(ValidateData{ValidatedPath: repoPath})
 }
 
-// IsValidScoutPath checks if a file path is within Scout's write boundaries.
-// Used for pre-execution validation (CLI hooks) and testing.
+// isValidScoutPath reports whether filePath is within Scout's write boundaries.
 // Accepts both relative ("docs/IMPL/IMPL-x.yaml") and absolute paths.
-func IsValidScoutPath(filePath string) bool {
+func isValidScoutPath(filePath string) bool {
 	normalized := filepath.Clean(filePath)
 	dir := filepath.Dir(normalized)
 	base := filepath.Base(normalized)
