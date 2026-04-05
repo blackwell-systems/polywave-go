@@ -348,7 +348,7 @@ func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []result.SAWErr
 // It checks that referenced IMPL docs exist on disk, have valid states
 // (reviewed/complete), and don't violate P1 (file_ownership disjointness
 // within a tier) or P2 (frozen contract redefinition).
-func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []result.SAWError {
+func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, repoPath string) []result.SAWError {
 	var errs []result.SAWError
 
 	// Collect states that qualify as "reviewed or later" for import-mode validation.
@@ -424,7 +424,7 @@ func ValidateProgramImportMode(manifest *PROGRAMManifest, repoPath string) []res
 		}
 
 		// Check 2: Parse IMPL doc and verify state consistency.
-		implDoc, err := Load(context.TODO(), resolvedPath)
+		implDoc, err := Load(ctx, resolvedPath)
 		if err != nil {
 			errs = append(errs, result.SAWError{
 				Code:     result.CodeIMPLFileMissing,

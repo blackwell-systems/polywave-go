@@ -196,7 +196,7 @@ func FullValidateProgram(ctx context.Context, manifestPath string, opts FullVali
 			// Callers should prefer setting RepoDir explicitly for reproducibility.
 			rd, _ = os.Getwd()
 		}
-		importErrs := ValidateProgramImportMode(manifest, rd)
+		importErrs := ValidateProgramImportMode(context.Background(), manifest, rd)
 		validationErrs = append(validationErrs, importErrs...)
 	}
 
