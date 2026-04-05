@@ -182,7 +182,7 @@ func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protoc
 	manifest.Completion.ImplsComplete = completeCount
 
 	// Run import-mode validation for P1/P2 conflict detection
-	importErrs := protocol.ValidateProgramImportMode(manifest, opts.RepoDir)
+	importErrs := protocol.ValidateProgramImportMode(ctx, manifest, opts.RepoDir)
 	var p1Conflicts, p2Conflicts []string
 	for _, ve := range importErrs {
 		switch ve.Code {

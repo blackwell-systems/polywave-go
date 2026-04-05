@@ -175,7 +175,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 
 		// Step 5: Validate pre-existing IMPLs
 		if len(preExisting) > 0 {
-			validationErrs := protocol.ValidateProgramImportMode(manifest, opts.RepoPath)
+			validationErrs := protocol.ValidateProgramImportMode(ctx, manifest, opts.RepoPath)
 			if len(validationErrs) > 0 {
 				for _, ve := range validationErrs {
 					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("[%s] %s", ve.Code, ve.Message))

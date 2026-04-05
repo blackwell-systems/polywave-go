@@ -50,6 +50,7 @@ Exit codes:
 			manifestPath := args[0]
 
 			prepRes := protocol.PrepareTier(protocol.PrepareTierOpts{
+				Ctx:                 cmd.Context(),
 				ProgramManifestPath: manifestPath,
 				TierNumber:          tierNum,
 				RepoDir:             repoDir,
