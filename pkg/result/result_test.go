@@ -514,6 +514,11 @@ func TestSAWErrorInterface(t *testing.T) {
 			err:  NewWarning("W001", "heads up"),
 			want: "[warning] W001: heads up",
 		},
+		{
+			name: "info severity",
+			err:  NewInfo("I001", "fyi"),
+			want: "[info] I001: fyi",
+		},
 	}
 
 	for _, tt := range tests {
@@ -562,6 +567,9 @@ func TestSAWErrorIsFatal(t *testing.T) {
 	}
 	if NewWarning("W001", "warning").IsFatal() {
 		t.Error("NewWarning should not be fatal")
+	}
+	if NewInfo("I001", "info").IsFatal() {
+		t.Error("NewInfo should not be fatal")
 	}
 }
 
@@ -630,6 +638,11 @@ func TestNewErrorConstructors(t *testing.T) {
 	if w.Code != "W001" || w.Message != "warning msg" || w.Severity != "warning" {
 		t.Errorf("NewWarning = %+v", w)
 	}
+
+	i := NewInfo("I001", "info msg")
+	if i.Code != "I001" || i.Message != "info msg" || i.Severity != "info" {
+		t.Errorf("NewInfo = %+v", i)
+	}
 }
 
 // TestSAWErrorCauseNotSerialized verifies Cause is excluded from JSON.
@@ -696,6 +709,45 @@ func TestToErrors(t *testing.T) {
 			t.Error("expected non-nil joined error")
 		}
 	})
+}
+
+// TestWithContextForkSafety verifies that forking from the same base does not corrupt either fork.
+func TestWithContextForkSafety(t *testing.T) {
+	base := NewError("E001", "base").WithContext("shared", "original")
+	a := base.WithContext("k1", "v1")
+	b := base.WithContext("k2", "v2")
+
+	// a should have shared+k1, b should have shared+k2
+	if a.Context["k2"] != "" {
+		t.Errorf("fork a leaked k2: got %q", a.Context["k2"])
+	}
+	if b.Context["k1"] != "" {
+		t.Errorf("fork b leaked k1: got %q", b.Context["k1"])
+	}
+	if a.Context["shared"] != "original" {
+		t.Errorf("a lost shared: got %q", a.Context["shared"])
+	}
+	if b.Context["shared"] != "original" {
+		t.Errorf("b lost shared: got %q", b.Context["shared"])
+	}
+	// base should be unchanged
+	if len(base.Context) != 1 {
+		t.Errorf("base context mutated: len=%d, want 1", len(base.Context))
+	}
+}
+
+// TestNewInfo verifies NewInfo constructor creates an info-severity SAWError.
+func TestNewInfo(t *testing.T) {
+	e := NewInfo("I001", "informational message")
+	if e.Code != "I001" {
+		t.Errorf("Code = %q, want %q", e.Code, "I001")
+	}
+	if e.Message != "informational message" {
+		t.Errorf("Message = %q, want %q", e.Message, "informational message")
+	}
+	if e.Severity != "info" {
+		t.Errorf("Severity = %q, want %q", e.Severity, "info")
+	}
 }
 
 // ptr is a helper function to create a pointer to a value.
