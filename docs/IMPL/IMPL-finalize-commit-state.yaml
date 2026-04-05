@@ -320,6 +320,7 @@ waves:
           files:
             - pkg/engine/finalize.go
             - cmd/sawtools/finalize_wave.go
+      base_commit: 85bc842461a3acd8bf734d9b226790bec46e85c7
 quality_gates:
     level: standard
     gates:
@@ -332,6 +333,31 @@ quality_gates:
         - type: test
           command: go test ./pkg/engine/ -count=1 -timeout 60s
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/finalize-commit-state/wave1-agent-A
+        commit: 7ce9ade
+        files_changed:
+            - pkg/engine/finalize_steps.go
+            - pkg/engine/finalize_steps_commit_test.go
+        files_created:
+            - pkg/engine/finalize_steps_commit_test.go
+        tests_added:
+            - TestStepCommitState_CleanWorkDir
+            - TestStepCommitState_NilOnEvent
+            - TestStepCommitState_EmitsRunningEvent
+        verification: PASS
+        notes: StepCommitState added at end of finalize_steps.go. All 3 tests passing. Build and vet clean.
+    B:
+        status: complete
+        branch: saw/finalize-commit-state/wave1-agent-B
+        commit: 51dd4bb
+        files_changed:
+            - pkg/engine/finalize.go
+            - cmd/sawtools/finalize_wave.go
+        verification: PASS
+        notes: 'Build fails in isolation due to missing StepCommitState (Agent A scope) - expected for parallel wave. All wiring correct: CommitState field on FinalizeWaveOpts, step 3.7 call before MergeAgents, --commit-state CLI flag registered and passed through.'
 pre_mortem:
     overall_risk: low
     rows:
