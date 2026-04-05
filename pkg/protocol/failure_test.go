@@ -33,7 +33,7 @@ func TestShouldRetry_Escalate(t *testing.T) {
 }
 
 func TestShouldRetry_Unknown(t *testing.T) {
-	if ShouldRetry(FailureTypeEnum("unknown")) {
+	if ShouldRetry(FailureUnknown) {
 		t.Error("unknown failure types should not be retryable")
 	}
 }
@@ -48,7 +48,7 @@ func TestMaxRetries_Values(t *testing.T) {
 		{FailureTimeout, 1},
 		{FailureNeedsReplan, 0},
 		{FailureEscalate, 0},
-		{FailureTypeEnum("unknown"), 0},
+		{FailureUnknown, 0},
 	}
 
 	for _, tt := range tests {
@@ -71,7 +71,7 @@ func TestActionRequired_AllTypes(t *testing.T) {
 		{FailureTimeout, "Retry with scope-reduction instructions"},
 		{FailureNeedsReplan, "Re-engage Scout with agent's completion report"},
 		{FailureEscalate, "Surface to human immediately"},
-		{FailureTypeEnum("unknown"), "Unknown failure type: escalate to human"},
+		{FailureUnknown, "Unknown failure type: escalate to human"},
 	}
 
 	for _, tt := range tests {
@@ -97,7 +97,7 @@ func TestValidFailureType(t *testing.T) {
 		{"needs_replan", true},
 		{"escalate", true},
 		{"timeout", true},
-		{"unknown", false},
+		{"unknown", true},
 		{"", false},
 		{"TRANSIENT", false},
 		{"Transient", false},
@@ -139,7 +139,7 @@ func TestReactionEntryFor_AllFailureTypes(t *testing.T) {
 		{FailureFixable, fixableEntry},
 		{FailureNeedsReplan, needsReplanEntry},
 		{FailureEscalate, escalateEntry},
-		{FailureTypeEnum("unknown"), nil},
+		{FailureUnknown, nil},
 	}
 
 	for _, tt := range tests {
