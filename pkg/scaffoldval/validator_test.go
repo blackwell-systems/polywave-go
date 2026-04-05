@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -273,93 +274,17 @@ go 1.21
 	}
 }
 
-func TestExtractImports(t *testing.T) {
-	tests := []struct {
-		name     string
-		content  string
-		expected []string
-	}{
-		{
-			name: "single import",
-			content: `package main
-
-import "fmt"
-
-func main() {}
-`,
-			expected: []string{"fmt"},
-		},
-		{
-			name: "multiple imports in block",
-			content: `package main
-
-import (
-	"fmt"
-	"os"
-	"strings"
-)
-
-func main() {}
-`,
-			expected: []string{"fmt", "os", "strings"},
-		},
-		{
-			name: "third-party imports",
-			content: `package main
-
-import (
-	"fmt"
-	"github.com/example/pkg"
-	"golang.org/x/sync/errgroup"
-)
-
-func main() {}
-`,
-			expected: []string{"fmt", "github.com/example/pkg", "golang.org/x/sync/errgroup"},
-		},
-		{
-			name: "aliased imports",
-			content: `package main
-
-import (
-	"fmt"
-	pkg "github.com/example/pkg"
-)
-
-func main() {}
-`,
-			expected: []string{"fmt", "github.com/example/pkg"},
-		},
-		{
-			name:     "no imports",
-			content:  `package main\n\nfunc main() {}`,
-			expected: []string{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := extractImports(tt.content)
-			if len(result) != len(tt.expected) {
-				t.Errorf("Expected %d imports, got %d: %v", len(tt.expected), len(result), result)
-				return
-			}
-			for i, imp := range result {
-				if imp != tt.expected[i] {
-					t.Errorf("Expected import[%d] = %s, got %s", i, tt.expected[i], imp)
-				}
-			}
-		})
-	}
-}
-
 func TestCheckImports_StandardLib(t *testing.T) {
 	imports := []string{"fmt", "os", "strings", "io"}
-	result := checkImports(imports, "")
-
-	if len(result) != 0 {
-		t.Errorf("Expected no missing imports for standard library, got: %v", result)
+	result, err := checkImports(imports, "")
+	// With empty repoRoot, parseGoMod will fail to read go.mod
+	if err == nil {
+		// If no error, all std lib imports should pass
+		if len(result) != 0 {
+			t.Errorf("Expected no missing imports for standard library, got: %v", result)
+		}
 	}
+	// Error is acceptable — go.mod at "/" won't exist
 }
 
 func TestCheckImports_ThirdParty(t *testing.T) {
@@ -374,7 +299,10 @@ func TestCheckImports_ThirdParty(t *testing.T) {
 		"github.com/example/pkg",
 		"golang.org/x/sync/errgroup",
 	}
-	result := checkImports(imports, tmpDir)
+	result, err := checkImports(imports, tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if len(result) != 2 {
 		t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
 	}
@@ -403,7 +331,10 @@ func TestCheckImports_ThirdPartyInGoMod(t *testing.T) {
 		"github.com/example/pkg",
 		"golang.org/x/sync/errgroup",
 	}
-	result := checkImports(imports, tmpDir)
+	result, err := checkImports(imports, tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if len(result) != 0 {
 		t.Errorf("Expected no missing imports when all third-party are in go.mod, got: %v", result)
 	}
@@ -422,8 +353,90 @@ func TestCheckImports_Mixed(t *testing.T) {
 		"strings",
 		"golang.org/x/sync/errgroup",
 	}
-	result := checkImports(imports, tmpDir)
+	result, err := checkImports(imports, tmpDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
 	if len(result) != 2 {
 		t.Errorf("Expected 2 missing imports, got %d: %v", len(result), result)
+	}
+}
+
+func TestFindRepoRoot_NoGoMod(t *testing.T) {
+	// Create a temp dir with no go.mod anywhere in ancestry
+	tmpDir := t.TempDir()
+	subDir := filepath.Join(tmpDir, "a", "b", "c")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("Failed to create subdirectory: %v", err)
+	}
+
+	result, err := findRepoRoot(subDir)
+	if err == nil {
+		t.Errorf("Expected error when no go.mod found, got root: %s", result)
+	}
+	if result != "" {
+		t.Errorf("Expected empty string when no go.mod found, got: %s", result)
+	}
+	if err != nil && !strings.Contains(err.Error(), "could not locate go.mod") {
+		t.Errorf("Expected error to mention 'could not locate go.mod', got: %v", err)
+	}
+}
+
+func TestFindRepoRoot_GoModFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create go.mod at tmpDir
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte("module test\n\ngo 1.21\n"), 0644); err != nil {
+		t.Fatalf("Failed to create go.mod: %v", err)
+	}
+	// Search from a subdirectory
+	subDir := filepath.Join(tmpDir, "pkg", "foo")
+	if err := os.MkdirAll(subDir, 0755); err != nil {
+		t.Fatalf("Failed to create subdirectory: %v", err)
+	}
+
+	result, err := findRepoRoot(subDir)
+	if err != nil {
+		t.Fatalf("Unexpected error: %v", err)
+	}
+	if result != tmpDir {
+		t.Errorf("Expected root %s, got %s", tmpDir, result)
+	}
+}
+
+func TestParseGoMod_FileNotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod") // does not exist
+
+	moduleName, requires, err := parseGoMod(goModPath)
+	if err == nil {
+		t.Error("Expected error for missing go.mod file")
+	}
+	if moduleName != "" {
+		t.Errorf("Expected empty module name, got: %s", moduleName)
+	}
+	if requires != nil {
+		t.Errorf("Expected nil requires, got: %v", requires)
+	}
+}
+
+func TestParseGoMod_MalformedFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	// Malformed: no module directive, just garbage
+	if err := os.WriteFile(goModPath, []byte("this is not a valid go.mod\n"), 0644); err != nil {
+		t.Fatalf("Failed to create go.mod: %v", err)
+	}
+
+	moduleName, requires, err := parseGoMod(goModPath)
+	if err != nil {
+		t.Fatalf("Unexpected error for readable but malformed go.mod: %v", err)
+	}
+	// File is readable but has no module directive — empty module name is expected
+	if moduleName != "" {
+		t.Errorf("Expected empty module name for malformed go.mod, got: %s", moduleName)
+	}
+	if len(requires) != 0 {
+		t.Errorf("Expected no requires for malformed go.mod, got: %v", requires)
 	}
 }

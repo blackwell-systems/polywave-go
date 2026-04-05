@@ -37,20 +37,32 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 	// Step 2: Import resolution (check if imports exist)
 	// Determine repo root before checking imports
 	root := repoRoot
+	skipImports := false
 	if root == "" {
-		root = findRepoRoot(filepath.Dir(implPath))
+		var err error
+		root, err = findRepoRoot(filepath.Dir(implPath))
+		if err != nil {
+			vr.Imports.Status = "SKIP"
+			vr.Imports.Errors = []string{err.Error()}
+			skipImports = true
+			// Continue to type references and build steps
+		}
 	}
 
-	imports := importsFromAST(astFile)
-	missingImports := checkImports(imports, root)
-
-	if len(missingImports) > 0 {
-		vr.Imports.Status = "FAIL"
-		vr.Imports.Errors = missingImports
-		vr.Imports.Fixes = []string{fmt.Sprintf("Add missing imports: %v", missingImports)}
-		vr.Imports.AutoFixable = true
-	} else {
-		vr.Imports.Status = "PASS"
+	if !skipImports {
+		imports := importsFromAST(astFile)
+		missingImports, err := checkImports(imports, root)
+		if err != nil {
+			vr.Imports.Status = "SKIP"
+			vr.Imports.Errors = []string{err.Error()}
+		} else if len(missingImports) > 0 {
+			vr.Imports.Status = "FAIL"
+			vr.Imports.Errors = missingImports
+			vr.Imports.Fixes = []string{fmt.Sprintf("Add missing imports: %v", missingImports)}
+			vr.Imports.AutoFixable = true
+		} else {
+			vr.Imports.Status = "PASS"
+		}
 	}
 
 	// Step 3: Type references (check for undeclared types)
@@ -105,18 +117,16 @@ func ValidateScaffold(ctx context.Context, scaffoldPath string, implPath string,
 }
 
 // findRepoRoot walks upward from startDir looking for go.mod.
-// Returns the directory containing go.mod if found.
-// Falls back to filepath.Dir(startDir) if go.mod is not found.
-func findRepoRoot(startDir string) string {
+// Returns the directory containing go.mod, or an error if not found.
+func findRepoRoot(startDir string) (string, error) {
 	dir := startDir
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
+			return dir, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			// Reached filesystem root without finding go.mod
-			return filepath.Dir(startDir) // fallback
+			return "", fmt.Errorf("could not locate go.mod above %s", startDir)
 		}
 		dir = parent
 	}
@@ -133,45 +143,11 @@ func importsFromAST(f *ast.File) []string {
 	return imports
 }
 
-// extractImports parses import statements from Go source.
-// Kept for backward compatibility with TestExtractImports.
-func extractImports(content string) []string {
-	var imports []string
-	lines := strings.Split(content, "\n")
-	inImportBlock := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.HasPrefix(trimmed, "import (") {
-			inImportBlock = true
-			continue
-		}
-
-		if inImportBlock && trimmed == ")" {
-			inImportBlock = false
-			continue
-		}
-
-		if inImportBlock || strings.HasPrefix(trimmed, "import ") {
-			// Extract import path from: import "path" or "path"
-			if strings.Contains(trimmed, `"`) {
-				parts := strings.Split(trimmed, `"`)
-				if len(parts) >= 2 {
-					imports = append(imports, parts[1])
-				}
-			}
-		}
-	}
-
-	return imports
-}
-
 // parseGoMod parses a go.mod file and returns the module name and all required module paths.
-func parseGoMod(goModPath string) (string, []string) {
+func parseGoMod(goModPath string) (string, []string, error) {
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return "", nil
+		return "", nil, fmt.Errorf("reading go.mod: %w", err)
 	}
 	var moduleName string
 	var requires []string
@@ -208,13 +184,16 @@ func parseGoMod(goModPath string) (string, []string) {
 			}
 		}
 	}
-	return moduleName, requires
+	return moduleName, requires, nil
 }
 
 // checkImports verifies imports exist by consulting go.mod.
 // repoRoot is the directory containing go.mod.
-func checkImports(imports []string, repoRoot string) []string {
-	moduleName, requires := parseGoMod(filepath.Join(repoRoot, "go.mod"))
+func checkImports(imports []string, repoRoot string) ([]string, error) {
+	moduleName, requires, err := parseGoMod(filepath.Join(repoRoot, "go.mod"))
+	if err != nil {
+		return nil, fmt.Errorf("parsing go.mod: %w", err)
+	}
 	var missing []string
 	for _, imp := range imports {
 		if !strings.Contains(imp, ".") {
@@ -234,5 +213,5 @@ func checkImports(imports []string, repoRoot string) []string {
 			missing = append(missing, imp)
 		}
 	}
-	return missing
+	return missing, nil
 }
