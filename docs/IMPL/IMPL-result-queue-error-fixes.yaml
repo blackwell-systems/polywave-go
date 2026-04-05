@@ -584,6 +584,7 @@ waves:
           files:
             - pkg/queue/manager.go
             - pkg/queue/manager_test.go
+      base_commit: e81cd35e1b311ad3cf490294a5f58cef0bd0fff7
 quality_gates:
     level: standard
     gates:
@@ -596,6 +597,43 @@ quality_gates:
         - type: test
           command: go test ./pkg/result/... ./pkg/queue/...
           required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/result-queue-error-fixes/wave1-agent-A
+        commit: cfc539b
+        files_changed:
+            - pkg/result/result.go
+            - pkg/result/result_test.go
+        tests_added:
+            - TestWithContextForkSafety
+            - TestNewInfo
+        verification: PASS
+        notes: Added NewInfo constructor. WithContext already had the clone fix applied. Added fork safety test, NewInfo test, and updated TestNewErrorConstructors, TestSAWErrorInterface, TestSAWErrorIsFatal with NewInfo coverage.
+    B:
+        status: complete
+        branch: saw/result-queue-error-fixes/wave1-agent-B
+        commit: fb887f8
+        files_changed:
+            - pkg/result/codes_test.go
+        tests_added:
+            - TestAllCodesAreUnique(24 new entries)
+            - TestNCodesFollowNamingPattern(5 new entries)
+        verification: PASS
+        notes: Added 24 missing codes to TestAllCodesAreUnique (N094-N098, P011-P013, J001-J014, O001-O002). V048 was already present. Also added N094-N098 to TestNCodesFollowNamingPattern. All tests pass.
+    C:
+        status: complete
+        branch: saw/result-queue-error-fixes/wave1-agent-C
+        commit: ed50430
+        files_changed:
+            - pkg/queue/manager.go
+            - pkg/queue/manager_test.go
+        tests_added:
+            - TestCompletedSlugs_UnreadableFile_ReturnsWarning
+            - TestUpdateStatus_InvalidStatus
+            - TestUpdateStatus_AllValidStatuses
+        verification: PASS
+        notes: Wired Q006 warning for unreadable IMPL files in completedSlugs. Added status validation in UpdateStatus. All 20 queue tests pass.
 pre_mortem:
     overall_risk: low
     rows:
