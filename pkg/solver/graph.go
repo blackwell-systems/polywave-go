@@ -5,12 +5,17 @@ import (
 	"sort"
 )
 
-// DetectCycles uses DFS with a recursion stack to find all cycles in the
+// detectCycles uses DFS with a recursion stack to find all cycles in the
 // dependency graph. Returns a slice of cycle paths, where each path is a
 // slice of agent IDs forming the cycle (e.g. ["A", "B", "A"]). Returns nil
 // if no cycles exist. Cycles are reported in sorted order (by first element)
 // for determinism.
-func DetectCycles(nodes []DepNode) [][]string {
+//
+// Note: pkg/analyzer also has a private detectCycles function operating on
+// map[string][]string (file-level adjacency). The two are intentionally separate:
+// this function operates on []DepNode (agent-level dependency graph), while the
+// analyzer operates on file import graphs. The input types differ by design.
+func detectCycles(nodes []DepNode) [][]string {
 	// Build adjacency map: agent -> deps (edges point from agent to its dependencies)
 	adj := make(map[string][]string, len(nodes))
 	for _, n := range nodes {
@@ -95,10 +100,11 @@ func DetectCycles(nodes []DepNode) [][]string {
 	return cycles
 }
 
-// TransitiveDeps returns all transitive dependencies of the given agent
+// transitiveDeps returns all transitive dependencies of the given agent
 // (not just direct deps). Result is sorted alphabetically for determinism.
 // Returns nil if agentID is not found in the node set or has no transitive deps.
-func TransitiveDeps(nodes []DepNode, agentID string) []string {
+// Unexported: no production callers exist outside this package.
+func transitiveDeps(nodes []DepNode, agentID string) []string {
 	// Build adjacency map
 	adj := make(map[string][]string, len(nodes))
 	for _, n := range nodes {
@@ -151,7 +157,7 @@ func TransitiveDeps(nodes []DepNode, agentID string) []string {
 // of agent IDs (from root to leaf along the longest path). This represents
 // the minimum number of waves needed. Returns nil if the graph has cycles.
 func CriticalPath(nodes []DepNode) []string {
-	if cycles := DetectCycles(nodes); cycles != nil {
+	if cycles := detectCycles(nodes); cycles != nil {
 		return nil
 	}
 
