@@ -37,6 +37,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `pkg/agent/runner_test.go`: updated 3 call sites for `WaitForCompletion`/`WaitForCompletionResult` with `context.Background()` first arg
 - `pkg/builddiag`: ordering tests for Rust, JS, and Python catalogs (`TestRustPatterns_ConfidenceLevels`, `TestJSPatterns_ConfidenceLevels`, `TestPythonPatterns_ConfidenceLevels`)
 
+### Fixed (inspector-findings-codereview-collision)
+- `codereview/reviewer.go`: `validateReviewResponse` now validates `Overall` in [0,100] — previously an LLM returning -1 or 200 flowed through unchecked into `ReviewResult.Overall` and the `Passed` comparison
+- `codereview/reviewer.go`: defensive copy of `AllDimensions` in `ReviewDiff` (`append([]string(nil), AllDimensions...)`) — prevents external slice mutation from corrupting in-flight calls
+- `codereview/reviewer.go`: updated `RunCodeReview` doc: "fewer than two commits" → "any git error" (fallback fires on any `HEAD~1..HEAD` failure, not only shallow repos)
+- `codereview/types.go`: added mutation warning to `AllDimensions` doc comment
+- `collision/detector.go`: fixed branch-skip logic — when `slug == ""`, `buildBranchName` already returns legacy format; the old `&& slug != ""` guard meant a missing branch was never skipped, causing `git diff` to fail fatally; restructured to `continue` whenever neither branch format exists
+- `collision/detector.go`: `detectCollisionsInTypes` now skips `TypeDeclaration` entries with empty `Name` — prevents a confusing empty-name collision entry from `extractTypeDecls` edge cases
+
 ### Fixed (inspector-findings-tools)
 - `CommitTracker.Count` field type changed from `int` to `int64` — required for correct `sync/atomic` access; three backend clients (`api`, `openai`, `bedrock`) updated to use `atomic.LoadInt64` in `CommitCount()` accordingly
 - Consolidated unexported `newRolePathMiddleware` into exported `RolePathMiddleware`; `rolePathMiddlewareFn` now wires directly to `RolePathMiddleware` — eliminates duplicate implementations that had diverged

@@ -67,12 +67,14 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		}
 		branchName := buildBranchName(slug, waveNum, agent.ID)
 
-		// Try slug-scoped branch first, fall back to legacy
-		if !igit.BranchExists(repoPath, branchName) && slug != "" {
-			// Try legacy format
-			branchName = fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		// Try slug-scoped branch first, fall back to legacy format, then skip if absent.
+		if !igit.BranchExists(repoPath, branchName) {
+			if slug != "" {
+				// Slug-scoped branch missing; try legacy format.
+				branchName = fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+			}
 			if !igit.BranchExists(repoPath, branchName) {
-				// Branch doesn't exist yet — skip this agent
+				// Branch doesn't exist yet — skip this agent.
 				continue
 			}
 		}
@@ -253,6 +255,9 @@ func detectCollisionsInTypes(agentTypes map[string][]TypeDeclaration) []TypeColl
 
 	for agentID, types := range agentTypes {
 		for _, t := range types {
+			if t.Name == "" {
+				continue
+			}
 			key := t.Package + "/" + t.Name
 			// NOT goroutine-safe: this map is written from a single goroutine.
 			// Do not parallelize this loop without protecting typeOccurrences with a sync.Mutex.

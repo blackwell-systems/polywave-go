@@ -14,6 +14,8 @@ const (
 )
 
 // AllDimensions lists the 5 standard review dimensions in their canonical order.
+// Do not modify this slice; callers that need a mutable copy should use
+// append([]string(nil), AllDimensions...).
 var AllDimensions = []string{
 	DimCodeQuality, DimNamingClarity, DimComplexity,
 	DimPatternAdherence, DimSecurity,

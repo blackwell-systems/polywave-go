@@ -39,7 +39,7 @@ func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) result.Result
 	}
 	dims := opts.Dimensions
 	if len(dims) == 0 {
-		dims = AllDimensions
+		dims = append([]string(nil), AllDimensions...)
 	}
 
 	// Empty diff — nothing to review.
@@ -159,8 +159,8 @@ Do not include any text outside the JSON object.`, dimList)
 
 // RunCodeReview runs the AI code review gate for the given repo after merge.
 // Returns a success result with Skipped=true when code review is disabled (cfg.Enabled == false).
-// Gets the diff via git diff HEAD~1..HEAD; falls back to git show HEAD if
-// the repo has fewer than two commits.
+// Gets the diff via git diff HEAD~1..HEAD; falls back to git show HEAD on any
+// git error (e.g. shallow clone, single-commit repo).
 func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) result.Result[ReviewResult] {
 	if !cfg.Enabled {
 		return result.NewSuccess(ReviewResult{Skipped: true})
@@ -193,7 +193,7 @@ func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) r
 
 // validateReviewResponse validates the parsed LLM response structure.
 // It checks that Dimensions is non-empty, each dimension score is in [0,100],
-// and Summary is non-empty.
+// Overall is in [0,100], and Summary is non-empty.
 func validateReviewResponse(parsed reviewResponse) error {
 	if len(parsed.Dimensions) == 0 {
 		return fmt.Errorf("review response has no dimensions")
@@ -202,6 +202,9 @@ func validateReviewResponse(parsed reviewResponse) error {
 		if d.Score < 0 || d.Score > 100 {
 			return fmt.Errorf("dimension %q score %d out of range [0,100]", d.Name, d.Score)
 		}
+	}
+	if parsed.Overall < 0 || parsed.Overall > 100 {
+		return fmt.Errorf("overall score %d out of range [0,100]", parsed.Overall)
 	}
 	if parsed.Summary == "" {
 		return fmt.Errorf("review response has empty summary")
