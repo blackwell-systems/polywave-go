@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
 
 // minimalIMPLYAML returns a minimal valid IMPL YAML for testing PrepareAgent.
+// Uses two agents to avoid the V047 trivial-scope validation error, which
+// blocks the pre-launch gate for single-agent SUITABLE IMPLs.
 func minimalIMPLYAML(agentID string, waveNum int) string {
 	return fmt.Sprintf(`title: Test Feature
 feature_slug: test-feature
@@ -22,6 +25,9 @@ file_ownership:
   - file: pkg/test/file.go
     agent: %s
     wave: %d
+  - file: pkg/test/other.go
+    agent: B
+    wave: %d
 waves:
   - number: %d
     agents:
@@ -29,7 +35,11 @@ waves:
         task: "Implement test feature"
         files:
           - pkg/test/file.go
-`, agentID, waveNum, waveNum, agentID)
+      - id: B
+        task: "Implement other feature"
+        files:
+          - pkg/test/other.go
+`, agentID, waveNum, waveNum, waveNum, agentID)
 }
 
 // TestPrepareAgent_JournalContextAvailable_FalseWhenNoSessionFiles verifies that
@@ -160,5 +170,77 @@ func TestPrepareAgent_JournalContextAvailable_TrueWhenSessionHasToolUses(t *test
 	// Verify the context file was actually written to disk.
 	if _, err := os.Stat(data.JournalContextFile); os.IsNotExist(err) {
 		t.Errorf("JournalContextFile does not exist on disk: %s", data.JournalContextFile)
+	}
+}
+
+func TestPrepareAgent_PreLaunchGate_BlocksOnUncommittedScaffold(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// IMPL with an uncommitted scaffold — gate should block
+	implYAML := `title: Test Feature
+feature_slug: test-feature
+verdict: SUITABLE
+state: REVIEWED
+test_command: "go test ./..."
+scaffolds:
+  - file_path: pkg/types.go
+    status: pending
+file_ownership:
+  - file: pkg/test/file.go
+    agent: A
+    wave: 1
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: "Implement test feature"
+        files:
+          - pkg/test/file.go
+`
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(implPath, []byte(implYAML), 0644); err != nil {
+		t.Fatalf("failed to write IMPL doc: %v", err)
+	}
+
+	res := PrepareAgent(context.Background(), PrepareAgentOpts{
+		ManifestPath: implPath,
+		ProjectRoot:  tmpDir,
+		WaveNum:      1,
+		AgentID:      "A",
+		NoWorktree:   true,
+	})
+
+	if res.IsSuccess() {
+		t.Error("expected PrepareAgent to fail when scaffold is uncommitted")
+	}
+	// Verify the error mentions the gate
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors")
+	}
+	msg := res.Errors[0].Message
+	if !strings.Contains(msg, "pre-launch gate") {
+		t.Errorf("expected error to mention pre-launch gate, got: %s", msg)
+	}
+}
+
+func TestPrepareAgent_PreLaunchGate_PassesForValidIMPL(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+	if err := os.WriteFile(implPath, []byte(minimalIMPLYAML("A", 1)), 0644); err != nil {
+		t.Fatalf("failed to write IMPL doc: %v", err)
+	}
+
+	res := PrepareAgent(context.Background(), PrepareAgentOpts{
+		ManifestPath: implPath,
+		ProjectRoot:  tmpDir,
+		WaveNum:      1,
+		AgentID:      "A",
+		NoWorktree:   true,
+	})
+
+	// Gate should pass and PrepareAgent should succeed
+	if !res.IsSuccess() {
+		t.Errorf("expected PrepareAgent to succeed for valid IMPL, errors: %v", res.Errors)
 	}
 }
