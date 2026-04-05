@@ -12,7 +12,7 @@ func TestDetectCycles_NoCycle(t *testing.T) {
 		{AgentID: "B", DependsOn: []string{"A"}},
 		{AgentID: "C", DependsOn: []string{"B"}},
 	}
-	cycles := DetectCycles(nodes)
+	cycles := detectCycles(nodes)
 	if cycles != nil {
 		t.Fatalf("expected no cycles, got %v", cycles)
 	}
@@ -23,7 +23,7 @@ func TestDetectCycles_SimpleCycle(t *testing.T) {
 		{AgentID: "A", DependsOn: []string{"B"}},
 		{AgentID: "B", DependsOn: []string{"A"}},
 	}
-	cycles := DetectCycles(nodes)
+	cycles := detectCycles(nodes)
 	if cycles == nil {
 		t.Fatal("expected cycles, got nil")
 	}
@@ -47,7 +47,7 @@ func TestDetectCycles_MultipleCycles(t *testing.T) {
 		{AgentID: "C", DependsOn: []string{"D"}},
 		{AgentID: "D", DependsOn: []string{"C"}},
 	}
-	cycles := DetectCycles(nodes)
+	cycles := detectCycles(nodes)
 	if cycles == nil {
 		t.Fatal("expected cycles, got nil")
 	}
@@ -60,7 +60,7 @@ func TestDetectCycles_SelfLoop(t *testing.T) {
 	nodes := []DepNode{
 		{AgentID: "A", DependsOn: []string{"A"}},
 	}
-	cycles := DetectCycles(nodes)
+	cycles := detectCycles(nodes)
 	if cycles == nil {
 		t.Fatal("expected cycle, got nil")
 	}
@@ -85,7 +85,7 @@ func TestTransitiveDeps_Linear(t *testing.T) {
 		{AgentID: "B", DependsOn: []string{"A"}},
 		{AgentID: "C", DependsOn: []string{"B"}},
 	}
-	deps := TransitiveDeps(nodes, "C")
+	deps := transitiveDeps(nodes, "C")
 	expected := []string{"A", "B"}
 	if !sliceEqual(deps, expected) {
 		t.Fatalf("expected %v, got %v", expected, deps)
@@ -98,7 +98,7 @@ func TestTransitiveDeps_Diamond(t *testing.T) {
 		{AgentID: "B"},
 		{AgentID: "C", DependsOn: []string{"A", "B"}},
 	}
-	deps := TransitiveDeps(nodes, "C")
+	deps := transitiveDeps(nodes, "C")
 	expected := []string{"A", "B"}
 	if !sliceEqual(deps, expected) {
 		t.Fatalf("expected %v, got %v", expected, deps)
@@ -110,7 +110,7 @@ func TestTransitiveDeps_UnknownAgent(t *testing.T) {
 		{AgentID: "A"},
 		{AgentID: "B", DependsOn: []string{"A"}},
 	}
-	deps := TransitiveDeps(nodes, "Z")
+	deps := transitiveDeps(nodes, "Z")
 	if deps != nil {
 		t.Fatalf("expected nil for unknown agent, got %v", deps)
 	}
@@ -121,7 +121,7 @@ func TestTransitiveDeps_Root(t *testing.T) {
 		{AgentID: "A"},
 		{AgentID: "B", DependsOn: []string{"A"}},
 	}
-	deps := TransitiveDeps(nodes, "A")
+	deps := transitiveDeps(nodes, "A")
 	if deps != nil {
 		t.Fatalf("expected nil for root agent, got %v", deps)
 	}
