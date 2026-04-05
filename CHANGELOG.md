@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (inspector-findings-core)
+- `result.NewPartial` now panics on empty `errs` slice — a `PARTIAL` result with no diagnostics is a programming error (symmetric guard with `NewFailure`)
+- Removed `result.NewInfo` exported constructor — zero production callers; no web app references
+- Removed misleading footnote from `result/codes.go` package doc claiming B009, N091–N098, P008–P013, K007 were out-of-range special cases — they were not
+- `engine/finalize.go` `fatalf` closure changed from `NewPartial(*res, []SAWError{NewFatal(...)})` to `NewFailure` — callers checking `IsFatal()` would silently miss the fatal condition under the old path
+- `engine/run_wave_atomic.go` double-failure path changed from `NewPartial` with a `NewFatal` error to `NewFailure` — corrects 3-state model violation where `PARTIAL+FATAL` created an unsupported 4th state
+- `queue.Manager.Next()` now propagates `PARTIAL` results from completed items as `NewPartial(*item, completedResult.Errors)` instead of silently dropping warnings
+- `queue.Manager.Add()` validates non-empty Title+Slug at entry; returns fatal on duplicate slug detected via `os.Stat` before `SaveYAML`
+- Corrected `Next()` doc comment: error code was `"QUEUE_EMPTY"`, now `"Q003_QUEUE_EMPTY"`
+- Deleted `pkg/agent/stream.go` — orphan file containing `collectStream` (zero call sites) that leaked Anthropic SDK types into the backend-agnostic `pkg/agent` parent package
+- Removed `toolUseResult` type and `extractToolUseFromOutput` from `pkg/agent/backend/bedrock/converse.go` — zero production callers
+- Removed `ExecuteToolCompat` migration shim from `pkg/agent/backend/execute_tool.go` — zero callers (Wave 2 of original migration was complete)
+- `pkg/agent/backend/api/client.go`: wrapped `cfg.OnToolCall` mutation/restore in `RunStreamingWithTools` under `c.mu` — concurrent invocations could race on the callback field
+- `pkg/agent/backend/openai/client.go`: added `mu sync.Mutex`; protected `onToolCall`, `dedupCache`, and `commitTracker` mutations under the lock
+- `pkg/agent/backend/cli/client.go`: added `pendingCap = 1024*1024` constant; resets `pending` buffer with `slog.Warn` when exceeded — prevents unbounded growth on runaway output
+- Fixed `pkg/agent/backend/doc.go` parameter names in Backend interface doc: `userPrompt, model` → `userMessage, workDir`
+- `pkg/agent/completion.go`: added `ctx context.Context` as first param to `WaitForCompletion` and `WaitForCompletionResult`; replaced `context.TODO()` with caller-supplied `ctx`; `time.Sleep` replaced with cancellable `select` — context cancellation now propagates through completion polling
+- `pkg/orchestrator/orchestrator.go`: updated `waitForCompletionFunc` var signature to include `ctx context.Context` as first param; call site at orchestrator main loop passes `ctx`
+- Removed `autonomy.SaveConfig` and `SaveConfigData` type — zero production callers; `pkg/config` covers persistence
+- Added `autonomy.ParseLevel` validation in `autonomy.LoadConfig` after unmarshal — invalid level values were previously accepted silently
+- `pkg/config.AutonomyConfig` changed from a 3-field struct to a type alias for `autonomy.Config` — eliminates field-by-field conversion at all call sites; JSON behavior unchanged
+- `pkg/builddiag.SupportedLanguages` now returns a sorted slice via `sort.Strings`; was non-deterministic (map iteration order)
+- Fixed `rust_patterns.go` confidence ordering: `unresolved_import` (0.90) moved before `mismatched_types` (0.85) — violated descending-confidence invariant
+- Fixed `js_patterns.go` confidence ordering: 0.85 patterns reordered before 0.80 patterns
+- Fixed `builddiag_test.go` `containsErrorCode` helper: was `len(s) > 0 && len(t) > 0` (always true); now `strings.Contains(errorLog, "["+code+"]")`
+
+### Added (inspector-findings-core)
+- `queue/manager_test.go`: 4 new tests — duplicate slug returns fatal, empty title+slug guard, warning propagation from completed items, filename-as-fallback slug
+- `pkg/agent/runner_test.go`: updated 3 call sites for `WaitForCompletion`/`WaitForCompletionResult` with `context.Background()` first arg
+- `pkg/builddiag`: ordering tests for Rust, JS, and Python catalogs (`TestRustPatterns_ConfidenceLevels`, `TestJSPatterns_ConfidenceLevels`, `TestPythonPatterns_ConfidenceLevels`)
+
 ### Fixed (inspector-findings-tools)
 - `CommitTracker.Count` field type changed from `int` to `int64` — required for correct `sync/atomic` access; three backend clients (`api`, `openai`, `bedrock`) updated to use `atomic.LoadInt64` in `CommitCount()` accordingly
 - Consolidated unexported `newRolePathMiddleware` into exported `RolePathMiddleware`; `rolePathMiddlewareFn` now wires directly to `RolePathMiddleware` — eliminates duplicate implementations that had diverged

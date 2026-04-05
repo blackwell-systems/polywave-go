@@ -161,9 +161,13 @@ func (o *Orchestrator) implSlug(_ context.Context) string {
 	return o.implDoc.FeatureSlug
 }
 
-// waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletion.
-var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
-	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
+// waitForCompletionFunc is a seam for tests: wraps agent.WaitForCompletionResult.
+var waitForCompletionFunc = func(ctx context.Context, implDocPath, agentLetter string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
+	r := agent.WaitForCompletionResult(ctx, implDocPath, agentLetter, timeout, pollInterval)
+	if r.IsFatal() {
+		return nil, fmt.Errorf("%s", r.Errors[0].Message)
+	}
+	return r.GetData(), nil
 }
 
 // prioritizeAgentsFunc is replaced by pkg/engine/scheduler.go via SetPrioritizeAgentsFunc.
@@ -934,7 +938,7 @@ func (o *Orchestrator) launchAgent(
 	// API/Bedrock backends run synchronously — when ExecuteStreamingWithTools returns,
 	// the agent is done. Poll briefly (once) for a completion report in case the agent
 	// wrote one, but don't block for 30 minutes waiting for one that may never come.
-	report, _ := waitForCompletionFunc(wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.ID, 5*time.Second, 2*time.Second)
+	report, _ := waitForCompletionFunc(ctx, wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.ID, 5*time.Second, 2*time.Second)
 
 	// d. Auto-commit and synthesize completion report if the agent didn't write one.
 	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)

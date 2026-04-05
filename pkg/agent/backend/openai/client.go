@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
@@ -35,6 +36,8 @@ type Client struct {
 	onToolCall    backend.ToolCallCallback
 	readOnly      bool
 	cfg           backend.Config
+
+	mu            sync.Mutex
 	commitTracker *tools.CommitTracker
 	dedupCache    *dedup.Cache
 }
@@ -80,18 +83,23 @@ func New(cfg backend.Config) *Client {
 // buildWorkshop creates a Workshop with middleware applied based on client config.
 func (c *Client) buildWorkshop(workDir string) tools.Workshop {
 	result := backend.BuildWorkshop(workDir, c.readOnly, c.cfg)
+	c.mu.Lock()
 	c.dedupCache = result.DedupCache
 	c.commitTracker = result.CommitTracker
+	c.mu.Unlock()
 	return result.Workshop
 }
 
 // CommitCount returns the number of git commits tracked by the constraint
 // middleware. Returns 0 if constraints are not configured or no commits detected.
 func (c *Client) CommitCount() int {
-	if c.commitTracker == nil {
+	c.mu.Lock()
+	ct := c.commitTracker
+	c.mu.Unlock()
+	if ct == nil {
 		return 0
 	}
-	return int(atomic.LoadInt64(&c.commitTracker.Count))
+	return int(atomic.LoadInt64(&ct.Count))
 }
 
 // WithAPIKey sets the API key. Returns c for chaining.
@@ -109,10 +117,13 @@ func (c *Client) WithBaseURL(url string) *Client {
 // DedupStats returns dedup metrics from the most recent Run call.
 // Returns nil if no run has been made yet.
 func (c *Client) DedupStats() *dedup.Stats {
-	if c.dedupCache == nil {
+	c.mu.Lock()
+	dc := c.dedupCache
+	c.mu.Unlock()
+	if dc == nil {
 		return nil
 	}
-	stats := c.dedupCache.Stats()
+	stats := dc.Stats()
 	return &stats
 }
 
@@ -281,6 +292,7 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 // to the caller-supplied callback in addition to the config-level callback.
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
 	if onToolCall != nil {
+		c.mu.Lock()
 		prev := c.onToolCall
 		c.onToolCall = func(ev backend.ToolCallEvent) {
 			if prev != nil {
@@ -288,7 +300,12 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMe
 			}
 			onToolCall(ev)
 		}
-		defer func() { c.onToolCall = prev }()
+		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			c.onToolCall = prev
+			c.mu.Unlock()
+		}()
 	}
 	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
 }

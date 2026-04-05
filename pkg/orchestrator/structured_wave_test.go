@@ -88,7 +88,7 @@ func TestLaunchAgentStructured_FallbackToCLI(t *testing.T) {
 		worktreeCreated = true
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -257,7 +257,7 @@ func TestLaunchAgentStructured_PublishesBlockedEvent(t *testing.T) {
 	}
 
 	// Retry via launchAgent uses waitForCompletionFunc; return complete on retry.
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 

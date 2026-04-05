@@ -121,6 +121,20 @@ TypeError: unsupported operand type(s) for +: 'int' and 'str'`
 	}
 }
 
+func TestPythonPatterns_ConfidenceLevels(t *testing.T) {
+	patterns := catalogs["python"]
+	if len(patterns) == 0 {
+		t.Fatal("no Python patterns registered")
+	}
+
+	for i := 1; i < len(patterns); i++ {
+		if patterns[i].Confidence > patterns[i-1].Confidence {
+			t.Errorf("python patterns not sorted by confidence: index %d (%f) > index %d (%f)",
+				i, patterns[i].Confidence, i-1, patterns[i-1].Confidence)
+		}
+	}
+}
+
 func TestPythonPatterns_MultipleAliases(t *testing.T) {
 	errorLog := `ModuleNotFoundError: No module named 'numpy'`
 

@@ -516,7 +516,7 @@ func TestSAWErrorInterface(t *testing.T) {
 		},
 		{
 			name: "info severity",
-			err:  NewInfo("I001", "fyi"),
+			err:  SAWError{Code: "I001", Message: "fyi", Severity: "info"},
 			want: "[info] I001: fyi",
 		},
 	}
@@ -568,8 +568,8 @@ func TestSAWErrorIsFatal(t *testing.T) {
 	if NewWarning("W001", "warning").IsFatal() {
 		t.Error("NewWarning should not be fatal")
 	}
-	if NewInfo("I001", "info").IsFatal() {
-		t.Error("NewInfo should not be fatal")
+	if (SAWError{Code: "I001", Severity: "info"}).IsFatal() {
+		t.Error("info severity should not be fatal")
 	}
 }
 
@@ -639,9 +639,9 @@ func TestNewErrorConstructors(t *testing.T) {
 		t.Errorf("NewWarning = %+v", w)
 	}
 
-	i := NewInfo("I001", "info msg")
+	i := SAWError{Code: "I001", Message: "info msg", Severity: "info"}
 	if i.Code != "I001" || i.Message != "info msg" || i.Severity != "info" {
-		t.Errorf("NewInfo = %+v", i)
+		t.Errorf("info SAWError = %+v", i)
 	}
 }
 
@@ -736,19 +736,6 @@ func TestWithContextForkSafety(t *testing.T) {
 	}
 }
 
-// TestNewInfo verifies NewInfo constructor creates an info-severity SAWError.
-func TestNewInfo(t *testing.T) {
-	e := NewInfo("I001", "informational message")
-	if e.Code != "I001" {
-		t.Errorf("Code = %q, want %q", e.Code, "I001")
-	}
-	if e.Message != "informational message" {
-		t.Errorf("Message = %q, want %q", e.Message, "informational message")
-	}
-	if e.Severity != "info" {
-		t.Errorf("Severity = %q, want %q", e.Severity, "info")
-	}
-}
 
 // ptr is a helper function to create a pointer to a value.
 func ptr[T any](v T) *T {

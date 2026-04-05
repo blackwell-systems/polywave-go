@@ -540,12 +540,23 @@ func TestCompletedSlugs_UnreadableFile_ReturnsWarning(t *testing.T) {
 	}
 
 	nextRes := mgr.Next()
-	// Should still find "dep" since "readable" is resolved
+	// Should still find "dep" since "readable" is resolved, but result should be partial
+	// because the unreadable file produced a warning.
 	if nextRes.IsFatal() {
 		t.Fatalf("Next should succeed: %v", nextRes.Errors[0].Message)
 	}
 	if nextRes.GetData().Slug != "dep" {
 		t.Errorf("slug = %q, want %q", nextRes.GetData().Slug, "dep")
+	}
+	// Fix 1: Next() must propagate completedSlugs() warnings as a partial result.
+	if !nextRes.IsPartial() {
+		t.Error("Next() should return a partial result when completedSlugs() has warnings")
+	}
+	if len(nextRes.Errors) == 0 {
+		t.Error("Next() partial result should carry warning errors")
+	}
+	if nextRes.Errors[0].Code != result.CodeQueueCorruptedFile {
+		t.Errorf("warning code = %q, want %q", nextRes.Errors[0].Code, result.CodeQueueCorruptedFile)
 	}
 }
 
@@ -592,6 +603,86 @@ func TestUpdateStatus_AllValidStatuses(t *testing.T) {
 				t.Errorf("NewStatus = %q, want %q", updateRes.GetData().NewStatus, status)
 			}
 		})
+	}
+}
+
+// TestAdd_CollisionReturnsFatal verifies Fix 2: Add() returns a fatal error when
+// a queue item with the same priority+slug already exists on disk.
+func TestAdd_CollisionReturnsFatal(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	item := Item{Title: "My Feature", Priority: 1, Slug: "my-feature"}
+	res1 := mgr.Add(item)
+	if res1.IsFatal() {
+		t.Fatalf("first Add should succeed: %v", res1.Errors[0].Message)
+	}
+
+	res2 := mgr.Add(item)
+	if !res2.IsFatal() {
+		t.Fatal("second Add with same priority+slug should return fatal error")
+	}
+	if len(res2.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if res2.Errors[0].Code != result.CodeQueueAddFailed {
+		t.Errorf("error code = %q, want %q", res2.Errors[0].Code, result.CodeQueueAddFailed)
+	}
+	if !strings.Contains(res2.Errors[0].Message, "already exists") {
+		t.Errorf("error message should mention 'already exists', got: %s", res2.Errors[0].Message)
+	}
+}
+
+// TestAdd_EmptyTitleAndSlug verifies Fix 3: Add() returns a fatal error when
+// both Title and Slug are empty.
+func TestAdd_EmptyTitleAndSlug(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	item := Item{Priority: 1} // no Title, no Slug
+	res := mgr.Add(item)
+	if !res.IsFatal() {
+		t.Fatal("Add with empty title and slug should return fatal error")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in Fatal result")
+	}
+	if res.Errors[0].Code != result.CodeQueueAddFailed {
+		t.Errorf("error code = %q, want %q", res.Errors[0].Code, result.CodeQueueAddFailed)
+	}
+}
+
+// TestNext_CompleteDirFilenameFallback verifies Fix 5: when an IMPL file in
+// docs/IMPL/complete/ has no feature_slug field (or an unparseable/empty body),
+// Next() resolves the dependency via the filename fallback
+// (strings.TrimPrefix(base, "IMPL-")).
+func TestNext_CompleteDirFilenameFallback(t *testing.T) {
+	dir := t.TempDir()
+	mgr := NewManager(dir)
+
+	// Write an IMPL file that has no feature_slug field — only the filename carries the slug.
+	completeDir := filepath.Join(dir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(completeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// YAML has no feature_slug; slug must be derived from filename "IMPL-prereq.yaml".
+	noSlugContent := "title: Prereq Feature\nstate: COMPLETE\n"
+	if err := os.WriteFile(filepath.Join(completeDir, "IMPL-prereq.yaml"), []byte(noSlugContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Add item that depends on "prereq" (resolved via filename fallback).
+	item := Item{Title: "Dependent", Priority: 1, Slug: "dependent", DependsOn: []string{"prereq"}}
+	if res := mgr.Add(item); res.IsFatal() {
+		t.Fatalf("Add: %v", res.Errors[0].Message)
+	}
+
+	nextRes := mgr.Next()
+	if nextRes.IsFatal() {
+		t.Fatalf("Next should succeed via filename fallback: %v", nextRes.Errors[0].Message)
+	}
+	if nextRes.GetData().Slug != "dependent" {
+		t.Errorf("slug = %q, want %q", nextRes.GetData().Slug, "dependent")
 	}
 }
 

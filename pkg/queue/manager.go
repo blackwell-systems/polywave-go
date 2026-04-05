@@ -70,6 +70,11 @@ func slugFromTitle(title string) string {
 // Sets status to "queued" if empty.
 // Returns a Result containing the slug and file path on success.
 func (m *Manager) Add(item Item) result.Result[AddData] {
+	if item.Slug == "" && item.Title == "" {
+		return result.NewFailure[AddData]([]result.SAWError{
+			result.NewFatal(result.CodeQueueAddFailed, "queue item must have a title or slug"),
+		})
+	}
 	if item.Slug == "" {
 		item.Slug = slugFromTitle(item.Title)
 	}
@@ -84,8 +89,16 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 		})
 	}
 
+	// Filename encodes priority as a prefix; the Priority field in the YAML must
+	// always equal this value. Use Manager methods for all mutations.
 	filename := fmt.Sprintf("%03d-%s.yaml", item.Priority, item.Slug)
 	path := filepath.Join(dir, filename)
+
+	if _, err := os.Stat(path); err == nil {
+		return result.NewFailure[AddData]([]result.SAWError{
+			result.NewFatal(result.CodeQueueAddFailed, fmt.Sprintf("queue item already exists: %s", path)),
+		})
+	}
 
 	if err := protocol.SaveYAML(path, &item); err != nil {
 		return result.NewFailure[AddData]([]result.SAWError{
@@ -216,7 +229,7 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 
 // Next returns the highest-priority (lowest number) item whose status is
 // "queued" AND all depends_on slugs have status "complete".
-// Returns Fatal with Code "QUEUE_EMPTY" if no eligible item exists.
+// Returns Fatal with Code result.CodeQueueEmpty ("Q003_QUEUE_EMPTY") if no eligible item exists.
 func (m *Manager) Next() result.Result[Item] {
 	listResult := m.List()
 	if listResult.IsFatal() {
@@ -243,6 +256,9 @@ func (m *Manager) Next() result.Result[Item] {
 			}
 		}
 		if eligible {
+			if completedResult.IsPartial() {
+				return result.NewPartial(*item, completedResult.Errors)
+			}
 			return result.NewSuccess(*item)
 		}
 	}

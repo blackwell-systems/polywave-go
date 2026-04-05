@@ -20,16 +20,22 @@ type Stage string
 
 const (
 	StageIMPLReview   Stage = "impl_review"
-	StageWaveAdvance  Stage = "wave_advance"
+	StageWaveAdvance  Stage = "wave_advance" // Reserved: no callers yet; will fire between waves when per-wave gating is implemented.
 	StageGateFailure  Stage = "gate_failure"
 	StageQueueAdvance Stage = "queue_advance"
 )
 
 // Config holds autonomy configuration loaded from saw.config.json.
 type Config struct {
-	Level          Level `json:"level" yaml:"level"`
-	MaxAutoRetries int   `json:"max_auto_retries" yaml:"max_auto_retries"`
-	MaxQueueDepth  int   `json:"max_queue_depth" yaml:"max_queue_depth"` // Reserved for future queue depth limiting; not currently enforced
+	Level Level `json:"level" yaml:"level"`
+
+	// MaxAutoRetries is the maximum number of automatic gate-failure retries.
+	// Only operative when gate_failure is auto-approved (i.e. Level is not "gated").
+	MaxAutoRetries int `json:"max_auto_retries,omitempty"`
+
+	// MaxQueueDepth caps the number of items in the pending queue.
+	// Currently unenforced — reserved for future queue management.
+	MaxQueueDepth int `json:"max_queue_depth,omitempty"`
 }
 
 // DefaultConfig returns the default autonomy configuration (gated level).

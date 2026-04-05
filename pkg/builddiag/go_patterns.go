@@ -1,5 +1,7 @@
 package builddiag
 
+// init registers language patterns at package init time. Tests that
+// clear or replace catalog entries must not use t.Parallel().
 func init() {
 	RegisterPatterns("go", []ErrorPattern{
 		{

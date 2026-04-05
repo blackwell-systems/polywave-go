@@ -443,9 +443,15 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback, onToolCall backend.ToolCallCallback) (string, error) {
 	if onToolCall != nil {
 		// Temporarily set onToolCall so buildWorkshop picks it up via cfg.
+		c.mu.Lock()
 		origCb := c.cfg.OnToolCall
 		c.cfg.OnToolCall = onToolCall
-		defer func() { c.cfg.OnToolCall = origCb }()
+		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			c.cfg.OnToolCall = origCb
+			c.mu.Unlock()
+		}()
 	}
 	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, onChunk)
 }

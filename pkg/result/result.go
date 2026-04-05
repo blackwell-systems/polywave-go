@@ -86,10 +86,6 @@ func NewWarning(code, message string) SAWError {
 	return SAWError{Code: code, Message: message, Severity: "warning"}
 }
 
-// NewInfo creates a SAWError with severity "info".
-func NewInfo(code, message string) SAWError {
-	return SAWError{Code: code, Message: message, Severity: "info"}
-}
 
 // IsSuccess returns true when Code is "SUCCESS" and no errors exist.
 func (r Result[T]) IsSuccess() bool {
@@ -130,7 +126,11 @@ func NewSuccess[T any](data T) Result[T] {
 }
 
 // NewPartial creates a partially successful Result with data and warnings.
+// Panics if errs is empty — a PARTIAL result must carry at least one diagnostic.
 func NewPartial[T any](data T, errs []SAWError) Result[T] {
+	if len(errs) == 0 {
+		panic("result.NewPartial called with empty errors slice")
+	}
 	return Result[T]{
 		Data:   &data,
 		Errors: errs,

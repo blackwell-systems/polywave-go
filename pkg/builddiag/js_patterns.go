@@ -1,5 +1,7 @@
 package builddiag
 
+// init registers language patterns at package init time. Tests that
+// clear or replace catalog entries must not use t.Parallel().
 func init() {
 	patterns := []ErrorPattern{
 		{
@@ -19,14 +21,6 @@ func init() {
 			Confidence:  0.90,
 		},
 		{
-			Name:        "syntax_error",
-			Regex:       `SyntaxError: Unexpected token`,
-			Fix:         "Check syntax at reported line (missing semicolon, brace, etc.)",
-			Rationale:   "JavaScript syntax violation",
-			AutoFixable: false,
-			Confidence:  0.80,
-		},
-		{
 			Name:        "type_any_implicit",
 			Regex:       `Parameter .* implicitly has an 'any' type`,
 			Fix:         "Add explicit type annotation to parameter",
@@ -41,6 +35,14 @@ func init() {
 			Rationale:   "Import path does not match file structure",
 			AutoFixable: false,
 			Confidence:  0.85,
+		},
+		{
+			Name:        "syntax_error",
+			Regex:       `SyntaxError: Unexpected token`,
+			Fix:         "Check syntax at reported line (missing semicolon, brace, etc.)",
+			Rationale:   "JavaScript syntax violation",
+			AutoFixable: false,
+			Confidence:  0.80,
 		},
 	}
 

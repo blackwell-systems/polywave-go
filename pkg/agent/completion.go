@@ -17,10 +17,9 @@ import (
 //
 // Note: Returns protocol.CompletionReport which uses string types for status/failure_type.
 // Callers needing types.CompletionReport (with typed enums) should convert manually.
-//
-// Deprecated: Use WaitForCompletionResult for structured error handling via result.Result.
-func WaitForCompletion(implDocPath, agentID string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
-	r := WaitForCompletionResult(implDocPath, agentID, timeout, pollInterval)
+// For structured error handling, use WaitForCompletionResult.
+func WaitForCompletion(ctx context.Context, implDocPath, agentID string, timeout, pollInterval time.Duration) (*protocol.CompletionReport, error) {
+	r := WaitForCompletionResult(ctx, implDocPath, agentID, timeout, pollInterval)
 	if r.IsFatal() {
 		return nil, fmt.Errorf("%s", r.Errors[0].Message)
 	}
@@ -32,12 +31,12 @@ func WaitForCompletion(implDocPath, agentID string, timeout, pollInterval time.D
 //
 // Returns a result.Result containing the completion report on success, or a fatal
 // result with a structured error code on failure.
-func WaitForCompletionResult(implDocPath, agentID string, timeout, pollInterval time.Duration) result.Result[*protocol.CompletionReport] {
+func WaitForCompletionResult(ctx context.Context, implDocPath, agentID string, timeout, pollInterval time.Duration) result.Result[*protocol.CompletionReport] {
 	deadline := time.Now().Add(timeout)
 
 	for {
 		// Load the YAML manifest
-		manifest, err := protocol.Load(context.TODO(), implDocPath)
+		manifest, err := protocol.Load(ctx, implDocPath)
 		if err != nil {
 			return result.NewFailure[*protocol.CompletionReport]([]result.SAWError{
 				result.NewFatal("AGENT_COMPLETION_LOAD_FAILED",
@@ -60,10 +59,18 @@ func WaitForCompletionResult(implDocPath, agentID string, timeout, pollInterval 
 		}
 
 		// Sleep at most the remaining time so we never overshoot the deadline.
+		// Use select so the caller's context cancellation interrupts the sleep.
 		sleep := pollInterval
 		if sleep > remaining {
 			sleep = remaining
 		}
-		time.Sleep(sleep)
+		select {
+		case <-time.After(sleep):
+		case <-ctx.Done():
+			return result.NewFailure[*protocol.CompletionReport]([]result.SAWError{
+				result.NewFatal("AGENT_COMPLETION_CANCELLED",
+					fmt.Sprintf("WaitForCompletion agent %s: context cancelled while waiting for completion report", agentID)),
+			})
+		}
 	}
 }

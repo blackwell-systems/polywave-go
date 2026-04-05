@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"regexp"
@@ -22,6 +23,10 @@ var ansiRE = regexp.MustCompile(`\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])`)
 
 // nonJSONCap is the maximum number of bytes accumulated in nonJSON builders.
 const nonJSONCap = 4096
+
+// pendingCap is the maximum number of bytes accumulated in the pending JSON fragment builder.
+// When exceeded, the fragment is discarded to prevent unbounded memory growth from malformed PTY output.
+const pendingCap = 1024 * 1024 // 1 MB
 
 // IsClaudeCodeSession returns true when the current process is running inside
 // a Claude Code session (CLAUDECODE env var is set). This check must be
@@ -373,6 +378,10 @@ func (c *Client) readPTYStream(ctx context.Context, ptmx *os.File, onEvent ptyEv
 					}
 				}
 				// Reset pending — this line is non-JSON, not a fragment.
+				pending.Reset()
+			} else if pending.Len() > pendingCap {
+				// Accumulated fragment exceeds cap — discard to prevent unbounded growth.
+				slog.Warn("cli backend: PTY JSON fragment accumulation exceeded cap, discarding", "size", pending.Len())
 				pending.Reset()
 			}
 			// Incomplete JSON fragment — keep accumulating (PTY wrapped mid-JSON).

@@ -2,19 +2,21 @@ package builddiag
 
 import (
 	"regexp"
+	"sort"
 	"strings"
 )
 
 // Language-specific pattern catalogs (registered by language files)
 var catalogs = make(map[string][]ErrorPattern)
 
-// RegisterPatterns adds patterns for a language to the catalog
+// RegisterPatterns replaces the pattern catalog for a language
 func RegisterPatterns(language string, patterns []ErrorPattern) {
 	catalogs[strings.ToLower(language)] = patterns
 }
 
 // DiagnoseError matches error log against language patterns.
-// Returns nil for unsupported languages.
+// Returns nil for unsupported languages. For supported languages with no
+// matching pattern, returns a Diagnosis with Pattern: "unknown" and Confidence: 0.0.
 func DiagnoseError(errorLog string, language string) *Diagnosis {
 	patterns, ok := catalogs[strings.ToLower(language)]
 	if !ok {
@@ -49,11 +51,12 @@ func DiagnoseError(errorLog string, language string) *Diagnosis {
 	}
 }
 
-// SupportedLanguages returns list of languages with pattern catalogs
+// SupportedLanguages returns a sorted slice of registered language names.
 func SupportedLanguages() []string {
 	langs := make([]string, 0, len(catalogs))
 	for lang := range catalogs {
 		langs = append(langs, lang)
 	}
+	sort.Strings(langs)
 	return langs
 }

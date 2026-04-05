@@ -1,6 +1,7 @@
 package builddiag
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -26,20 +27,20 @@ func ensureRustPatternsRegistered() {
 				Confidence:  0.90,
 			},
 			{
-				Name:        "mismatched_types",
-				Regex:       `error\[E0308\]: mismatched types`,
-				Fix:         "Check type annotations and return types",
-				Rationale:   "Expected type does not match actual type",
-				AutoFixable: false,
-				Confidence:  0.85,
-			},
-			{
 				Name:        "unresolved_import",
 				Regex:       `error\[E0432\]: unresolved import`,
 				Fix:         "Check Cargo.toml dependencies and module path",
 				Rationale:   "Import path is invalid or dependency missing",
 				AutoFixable: false,
 				Confidence:  0.90,
+			},
+			{
+				Name:        "mismatched_types",
+				Regex:       `error\[E0308\]: mismatched types`,
+				Fix:         "Check type annotations and return types",
+				Rationale:   "Expected type does not match actual type",
+				AutoFixable: false,
+				Confidence:  0.85,
 			},
 			{
 				Name:        "macro_undefined",
@@ -246,8 +247,20 @@ func TestRustPatterns_ErrorCodeMatching(t *testing.T) {
 
 // Helper function to check if error log contains error code
 func containsErrorCode(errorLog, code string) bool {
-	// Simple string contains check - the regex should have matched
-	// the error code format [EXXXX]
-	expectedFormat := "[" + code + "]"
-	return len(errorLog) > 0 && len(expectedFormat) > 0
+	return strings.Contains(errorLog, "["+code+"]")
+}
+
+func TestRustPatterns_ConfidenceLevels(t *testing.T) {
+	ensureRustPatternsRegistered()
+	patterns := catalogs["rust"]
+	if len(patterns) == 0 {
+		t.Fatal("no Rust patterns registered")
+	}
+
+	for i := 1; i < len(patterns); i++ {
+		if patterns[i].Confidence > patterns[i-1].Confidence {
+			t.Errorf("rust patterns not sorted by confidence: index %d (%f) > index %d (%f)",
+				i, patterns[i].Confidence, i-1, patterns[i-1].Confidence)
+		}
+	}
 }

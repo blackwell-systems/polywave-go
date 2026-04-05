@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
@@ -19,6 +20,7 @@ func TestNewRunner(t *testing.T) {
 // when the IMPL doc does not exist and the timeout is exceeded.
 func TestWaitForCompletionTimeout(t *testing.T) {
 	_, err := WaitForCompletion(
+		context.Background(),
 		"/nonexistent/path/IMPL-doc.md",
 		"A",
 		50*time.Millisecond,
@@ -34,6 +36,7 @@ func TestWaitForCompletionTimeout(t *testing.T) {
 // cannot be loaded.
 func TestWaitForCompletionResultLoadFailed(t *testing.T) {
 	r := WaitForCompletionResult(
+		context.Background(),
 		"/nonexistent/path/IMPL-doc.md",
 		"A",
 		50*time.Millisecond,
@@ -64,6 +67,7 @@ func TestWaitForCompletionResultTimeout(t *testing.T) {
 	}
 
 	r := WaitForCompletionResult(
+		context.Background(),
 		implPath,
 		"Z", // agent that won't have a completion report
 		50*time.Millisecond,

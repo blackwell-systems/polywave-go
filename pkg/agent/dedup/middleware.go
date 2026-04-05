@@ -24,6 +24,8 @@ func WithDedup(w tools.Workshop) (tools.Workshop, *Cache) {
 	for _, tool := range w.All() {
 		t := tool // capture loop variable
 
+		// Write-invalidating tools: write_file, edit_file. If new write tools are added
+		// to pkg/tools/standard.go, add them here to ensure cache invalidation on writes.
 		switch t.Name {
 		case "read_file":
 			inner := t.Executor

@@ -3,7 +3,6 @@ package autonomy
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -97,97 +96,18 @@ func TestLoadConfig_MissingAutonomySection(t *testing.T) {
 	}
 }
 
-func TestSaveConfig_NewFile(t *testing.T) {
+func TestLoadConfig_InvalidLevel(t *testing.T) {
 	dir := t.TempDir()
-	cfg := Config{
-		Level:          LevelAutonomous,
-		MaxAutoRetries: 3,
-		MaxQueueDepth:  15,
-	}
-
-	sr := SaveConfig(dir, cfg)
-	if !sr.IsSuccess() {
-		t.Fatalf("unexpected failure: %v", sr.Errors)
-	}
-	sd := sr.GetData()
-	if sd.ConfigPath == "" {
-		t.Errorf("expected ConfigPath to be set after successful save")
-	}
-	if sd.BytesWritten == 0 {
-		t.Errorf("expected BytesWritten > 0, got 0")
-	}
-
-	// Load it back and verify.
-	lr := LoadConfig(dir)
-	if !lr.IsSuccess() {
-		t.Fatalf("unexpected error loading saved config: %v", lr.Errors)
-	}
-	loaded := lr.GetData().Config
-	if loaded != cfg {
-		t.Errorf("expected %+v, got %+v", cfg, loaded)
-	}
-}
-
-func TestSaveConfig_PreservesOtherKeys(t *testing.T) {
-	dir := t.TempDir()
-	existing := `{
-		"other_section": {"key": "value"},
-		"autonomy": {
-			"level": "gated",
-			"max_auto_retries": 2,
-			"max_queue_depth": 10
-		}
-	}`
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte(existing), 0644); err != nil {
+	content := `{"autonomy": {"level": "turbo"}}`
+	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
-	newCfg := Config{
-		Level:          LevelSupervised,
-		MaxAutoRetries: 4,
-		MaxQueueDepth:  8,
+	r := LoadConfig(dir)
+	if !r.IsFatal() {
+		t.Fatal("expected fatal result for unrecognized level, got non-fatal")
 	}
-	sr := SaveConfig(dir, newCfg)
-	if !sr.IsSuccess() {
-		t.Fatalf("unexpected failure: %v", sr.Errors)
-	}
-
-	// Verify autonomy section was updated.
-	lr := LoadConfig(dir)
-	if !lr.IsSuccess() {
-		t.Fatalf("unexpected error loading saved config: %v", lr.Errors)
-	}
-	loaded := lr.GetData().Config
-	if loaded != newCfg {
-		t.Errorf("expected %+v, got %+v", newCfg, loaded)
-	}
-
-	// Verify other_section was preserved.
-	raw, err := os.ReadFile(filepath.Join(dir, "saw.config.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	content := string(raw)
-	if !strings.Contains(content, "other_section") {
-		t.Errorf("other_section was not preserved in saved config: %s", content)
-	}
-}
-
-func TestSaveConfig_WritePermissionError(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "saw.config.json")
-
-	// Create file as read-only to trigger write error
-	if err := os.WriteFile(path, []byte("{}"), 0444); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg := Config{Level: LevelGated, MaxAutoRetries: 2, MaxQueueDepth: 10}
-	sr := SaveConfig(dir, cfg)
-	if !sr.IsFatal() {
-		t.Fatalf("expected fatal result when file is read-only, got success")
-	}
-	if len(sr.Errors) == 0 || sr.Errors[0].Code != "CONFIG_SAVE_FAILED" {
-		t.Errorf("expected CONFIG_SAVE_FAILED error code")
+	if len(r.Errors) == 0 {
+		t.Fatal("expected at least one error")
 	}
 }

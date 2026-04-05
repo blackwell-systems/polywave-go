@@ -372,3 +372,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-scaffold-warning-fixes.yaml
 - **retry-silent-failures**: completed 2026-04-04, 1 waves, 1 agents
   - IMPL doc: docs/IMPL/complete/IMPL-retry-silent-failures.yaml
+- **result-queue-error-fixes**: completed 2026-04-04, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-result-queue-error-fixes.yaml

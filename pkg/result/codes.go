@@ -22,10 +22,6 @@
 //	R001-R099: Retry errors
 //	J001-J099: Journal errors (archive, checkpoint, observer operations)
 //	Z001-Z099: Analyzer errors (dependency graph, cascade, shared types, wiring)
-//	B009: gate validation failed (closed-loop gate retry input validation)
-//	N091-N098: engine init, pipeline, and step failures
-//	P008-P013: type collision fatal, critic gate failed, tier conflict detected, wave not found, unknown agent in ownership, amend blocked
-//	K007: cache build key cancelled
 package result
 
 // Validation error codes (V001-V099)

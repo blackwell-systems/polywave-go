@@ -269,7 +269,7 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		atomic.AddInt32(&worktreeCount, 1)
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
@@ -327,7 +327,7 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
@@ -508,7 +508,7 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -544,7 +544,7 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -687,7 +687,7 @@ func TestLaunchAgent_PollsWorktreeIMPLDoc(t *testing.T) {
 	}
 
 	var gotIMPLPath string
-	waitForCompletionFunc = func(implDoc, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, implDoc, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		gotIMPLPath = implDoc
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
@@ -744,7 +744,7 @@ func TestLaunchAgentE23FallbackOnExtractError(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -809,7 +809,7 @@ func TestLaunchAgentE19BlockedEvent(t *testing.T) {
 
 	// First call returns blocked/transient; subsequent calls return complete (retry succeeds).
 	var waitCallCount int32
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		n := atomic.AddInt32(&waitCallCount, 1)
 		if n == 1 {
 			return &protocol.CompletionReport{
@@ -901,7 +901,7 @@ func TestExecuteRetryLoop_TransientRetries(t *testing.T) {
 
 	// First call: partial/transient. Second call: complete.
 	var callCount int32
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		n := atomic.AddInt32(&callCount, 1)
 		if n == 1 {
 			return &protocol.CompletionReport{
@@ -1070,7 +1070,7 @@ func TestRunWave_AgentPrioritization(t *testing.T) {
 		mu.Unlock()
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -1146,7 +1146,7 @@ func TestRunWave_AgentPrioritizedEvent(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -1311,7 +1311,7 @@ func TestLaunchAgent_JournalContextPrepended(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-journal-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 
@@ -1384,7 +1384,7 @@ func TestLaunchAgent_JournalContextSkippedWhenEmpty(t *testing.T) {
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
 		return "/tmp/fake-wt-nojournal-" + id, nil
 	}
-	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
 		return &protocol.CompletionReport{Status: "complete"}, nil
 	}
 

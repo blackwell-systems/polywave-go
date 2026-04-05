@@ -117,6 +117,20 @@ func TestJSPatterns_ImportPathInvalid(t *testing.T) {
 	}
 }
 
+func TestJSPatterns_ConfidenceLevels(t *testing.T) {
+	patterns := catalogs["javascript"]
+	if len(patterns) == 0 {
+		t.Fatal("no JS patterns registered")
+	}
+
+	for i := 1; i < len(patterns); i++ {
+		if patterns[i].Confidence > patterns[i-1].Confidence {
+			t.Errorf("javascript patterns not sorted by confidence: index %d (%f) > index %d (%f)",
+				i, patterns[i].Confidence, i-1, patterns[i-1].Confidence)
+		}
+	}
+}
+
 func TestJSPatterns_MultipleAliases(t *testing.T) {
 	errorLog := "Cannot find module 'react'"
 

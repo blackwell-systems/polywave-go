@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
@@ -53,12 +54,10 @@ type OpenAIProvider struct {
 	APIKey string `json:"api_key,omitempty"`
 }
 
-// AutonomyConfig controls agent autonomy behavior.
-type AutonomyConfig struct {
-	Level          string `json:"level,omitempty"`
-	MaxAutoRetries int    `json:"max_auto_retries,omitempty"`
-	MaxQueueDepth  int    `json:"max_queue_depth,omitempty"`
-}
+// AutonomyConfig is a type alias for autonomy.Config.
+// Using an alias (not embedding) means config.AutonomyConfig and autonomy.Config
+// are the same type — no conversion needed at call sites.
+type AutonomyConfig = autonomy.Config
 
 // RepoEntry identifies a repository by name and filesystem path.
 type RepoEntry struct {

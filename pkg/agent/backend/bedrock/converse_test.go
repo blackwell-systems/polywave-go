@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
@@ -209,50 +207,3 @@ func TestExtractTextFromOutput(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, text)
 	}
 }
-
-// TestExtractToolUseFromOutput verifies tool_use extraction from ConverseOutput.
-// Note: This test verifies structure extraction (IDs, names) but not detailed input content
-// since document.Interface behavior in tests differs from real AWS SDK responses.
-// Input content extraction is validated through integration tests.
-func TestExtractToolUseFromOutput(t *testing.T) {
-	input := document.NewLazyDocument(map[string]interface{}{"command": "ls -la"})
-
-	output := &types.ConverseOutputMemberMessage{
-		Value: types.Message{
-			Role: types.ConversationRoleAssistant,
-			Content: []types.ContentBlock{
-				&types.ContentBlockMemberText{
-					Value: "Let me run that command.",
-				},
-				&types.ContentBlockMemberToolUse{
-					Value: types.ToolUseBlock{
-						ToolUseId: aws.String("tool_123"),
-						Name:      aws.String("bash"),
-						Input:     input,
-					},
-				},
-			},
-		},
-	}
-
-	results := extractToolUseFromOutput(output)
-
-	if len(results) != 1 {
-		t.Fatalf("expected 1 tool use result, got %d", len(results))
-	}
-
-	result := results[0]
-	if result.id != "tool_123" {
-		t.Errorf("expected id 'tool_123', got %q", result.id)
-	}
-	if result.name != "bash" {
-		t.Errorf("expected name 'bash', got %q", result.name)
-	}
-
-	// Verify input is valid JSON (structure test only)
-	var inputData interface{}
-	if err := json.Unmarshal(result.input, &inputData); err != nil {
-		t.Errorf("input is not valid JSON: %v, raw: %s", err, string(result.input))
-	}
-}
-

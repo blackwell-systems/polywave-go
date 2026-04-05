@@ -139,11 +139,8 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 				rbErrMsg = restoreRes.Errors[0].Message
 			}
 			msg := fmt.Sprintf("engine.RunWaveTransaction: rollback failed (%s) after: %v", rbErrMsg, finalizeErrMsg)
-			if finalizeRes.Data != nil {
-				return result.NewPartial(*finalizeRes.Data, []result.SAWError{
-					result.NewFatal(result.CodeFinalizeWaveFailed, msg),
-				})
-			}
+			// Double failure: both FinalizeWave and rollback failed. State may be
+			// corrupted. Return FATAL unconditionally — partial data cannot be trusted.
 			return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
 				result.NewFatal(result.CodeFinalizeWaveFailed, msg),
 			})

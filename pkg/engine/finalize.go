@@ -257,9 +257,11 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 
 	onEvent := opts.OnEvent
 
-	// fatalf returns a partial result with a fatal error attached.
+	// fatalf returns a fatal failure result. Partial data is not surfaced —
+	// callers must check IsFatal() and abort; returning PARTIAL with a fatal
+	// error would cause callers that only check IsFatal() to miss the failure.
 	fatalf := func(msg string, args ...interface{}) result.Result[FinalizeWaveResult] {
-		return result.NewPartial(*res, []result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf(msg, args...)),
 		})
 	}

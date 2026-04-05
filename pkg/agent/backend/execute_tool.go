@@ -28,10 +28,3 @@ func ExecuteTool(ctx context.Context, workshop tools.Workshop, name string, inpu
 	}
 	return result, nil
 }
-
-// ExecuteToolCompat is the legacy wrapper with the old (string, bool) signature.
-// Deprecated: Use ExecuteTool which returns error. Remove after Wave 2 migration.
-func ExecuteToolCompat(ctx context.Context, workshop tools.Workshop, name string, input map[string]interface{}, workDir string) (string, bool) {
-	result, err := ExecuteTool(ctx, workshop, name, input, workDir)
-	return result, err != nil
-}

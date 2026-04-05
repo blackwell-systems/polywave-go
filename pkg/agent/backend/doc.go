@@ -6,9 +6,9 @@
 // to support new providers without modifying core orchestrator logic.
 //
 //	type Backend interface {
-//	    Run(ctx context.Context, systemPrompt, userPrompt, model string) (string, error)
-//	    RunStreaming(ctx context.Context, systemPrompt, userPrompt, model string, onChunk ChunkCallback) (string, error)
-//	    RunStreamingWithTools(ctx context.Context, systemPrompt, userPrompt, model string, onChunk ChunkCallback, onToolCall ToolCallCallback) (string, error)
+//	    Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error)
+//	    RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk ChunkCallback) (string, error)
+//	    RunStreamingWithTools(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk ChunkCallback, onToolCall ToolCallCallback) (string, error)
 //	}
 //
 // # Implementations
