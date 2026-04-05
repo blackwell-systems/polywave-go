@@ -217,15 +217,18 @@ type PreMortemRow struct {
 	Mitigation string `yaml:"mitigation" json:"mitigation"`
 }
 
-// FailureCategory classifies an agent failure for recovery step generation.
-type FailureCategory string
+// FailureCategory is a deprecated alias for FailureTypeEnum.
+// Use FailureTypeEnum directly in new code.
+type FailureCategory = FailureTypeEnum
 
+// Backward-compatible constants mapping FailureCategory names to FailureTypeEnum values.
 const (
-	FailureCategoryTransient   FailureCategory = "transient"
-	FailureCategoryFixable     FailureCategory = "fixable"
-	FailureCategoryNeedsReplan FailureCategory = "needs_replan"
-	FailureCategoryTimeout     FailureCategory = "timeout"
-	FailureCategoryUnknown     FailureCategory = "unknown"
+	FailureCategoryTransient   = FailureTransient
+	FailureCategoryFixable     = FailureFixable
+	FailureCategoryNeedsReplan = FailureNeedsReplan
+	FailureCategoryTimeout     = FailureTimeout
+	FailureCategoryUnknown     = FailureUnknown
+	FailureCategoryEscalate    = FailureEscalate
 )
 
 // RecoveryStep is one actionable recovery action returned by BuildRecoverySteps.

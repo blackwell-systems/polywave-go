@@ -18,6 +18,9 @@ const (
 
 	// FailureTimeout indicates the agent ran out of time and should retry with scope reduction.
 	FailureTimeout FailureTypeEnum = "timeout"
+
+	// FailureUnknown indicates an unclassified failure (legacy "unknown" category).
+	FailureUnknown FailureTypeEnum = "unknown"
 )
 
 // ShouldRetry returns true if the failure type is automatically retryable.
@@ -134,7 +137,7 @@ func ShouldRetryWithReactions(failureType FailureTypeEnum, reactions *ReactionsC
 // ValidFailureType returns true if the given string is a valid FailureTypeEnum value.
 func ValidFailureType(s string) bool {
 	switch FailureTypeEnum(s) {
-	case FailureTransient, FailureFixable, FailureNeedsReplan, FailureEscalate, FailureTimeout:
+	case FailureTransient, FailureFixable, FailureNeedsReplan, FailureEscalate, FailureTimeout, FailureUnknown:
 		return true
 	default:
 		return false
