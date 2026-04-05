@@ -390,6 +390,7 @@ const (
 	CodeCommandExtractPackageParse  = "E004_PACKAGE_PARSE"
 	CodeCommandExtractNoToolchain   = "E005_NO_TOOLCHAIN"
 	CodeCommandExtractCancelled     = "E006_EXTRACT_CANCELLED"
+	CodeCommandExtractMakefileRead  = "E007_MAKEFILE_READ"
 )
 
 // Retry error codes (R001-R099)

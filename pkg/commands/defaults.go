@@ -30,7 +30,7 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					Build: "go build ./...",
 					Test: TestCommands{
 						Full:           "go test ./...",
-						FocusedPattern: "go test ./{package} -run {test_name}",
+						FocusedPattern: "go test ./{package} -run {TestPrefix}",
 					},
 					Lint: LintCommands{
 						Check: "go vet ./...",
@@ -42,7 +42,6 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					},
 				},
 				DetectionSources: []string{"go.mod"},
-				ModuleMap:        []Module{},
 			},
 		})
 	}
@@ -56,7 +55,7 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					Build: "cargo build",
 					Test: TestCommands{
 						Full:           "cargo test",
-						FocusedPattern: "cargo test {test_name}",
+						FocusedPattern: "cargo test {module_name}",
 					},
 					Lint: LintCommands{
 						Check: "cargo clippy -- -D warnings",
@@ -68,7 +67,6 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					},
 				},
 				DetectionSources: []string{"Cargo.toml"},
-				ModuleMap:        []Module{},
 			},
 		})
 	}
@@ -82,7 +80,7 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					Build: "npm run build",
 					Test: TestCommands{
 						Full:           "npm test",
-						FocusedPattern: "npm test -- {test_name}",
+						FocusedPattern: "npm test -- {module}",
 					},
 					Lint: LintCommands{
 						Check: "npm run lint",
@@ -94,7 +92,6 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					},
 				},
 				DetectionSources: []string{"package.json"},
-				ModuleMap:        []Module{},
 			},
 		})
 	}
@@ -108,7 +105,7 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					Build: "", // Python is interpreted - no build step
 					Test: TestCommands{
 						Full:           "pytest",
-						FocusedPattern: "pytest {test_file}::{test_name}",
+						FocusedPattern: "pytest {path}",
 					},
 					Lint: LintCommands{
 						Check: "ruff check .",
@@ -120,7 +117,6 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 					},
 				},
 				DetectionSources: []string{"pyproject.toml"},
-				ModuleMap:        []Module{},
 			},
 		})
 	}

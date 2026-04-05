@@ -25,7 +25,7 @@ func (p *MakefileParser) ParseBuildSystem(repoRoot string) result.Result[ParseBu
 	file, err := os.Open(makefilePath)
 	if err != nil {
 		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
-			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading Makefile: %v", err)),
+			result.NewFatal(result.CodeCommandExtractMakefileRead, fmt.Sprintf("reading Makefile: %v", err)),
 		})
 	}
 	defer file.Close()
@@ -36,7 +36,7 @@ func (p *MakefileParser) ParseBuildSystem(repoRoot string) result.Result[ParseBu
 	}
 
 	// Resolve target chains to find leaf targets
-	leafTargets, leafOrder := resolveTargetChains(targets, targetOrder)
+	_, leafOrder := resolveTargetChains(targets, targetOrder)
 
 	// Classify and extract commands
 	cmdSet := &CommandSet{
@@ -45,8 +45,7 @@ func (p *MakefileParser) ParseBuildSystem(repoRoot string) result.Result[ParseBu
 	}
 
 	for _, targetName := range leafOrder {
-		target := leafTargets[targetName]
-		cmd := buildMakeCommand(targetName, target)
+		cmd := buildMakeCommand(targetName)
 		classifyAndAssignCommand(targetName, cmd, cmdSet)
 	}
 
@@ -171,8 +170,8 @@ func resolveTargetChains(targets map[string]*makeTarget, targetOrder []string) (
 	return leafTargets, leafOrder
 }
 
-// buildMakeCommand constructs the make command for a target
-func buildMakeCommand(targetName string, target *makeTarget) string {
+// buildMakeCommand constructs the make command for a target.
+func buildMakeCommand(targetName string) string {
 	return "make " + targetName
 }
 

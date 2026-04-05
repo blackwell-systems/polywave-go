@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -62,7 +63,7 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) result.Result[
 		}
 		r := parser.ParseCI(repoRoot)
 		if r.IsFatal() {
-			// Log error but continue with other parsers
+			slog.Warn("CI parser failed, skipping", "error", r.Errors[0].Message)
 			continue
 		}
 		commandSet := r.GetData().CommandSet
@@ -83,7 +84,7 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) result.Result[
 		}
 		r := parser.ParseBuildSystem(repoRoot)
 		if r.IsFatal() {
-			// Log error but continue with other parsers
+			slog.Warn("build system parser failed, skipping", "error", r.Errors[0].Message)
 			continue
 		}
 		commandSet := r.GetData().CommandSet

@@ -37,6 +37,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `pkg/agent/runner_test.go`: updated 3 call sites for `WaitForCompletion`/`WaitForCompletionResult` with `context.Background()` first arg
 - `pkg/builddiag`: ordering tests for Rust, JS, and Python catalogs (`TestRustPatterns_ConfidenceLevels`, `TestJSPatterns_ConfidenceLevels`, `TestPythonPatterns_ConfidenceLevels`)
 
+### Fixed (inspector-findings-commands)
+- `commands/wrapper.go`: `ExtractCommands` now registers all standard parsers (`GithubActionsParser`, `MakefileParser`, `PackageJSONParser`) before calling `Extract()` — previously called with zero parsers, always falling through to language defaults; affected `engine/runner.go` and the web app's extract-commands CLI
+- `commands/defaults.go`: aligned `FocusedPattern` tokens with what `gate_populator.DetermineFocusedTestPattern` actually substitutes — Go: `{test_name}` → `{TestPrefix}`, Rust: `{test_name}` → `{module_name}`, Node: `{test_name}` → `{module}`, Python: `{test_file}::{test_name}` → `{path}`; previously agents received verbatim unexpanded strings like `go test ./pkg/auth -run {test_name}`
+- `commands/makefile.go`: Makefile read failures now use `CodeCommandExtractMakefileRead` (`E007_MAKEFILE_READ`) instead of `CodeCommandExtractWorkflowRead` (`E001_WORKFLOW_READ`) — callers can now distinguish Makefile from CI workflow failures
+- `commands/makefile.go`: removed unused `target *makeTarget` param from `buildMakeCommand`
+- `commands/extractor.go`: silent parser failures now emit `slog.Warn` instead of silently continuing
+- `commands/types.go`: removed never-populated `Module.TestCount`, `Module.FocusedRecommended`, and `CommandSet.ModuleMap` — zero callers in either repo
+- `result/codes.go`: added `CodeCommandExtractMakefileRead = "E007_MAKEFILE_READ"`
+
 ### Fixed (inspector-findings-codereview-collision)
 - `codereview/reviewer.go`: `validateReviewResponse` now validates `Overall` in [0,100] — previously an LLM returning -1 or 200 flowed through unchecked into `ReviewResult.Overall` and the `Passed` comparison
 - `codereview/reviewer.go`: defensive copy of `AllDimensions` in `ReviewDiff` (`append([]string(nil), AllDimensions...)`) — prevents external slice mutation from corrupting in-flight calls
