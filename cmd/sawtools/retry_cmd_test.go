@@ -305,7 +305,7 @@ func TestRetryCmd_Blocked(t *testing.T) {
 		FailedFiles: []string{"pkg/foo/foo.go"},
 	}
 
-	r1Result := loop.Run(nil, gate, nil) //nolint:staticcheck // context unused in stub
+	r1Result := loop.Run(context.Background(), gate, nil)
 	if r1Result.IsFatal() {
 		t.Fatalf("attempt 1 error: %v", r1Result.Errors)
 	}
@@ -314,7 +314,7 @@ func TestRetryCmd_Blocked(t *testing.T) {
 		t.Errorf("attempt 1 final_state = %q, want retrying", r1.FinalState)
 	}
 
-	r2Result := loop.Run(nil, gate, nil) //nolint:staticcheck
+	r2Result := loop.Run(context.Background(), gate, nil)
 	if r2Result.IsFatal() {
 		t.Fatalf("attempt 2 error: %v", r2Result.Errors)
 	}

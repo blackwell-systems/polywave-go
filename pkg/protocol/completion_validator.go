@@ -148,7 +148,11 @@ func ValidateCompletionReportClaims(
 		return result.NewFailure[CompletionValidationData](errs)
 	}
 	if len(warnings) > 0 {
-		return result.NewPartial(data, nil)
+		warnErrs := make([]result.SAWError, len(warnings))
+		for i, w := range warnings {
+			warnErrs[i] = result.NewWarning("COMPLETION_WARN", w)
+		}
+		return result.NewPartial(data, warnErrs)
 	}
 	return result.NewSuccess(data)
 }
