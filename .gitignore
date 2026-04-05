@@ -12,3 +12,4 @@ docs/IMPL/.saw-state/
 # SAW-managed go workspace files (created/restored by prepare-wave/finalize-wave)
 go.work
 go.work.sum
+inspections/
