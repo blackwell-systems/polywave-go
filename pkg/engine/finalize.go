@@ -58,6 +58,12 @@ type FinalizeWaveOpts struct {
 	// blocks merge with false positive.
 	SkipMerge bool
 
+	// CommitState: When true, commit uncommitted SAW-owned files (IMPL docs,
+	// .saw-state/) before merge-agents. Prevents dirty working directory from
+	// blocking git merge. Non-fatal — if commit fails, a warning is emitted
+	// but finalize continues.
+	CommitState bool
+
 	// OnEvent is an optional callback invoked at the start and end of each
 	// finalization step. CLI callers can print progress; web callers can emit
 	// SSE events. nil is safe — step functions check before calling.
@@ -532,6 +538,15 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 								fmt.Sprintf("%s not called in %s", gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom))
 						}
 					}
+				}
+			}
+
+			// Step 3.7: CommitState — commit SAW-owned dirty files before merge
+			if opts.CommitState {
+				_, commitErr := StepCommitState(ctx, opts, manifest, onEvent)
+				if commitErr != nil {
+					// Non-fatal: log warning but continue with merge
+					loggerFrom(opts.Logger).Warn("engine.FinalizeWave: commit-state warning", "err", commitErr)
 				}
 			}
 

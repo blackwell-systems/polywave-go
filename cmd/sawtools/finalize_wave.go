@@ -15,6 +15,7 @@ func newFinalizeWaveCmd() *cobra.Command {
 	var skipMerge bool
 	var dryRun bool
 	var crossRepoVerify bool
+	var commitState bool
 
 	cmd := &cobra.Command{
 		Use:   "finalize-wave <manifest-path>",
@@ -65,6 +66,7 @@ All pipeline steps are handled by the engine. The engine supports:
 				ClosedLoopRetryEnabled:    true,
 				OnEvent:                   onEvent,
 				CrossRepoVerify:           crossRepoVerify,
+			CommitState:               commitState,
 			})
 			out, _ := json.MarshalIndent(r.Data, "", "  ")
 			fmt.Println(string(out))
@@ -142,6 +144,8 @@ All pipeline steps are handled by the engine. The engine supports:
 		"After primary repo verification, run baseline gates on all cross-repo dependencies")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Show what cascade errors would be hotfixed without running the agent")
+	cmd.Flags().BoolVar(&commitState, "commit-state", false,
+		"Auto-commit SAW-owned state files (IMPL docs, .saw-state/) before merge. Prevents dirty-workdir merge failures.")
 	return cmd
 }
 
