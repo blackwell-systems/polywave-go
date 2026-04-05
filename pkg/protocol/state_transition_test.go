@@ -181,6 +181,51 @@ func TestIsValidTransition(t *testing.T) {
 	}
 }
 
+func TestValidateStateTransitionContext_SoloWaveNoWarning(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A", Task: "solo"}}},
+		},
+	}
+	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateComplete)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for solo-wave, got %d: %v", len(warnings), warnings)
+	}
+}
+
+func TestValidateStateTransitionContext_MultiAgentWarning(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{
+				{ID: "A", Task: "first"},
+				{ID: "B", Task: "second"},
+			}},
+		},
+	}
+	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateComplete)
+	if len(warnings) != 1 {
+		t.Fatalf("expected 1 warning for multi-agent wave, got %d", len(warnings))
+	}
+	if warnings[0].Severity != "warning" {
+		t.Errorf("expected severity=warning, got %q", warnings[0].Severity)
+	}
+}
+
+func TestValidateStateTransitionContext_NormalTransitionNoWarning(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{
+				{ID: "A", Task: "first"},
+				{ID: "B", Task: "second"},
+			}},
+		},
+	}
+	warnings := ValidateStateTransitionContext(m, StateWaveExecuting, StateWaveMerging)
+	if len(warnings) != 0 {
+		t.Errorf("expected no warnings for normal transition, got %d", len(warnings))
+	}
+}
+
 // containsAll returns true if s contains all of the given substrings.
 func containsAll(s string, subs ...string) bool {
 	for _, sub := range subs {

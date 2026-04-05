@@ -107,6 +107,9 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 		}})
 	}
 
+	// Advisory check: warn about potentially dangerous transitions.
+	_ = ValidateStateTransitionContext(manifest, previousState, newState)
+
 	// Write the new state atomically
 	if err := updateManifestState(manifestPath, newState); err != nil {
 		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
@@ -152,4 +155,34 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 	}
 
 	return result.NewSuccess(data)
+}
+
+// ValidateStateTransitionContext checks whether a state transition is
+// semantically appropriate given the manifest context. Returns warning-level
+// SAWErrors for transitions that are technically allowed but potentially
+// dangerous (e.g., WAVE_EXECUTING -> COMPLETE with multiple agents).
+func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolState) []result.SAWError {
+	var warnings []result.SAWError
+
+	if from == StateWaveExecuting && to == StateComplete {
+		var currentWave *Wave
+		for i := range manifest.Waves {
+			w := &manifest.Waves[i]
+			if len(w.Agents) > 0 {
+				if currentWave == nil || w.Number > currentWave.Number {
+					currentWave = w
+				}
+			}
+		}
+
+		if currentWave != nil && !IsSoloWave(currentWave) {
+			warnings = append(warnings, result.SAWError{
+				Code:     result.CodeStateTransition,
+				Message:  fmt.Sprintf("WAVE_EXECUTING -> COMPLETE bypasses merge/verify for wave %d with %d agents; consider WAVE_MERGING -> WAVE_VERIFIED -> COMPLETE path", currentWave.Number, len(currentWave.Agents)),
+				Severity: "warning",
+			})
+		}
+	}
+
+	return warnings
 }
