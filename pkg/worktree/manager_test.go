@@ -12,7 +12,10 @@ import (
 
 // TestManagerNew verifies that New returns a non-nil Manager with slug.
 func TestManagerNew(t *testing.T) {
-	m := New("/some/repo/path", "my-feature")
+	m, err := New("/some/repo/path", "my-feature")
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
 	if m == nil {
 		t.Fatal("New returned nil")
 	}
@@ -27,6 +30,17 @@ func TestManagerNew(t *testing.T) {
 	}
 	if len(m.active) != 0 {
 		t.Errorf("active map should be empty; got len=%d", len(m.active))
+	}
+
+	// Empty repoPath returns error.
+	_, err = New("", "my-feature")
+	if err == nil {
+		t.Error("New with empty repoPath should return error")
+	}
+	// Empty slug returns error.
+	_, err = New("/some/repo", "")
+	if err == nil {
+		t.Error("New with empty slug should return error")
 	}
 }
 
@@ -52,7 +66,10 @@ func setupGitRepo(t *testing.T) string {
 // real git repo, verifying path construction and tracking map correctness.
 func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	repoDir := setupGitRepo(t)
-	m := New(repoDir, "test-feature")
+	m, err := New(repoDir, "test-feature")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	r := m.Create(1, "D")
 	if r.IsFatal() {
@@ -95,7 +112,10 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 
 // TestRemoveUntrackedPath verifies Remove returns Fatal for untracked paths.
 func TestRemoveUntrackedPath(t *testing.T) {
-	m := New("/some/repo", "feat")
+	m, err := New("/some/repo", "feat")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	r := m.Remove("/nonexistent/path")
 	if !r.IsFatal() {
 		t.Fatal("Remove of untracked path should return Fatal result")
@@ -112,7 +132,10 @@ func TestRemoveUntrackedPath(t *testing.T) {
 // when all worktrees are removed successfully.
 func TestCleanupAllSuccess(t *testing.T) {
 	repoDir := setupGitRepo(t)
-	m := New(repoDir, "cleanup-test")
+	m, err := New(repoDir, "cleanup-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	// Create two worktrees.
 	r1 := m.Create(1, "A")
@@ -159,7 +182,10 @@ func TestCleanupAllSuccess(t *testing.T) {
 // TestCleanupAllEmpty verifies CleanupAll on an empty manager returns Success
 // with zero count.
 func TestCleanupAllEmpty(t *testing.T) {
-	m := New("/some/repo", "empty-test")
+	m, err := New("/some/repo", "empty-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	r := m.CleanupAll()
 	if r.IsFatal() {
 		t.Fatalf("CleanupAll on empty manager returned fatal: %v", r.Errors)
@@ -175,7 +201,10 @@ func TestCleanupAllEmpty(t *testing.T) {
 // a path into the active map that has no real worktree backing it.
 func TestCleanupAllPartial(t *testing.T) {
 	repoDir := setupGitRepo(t)
-	m := New(repoDir, "partial-test")
+	m, err := New(repoDir, "partial-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	// Create one real worktree that will succeed.
 	r1 := m.Create(1, "A")
@@ -211,7 +240,10 @@ func TestCleanupAllPartial(t *testing.T) {
 // create a worktree that already exists.
 func TestCreateAlreadyExists(t *testing.T) {
 	repoDir := setupGitRepo(t)
-	m := New(repoDir, "duplicate-test")
+	m, err := New(repoDir, "duplicate-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	// Create a worktree successfully.
 	r1 := m.Create(1, "C")
@@ -236,7 +268,10 @@ func TestCreateAlreadyExists(t *testing.T) {
 // is not a valid git repository.
 func TestCreateInvalidRepoRoot(t *testing.T) {
 	invalidRepo := t.TempDir()
-	m := New(invalidRepo, "invalid-repo-test")
+	m, err := New(invalidRepo, "invalid-repo-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	r := m.Create(1, "X")
 	if !r.IsFatal() {
@@ -252,7 +287,10 @@ func TestCreateInvalidRepoRoot(t *testing.T) {
 
 // TestSetLogger verifies SetLogger correctly configures the manager's logger.
 func TestSetLogger(t *testing.T) {
-	m := New("/some/repo", "logger-test")
+	m, err := New("/some/repo", "logger-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	// Default logger should be slog.Default().
 	if m.log() != slog.Default() {
@@ -271,7 +309,10 @@ func TestSetLogger(t *testing.T) {
 
 // TestListEmpty verifies List() returns an empty slice (not nil) on a fresh manager.
 func TestListEmpty(t *testing.T) {
-	m := New("/some/repo", "empty-list-test")
+	m, err := New("/some/repo", "empty-list-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
 	list := m.List()
 	if list == nil {
@@ -279,5 +320,68 @@ func TestListEmpty(t *testing.T) {
 	}
 	if len(list) != 0 {
 		t.Errorf("List() on fresh manager: got len=%d; want 0", len(list))
+	}
+}
+
+// TestCreateBranchAlreadyExists verifies Create returns CodeBranchExists when the
+// branch already exists but the worktree directory has been removed externally.
+func TestCreateBranchAlreadyExists(t *testing.T) {
+	repoDir := setupGitRepo(t)
+	m, err := New(repoDir, "branch-exists-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Create worktree once successfully.
+	r1 := m.Create(1, "Z")
+	if r1.IsFatal() {
+		t.Fatalf("First Create failed: %v", r1.Errors)
+	}
+	wtPath := r1.GetData().Path
+
+	// Remove the worktree directory via git (force) but keep the branch.
+	if out, err := exec.Command("git", "-C", repoDir, "worktree", "remove", "--force", wtPath).CombinedOutput(); err != nil {
+		t.Fatalf("git worktree remove: %v: %s", err, out)
+	}
+	// Also remove from the Manager's tracking so os.Stat check passes.
+	delete(m.active, wtPath)
+
+	// Branch still exists — Create should return CodeBranchExists.
+	r2 := m.Create(1, "Z")
+	if !r2.IsFatal() {
+		t.Fatal("Create with existing branch should return Fatal")
+	}
+	if len(r2.Errors) == 0 {
+		t.Fatal("Create should have errors")
+	}
+	if r2.Errors[0].Code != result.CodeBranchExists {
+		t.Errorf("error code = %q; want %q", r2.Errors[0].Code, result.CodeBranchExists)
+	}
+}
+
+// TestCleanupAllErrorPropagation verifies that CleanupAll propagates the original
+// error code from Remove rather than emitting a generic cleanup code.
+func TestCleanupAllErrorPropagation(t *testing.T) {
+	m, err := New("/some/repo", "err-prop-test")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	// Inject a fake tracked path that has no real worktree (Remove will fail).
+	fakePath := "/tmp/nonexistent-for-error-prop-test"
+	m.active[fakePath] = "saw/err-prop-test/wave1-agent-fake"
+
+	r := m.CleanupAll()
+	// All removals failed — expect Fatal.
+	if !r.IsFatal() {
+		t.Fatalf("CleanupAll should be Fatal when all removals fail; got code=%q", r.Code)
+	}
+	if len(r.Errors) == 0 {
+		t.Fatal("CleanupAll should have errors")
+	}
+	// Error code must be from Remove (G008), not the old generic cleanup code (G007).
+	for _, e := range r.Errors {
+		if e.Code != result.CodeWorktreeRemoveFailed {
+			t.Errorf("error code = %q; want %q (original Remove error must be propagated)",
+				e.Code, result.CodeWorktreeRemoveFailed)
+		}
 	}
 }
