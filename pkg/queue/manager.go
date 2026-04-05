@@ -176,6 +176,7 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 			result.NewFatal(result.CodeQueueCompletedScanFailed, fmt.Sprintf("read complete dir: %s", err.Error())).WithCause(err),
 		})
 	}
+	var warnings []result.SAWError
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -189,6 +190,8 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 		path := filepath.Join(completeDir, name)
 		data, err := os.ReadFile(path)
 		if err != nil {
+			warnings = append(warnings, result.NewWarning(result.CodeQueueCorruptedFile,
+				fmt.Sprintf("cannot read IMPL file %s: %s", name, err.Error())).WithCause(err))
 			continue
 		}
 		// In-memory unmarshal: data already read above; cannot use LoadYAML (no file path).
@@ -205,6 +208,9 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 		}
 	}
 
+	if len(warnings) > 0 {
+		return result.NewPartial(completed, warnings)
+	}
 	return result.NewSuccess(completed)
 }
 
@@ -249,6 +255,19 @@ func (m *Manager) Next() result.Result[Item] {
 // UpdateStatus updates the status field in the queue item's YAML file
 // identified by slug. Returns a Result containing the slug and new status on success.
 func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateStatusData] {
+	validStatuses := map[string]bool{
+		"queued":      true,
+		"in_progress": true,
+		"complete":    true,
+		"blocked":     true,
+	}
+	if !validStatuses[status] {
+		return result.NewFailure[UpdateStatusData]([]result.SAWError{
+			result.NewError(result.CodeQueueStatusUpdateFailed,
+				fmt.Sprintf("invalid status %q: must be one of queued, in_progress, complete, blocked", status)),
+		})
+	}
+
 	dir := m.queueDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
