@@ -224,6 +224,13 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	}
 	output = append(output, '\n')
 
+	// Validate that repoPath exists before attempting CreateTemp.
+	if _, err := os.Stat(repoPath); err != nil {
+		return result.NewFailure[bool]([]result.SAWError{
+			result.NewError(result.CodeConfigIOFailed, "config save: target directory does not exist: "+repoPath),
+		})
+	}
+
 	// Atomic write: temp file + rename.
 	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
 	if err != nil {
@@ -254,10 +261,10 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 		})
 	}
 
+	// Chmod failure is non-fatal: the file is already atomically on disk.
+	// Log and continue rather than surfacing a spurious save error.
 	if err := os.Chmod(configPath, 0600); err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
-			result.NewError(result.CodeConfigIOFailed, "failed to set config permissions: "+err.Error()),
-		})
+		slog.Warn("config: failed to set file permissions", "path", configPath, "err", err)
 	}
 
 	return result.NewSuccess(true)

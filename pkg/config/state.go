@@ -20,9 +20,9 @@ type WaveState struct {
 	MergeState      string   `json:"merge_state,omitempty"`
 }
 
-// GetWaveState derives the complete state of a wave from the IMPL manifest.
+// getWaveState derives the complete state of a wave from the IMPL manifest.
 // This is the single query function -- no .saw-state/ directory needed.
-func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*WaveState] {
+func getWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*WaveState] {
 	if manifest == nil {
 		return result.NewFailure[*WaveState]([]result.SAWError{
 			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
@@ -97,8 +97,8 @@ func GetWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 	return result.NewSuccess(ws)
 }
 
-// GetAllWaveStates derives the state of all waves from the IMPL manifest.
-func GetAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState] {
+// getAllWaveStates derives the state of all waves from the IMPL manifest.
+func getAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState] {
 	if manifest == nil {
 		return result.NewFailure[[]WaveState]([]result.SAWError{
 			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
@@ -106,7 +106,7 @@ func GetAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState
 	}
 	states := make([]WaveState, 0, len(manifest.Waves))
 	for _, w := range manifest.Waves {
-		r := GetWaveState(manifest, w.Number)
+		r := getWaveState(manifest, w.Number)
 		if r.IsFatal() {
 			wrapped := make([]result.SAWError, len(r.Errors))
 			for i, e := range r.Errors {

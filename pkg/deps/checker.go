@@ -142,19 +142,9 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 				}
 			}
 		} else {
-			// Check if multiple agents need this package (potential conflict)
-			if len(agentFiles) > 1 {
-				var agents []string
-				for agent := range agentFiles {
-					agents = append(agents, agent)
-				}
-				report.VersionConflicts = append(report.VersionConflicts, VersionConflict{
-					Agents:           agents,
-					Package:          pkg,
-					Versions:         []string{lockPkg.Version},
-					ResolutionNeeded: false, // same version in lock file, no conflict
-				})
-			}
+			// Package is in the lock file at a single version shared by all agents:
+			// no conflict, no action needed.
+			_ = lockPkg
 		}
 	}
 
@@ -162,10 +152,6 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	if len(report.MissingDeps) > 0 {
 		report.Recommendations = append(report.Recommendations,
 			fmt.Sprintf("Run package manager to install %d missing dependencies", len(report.MissingDeps)))
-	}
-	if len(report.VersionConflicts) > 0 {
-		report.Recommendations = append(report.Recommendations,
-			"Review version conflicts and update lock files if needed")
 	}
 	if len(report.MissingDeps) == 0 && len(report.VersionConflicts) == 0 {
 		report.Recommendations = append(report.Recommendations, "No dependency conflicts detected")
@@ -222,17 +208,14 @@ func findLockPackage(lockFilePackages map[string]PackageInfo, importPath string)
 func DetectLockFiles(repoRoot string) ([]string, error) {
 	var lockFiles []string
 
-	// Common lock file names
+	// Lock file names with registered parsers. Files with no parser
+	// (yarn.lock, pnpm-lock.yaml, Pipfile.lock, Gemfile.lock) are omitted;
+	// go.mod is handled separately via ParseGoModReplace, not via the parser registry.
 	lockFileNames := []string{
 		"go.sum",
-		"go.mod",
 		"package-lock.json",
-		"yarn.lock",
-		"pnpm-lock.yaml",
 		"Cargo.lock",
 		"poetry.lock",
-		"Pipfile.lock",
-		"Gemfile.lock",
 	}
 
 	for _, name := range lockFileNames {

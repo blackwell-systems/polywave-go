@@ -28,7 +28,7 @@ func twoAgentWave() []protocol.Wave {
 
 func TestGetWaveState_ValidWave(t *testing.T) {
 	manifest := makeManifest(twoAgentWave(), nil)
-	r := GetWaveState(manifest, 1)
+	r := getWaveState(manifest, 1)
 	if r.IsFatal() {
 		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
@@ -49,7 +49,7 @@ func TestGetWaveState_ValidWave(t *testing.T) {
 
 func TestGetWaveState_WaveNotFound(t *testing.T) {
 	manifest := makeManifest(twoAgentWave(), nil)
-	r := GetWaveState(manifest, 99)
+	r := getWaveState(manifest, 99)
 	if !r.IsFatal() {
 		t.Fatal("expected failure for missing wave")
 	}
@@ -64,7 +64,7 @@ func TestGetWaveState_AllComplete(t *testing.T) {
 		"wave1-B": {Status: "complete"},
 	}
 	manifest := makeManifest(twoAgentWave(), reports)
-	r := GetWaveState(manifest, 1)
+	r := getWaveState(manifest, 1)
 	if r.IsFatal() {
 		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
@@ -88,7 +88,7 @@ func TestGetWaveState_PartialComplete(t *testing.T) {
 		"wave1-A": {Status: "complete"},
 	}
 	manifest := makeManifest(twoAgentWave(), reports)
-	r := GetWaveState(manifest, 1)
+	r := getWaveState(manifest, 1)
 	if r.IsFatal() {
 		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
@@ -110,7 +110,7 @@ func TestGetWaveState_WithFailures(t *testing.T) {
 		"wave1-B": {Status: "blocked"},
 	}
 	manifest := makeManifest(twoAgentWave(), reports)
-	r := GetWaveState(manifest, 1)
+	r := getWaveState(manifest, 1)
 	if r.IsFatal() {
 		t.Fatalf("unexpected failure: %v", r.Errors)
 	}
@@ -124,7 +124,7 @@ func TestGetWaveState_WithFailures(t *testing.T) {
 
 	// Also test partial status counts as failed.
 	reports["wave1-B"] = protocol.CompletionReport{Status: "partial"}
-	r2 := GetWaveState(manifest, 1)
+	r2 := getWaveState(manifest, 1)
 	ws2 := r2.GetData()
 	if len(ws2.FailedAgents) != 1 || ws2.FailedAgents[0] != "B" {
 		t.Errorf("partial status: FailedAgents = %v, want [B]", ws2.FailedAgents)
@@ -132,7 +132,7 @@ func TestGetWaveState_WithFailures(t *testing.T) {
 }
 
 func TestGetWaveState_NilManifest(t *testing.T) {
-	r := GetWaveState(nil, 1)
+	r := getWaveState(nil, 1)
 	if !r.IsFatal() {
 		t.Fatal("expected failure for nil manifest")
 	}
@@ -142,7 +142,7 @@ func TestGetWaveState_NilManifest(t *testing.T) {
 }
 
 func TestGetAllWaveStates_NilManifest(t *testing.T) {
-	r := GetAllWaveStates(nil)
+	r := getAllWaveStates(nil)
 	if !r.IsFatal() {
 		t.Fatal("expected failure for nil manifest")
 	}
@@ -160,7 +160,7 @@ func TestGetAllWaveStates_NilManifest(t *testing.T) {
 // message does not contain a wave number prefix (wrapping only occurs when
 // iterating waves, not before the loop).
 func TestGetAllWaveStates_ErrorWrapping_NilManifestMessage(t *testing.T) {
-	r := GetAllWaveStates(nil)
+	r := getAllWaveStates(nil)
 	if !r.IsFatal() {
 		t.Fatal("expected failure for nil manifest")
 	}
@@ -174,7 +174,7 @@ func TestGetAllWaveStates_ErrorWrapping_NilManifestMessage(t *testing.T) {
 	}
 }
 
-func TestGetAllWaveStates(t *testing.T) {
+func TestAllWaveStates_MultiWave(t *testing.T) {
 	waves := []protocol.Wave{
 		{
 			Number: 1,
@@ -189,7 +189,7 @@ func TestGetAllWaveStates(t *testing.T) {
 		"wave1-A": {Status: "complete"},
 	}
 	manifest := makeManifest(waves, reports)
-	r := GetAllWaveStates(manifest)
+	r := getAllWaveStates(manifest)
 	if r.IsFatal() {
 		t.Fatalf("unexpected failure: %v", r.Errors)
 	}

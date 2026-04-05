@@ -80,10 +80,8 @@ func (p *PoetryLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading poetry.lock: "+err.Error())})
 	}
 
-	if len(packages) == 0 {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepEmptyPackage, "no packages found in poetry.lock (possible malformed TOML)")})
-	}
-
+	// An empty poetry.lock is valid (project with no declared dependencies).
+	// Return success with an empty slice, consistent with CargoLockParser.
 	return result.NewSuccess(packages)
 }
 

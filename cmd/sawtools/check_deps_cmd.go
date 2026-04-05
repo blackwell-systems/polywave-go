@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
@@ -26,8 +27,12 @@ Prevents agents wasting time on dependency thrashing.`,
 
 			// Run conflict detection
 			res := deps.CheckDeps(implPath, wave)
-			if !res.IsSuccess() {
+			if res.IsFatal() {
 				return fmt.Errorf("failed to check deps: %v", res.Errors)
+			}
+			// Log parse warnings but still print the partial report.
+			for _, e := range res.Errors {
+				slog.Warn("check-deps: parse warning", "code", e.Code, "msg", e.Message)
 			}
 
 			report := res.GetData()

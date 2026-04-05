@@ -107,12 +107,13 @@ content-hash = "abc123"
 	parser := &PoetryLockParser{}
 	res := parser.Parse(lockFile)
 
-	if res.IsSuccess() {
-		t.Error("Expected error for file with no packages, got success")
+	// An empty poetry.lock is valid (project with no declared dependencies).
+	// Expect success with an empty package slice, consistent with CargoLockParser.
+	if !res.IsSuccess() {
+		t.Errorf("Expected success for empty poetry.lock, got errors: %v", res.Errors)
 	}
-
-	if !res.IsSuccess() && len(res.Errors) > 0 && res.Errors[0].Message != "no packages found in poetry.lock (possible malformed TOML)" {
-		t.Errorf("Expected 'no packages found' error, got: %v", res.Errors[0].Message)
+	if pkgs := res.GetData(); len(pkgs) != 0 {
+		t.Errorf("Expected 0 packages, got %d", len(pkgs))
 	}
 }
 
