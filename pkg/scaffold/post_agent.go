@@ -31,7 +31,7 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 	for _, wave := range manifest.Waves {
 		for _, agent := range wave.Agents {
 			// Extract type definitions from task text
-			typeNames := extractTypeDefinitions(agent.Task)
+			typeNames := extractTypeNames(agent.Task)
 
 			// Record each type with this agent's files
 			for _, typeName := range typeNames {
@@ -88,9 +88,3 @@ func DetectScaffoldsPostAgent(manifest *protocol.IMPLManifest) (*PostAgentResult
 	}, nil
 }
 
-// extractTypeDefinitions searches for type definitions in agent task text.
-// It delegates to extractTypeNames which uses a package-level compiled regex,
-// avoiding repeated regex compilation on the hot path.
-func extractTypeDefinitions(taskText string) []string {
-	return extractTypeNames(taskText)
-}

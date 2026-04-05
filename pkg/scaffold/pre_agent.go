@@ -4,9 +4,35 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
+
+var typeDefCache sync.Map // map[string][]*regexp.Regexp
+
+func getTypeDefPatterns(typeName string) []*regexp.Regexp {
+	if cached, ok := typeDefCache.Load(typeName); ok {
+		return cached.([]*regexp.Regexp)
+	}
+	quoted := regexp.QuoteMeta(typeName)
+	templates := []string{
+		`(?s)type\s+` + quoted + `\s+struct\s*\{[^}]*\}`,
+		`(?s)type\s+` + quoted + `\s+interface\s*\{[^}]*\}`,
+		`(?s)interface\s+` + quoted + `\s*\{[^}]*\}`,
+		`(?s)class\s+` + quoted + `\s*\{[^}]*\}`,
+	}
+	patterns := make([]*regexp.Regexp, 0, 4)
+	for _, tmpl := range templates {
+		re, err := regexp.Compile(tmpl)
+		if err != nil {
+			continue // defense-in-depth: skip bad patterns
+		}
+		patterns = append(patterns, re)
+	}
+	typeDefCache.Store(typeName, patterns)
+	return patterns
+}
 
 // PreAgentResult is the output of pre-agent scaffold detection.
 type PreAgentResult struct {
@@ -81,26 +107,12 @@ func DetectScaffoldsPreAgent(contracts []protocol.InterfaceContract) (*PreAgentR
 // extractTypeDefinition extracts the full definition of a type from a contract definition.
 // It attempts to find the complete type definition including all fields.
 func extractTypeDefinition(definition, typeName string) string {
-	// Try to extract the complete type definition
-	// Look for "type TypeName struct { ... }" or similar patterns
-
 	// Note: [^}]* patterns do not handle nested struct literals (embedded structs
 	// with their own braces). If a type contains embedded struct literals, only the
 	// outer brace is matched and extraction may be incomplete. This is a known
 	// limitation; use the fallback placeholder for complex nested types.
 
-	// Pattern to match the type declaration and its body
-	patterns := []string{
-		// Go struct/interface
-		`(?s)type\s+` + regexp.QuoteMeta(typeName) + `\s+struct\s*\{[^}]*\}`,
-		`(?s)type\s+` + regexp.QuoteMeta(typeName) + `\s+interface\s*\{[^}]*\}`,
-		// Interface/class patterns for other languages
-		`(?s)interface\s+` + regexp.QuoteMeta(typeName) + `\s*\{[^}]*\}`,
-		`(?s)class\s+` + regexp.QuoteMeta(typeName) + `\s*\{[^}]*\}`,
-	}
-
-	for _, patternStr := range patterns {
-		pattern := regexp.MustCompile(patternStr)
+	for _, pattern := range getTypeDefPatterns(typeName) {
 		if match := pattern.FindString(definition); match != "" {
 			return strings.TrimSpace(match)
 		}
