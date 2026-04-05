@@ -44,12 +44,18 @@ type Manager struct {
 
 // New creates a new Manager for the git repository at repoPath.
 // The slug parameter is the IMPL feature slug used for slug-scoped branch naming.
-func New(repoPath, slug string) *Manager {
+func New(repoPath, slug string) (*Manager, error) {
+	if repoPath == "" {
+		return nil, fmt.Errorf("worktree: repoPath must not be empty")
+	}
+	if slug == "" {
+		return nil, fmt.Errorf("worktree: slug must not be empty")
+	}
 	return &Manager{
 		repoPath: repoPath,
 		slug:     slug,
 		active:   make(map[string]string),
-	}
+	}, nil
 }
 
 // SetLogger configures the logger used for non-fatal diagnostic messages.
@@ -92,6 +98,13 @@ func (m *Manager) Create(wave int, agent string) result.Result[CreateData] {
 		})
 	}
 
+	if git.BranchExists(m.repoPath, branch) {
+		return result.NewFailure[CreateData]([]result.SAWError{
+			result.NewFatal(result.CodeBranchExists,
+				fmt.Sprintf("worktree: branch %q already exists; remove it before retrying", branch)),
+		})
+	}
+
 	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
 		return result.NewFailure[CreateData]([]result.SAWError{
 			result.NewFatal(result.CodeWorktreeCreateFailed,
@@ -108,7 +121,9 @@ func (m *Manager) Create(wave int, agent string) result.Result[CreateData] {
 	return result.NewSuccess(CreateData{Path: wtPath, Branch: branch})
 }
 
-// Remove removes the worktree at the given absolute path and deletes its branch.
+// Remove removes the worktree at the given absolute path and attempts to
+// delete its branch. Branch deletion is best-effort: if it fails the failure
+// is logged but does not affect the returned result.
 // Returns a result.Result[RemoveData] with the removed path on success, or a
 // Fatal result if the path is not tracked or the filesystem removal fails.
 func (m *Manager) Remove(path string) result.Result[RemoveData] {
@@ -147,12 +162,12 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 	}
 
 	var removedPaths []string
-	var failedPaths []string
+	var failedErrs []result.SAWError
 
 	for _, path := range paths {
 		r := m.Remove(path)
 		if r.IsFatal() {
-			failedPaths = append(failedPaths, path)
+			failedErrs = append(failedErrs, r.Errors...)
 			m.log().Warn("worktree: cleanup error", "path", path)
 		} else {
 			removedPaths = append(removedPaths, path)
@@ -165,23 +180,16 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 		RemovedPaths: removedPaths,
 	}
 
-	if len(failedPaths) == 0 {
+	if len(failedErrs) == 0 {
 		return result.NewSuccess(data)
-	}
-
-	// Build errors from failed paths in a single pass.
-	errs := make([]result.SAWError, 0, len(failedPaths))
-	for _, p := range failedPaths {
-		errs = append(errs, result.NewFatal(result.CodeWorktreeCleanup,
-			fmt.Sprintf("worktree: failed to remove worktree %q", p)))
 	}
 
 	if len(removedPaths) == 0 {
 		// All removals failed — total failure.
-		return result.NewFailure[CleanupData](errs)
+		return result.NewFailure[CleanupData](failedErrs)
 	}
 	// Some succeeded, some failed — partial.
-	return result.NewPartial(data, errs)
+	return result.NewPartial(data, failedErrs)
 }
 
 // List returns the absolute paths of all currently tracked worktrees.
