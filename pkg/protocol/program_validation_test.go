@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -759,7 +760,7 @@ func TestValidateProgramImportMode_MissingIMPLFile(t *testing.T) {
 		},
 	}
 
-	errs := ValidateProgramImportMode(manifest, tmpDir)
+	errs := ValidateProgramImportMode(context.Background(), manifest, tmpDir)
 	found := false
 	for _, e := range errs {
 		if e.Code == result.CodeIMPLFileMissing {
@@ -792,7 +793,7 @@ func TestValidateProgramImportMode_P1FileOverlap(t *testing.T) {
 		},
 	}
 
-	errs := ValidateProgramImportMode(manifest, tmpDir)
+	errs := ValidateProgramImportMode(context.Background(), manifest, tmpDir)
 	found := false
 	for _, e := range errs {
 		if e.Code == result.CodeP1FileOverlap {
@@ -913,7 +914,7 @@ func TestValidateProgramImportMode_P2ContractRedefinition(t *testing.T) {
 		},
 	}
 
-	errs := ValidateProgramImportMode(manifest, tmpDir)
+	errs := ValidateProgramImportMode(context.Background(), manifest, tmpDir)
 	found := false
 	for _, e := range errs {
 		if e.Code == result.CodeP2ContractRedefinition {
@@ -945,7 +946,7 @@ func TestValidateProgramImportMode_ValidPreExisting(t *testing.T) {
 		},
 	}
 
-	errs := ValidateProgramImportMode(manifest, tmpDir)
+	errs := ValidateProgramImportMode(context.Background(), manifest, tmpDir)
 	if len(errs) != 0 {
 		t.Errorf("expected no errors for valid pre-existing IMPLs, got: %v", errs)
 	}

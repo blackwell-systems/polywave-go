@@ -13,7 +13,7 @@ import (
 // TestPrepareTier_ManifestNotFound verifies that PrepareTier returns a fatal result
 // when the manifest file does not exist.
 func TestPrepareTier_ManifestNotFound(t *testing.T) {
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: "/nonexistent/path/program.yaml", TierNumber: 1, RepoDir: "."})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: "/nonexistent/path/program.yaml", TierNumber: 1, RepoDir: "."})
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for non-existent manifest path, got non-fatal")
 	}
@@ -46,7 +46,7 @@ completion:
 	}
 	f.Close()
 
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: f.Name(), TierNumber: 99, RepoDir: "."})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: f.Name(), TierNumber: 99, RepoDir: "."})
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result for missing tier, got non-fatal")
 	}
@@ -249,7 +249,7 @@ func TestPrepareTier_E37NotRequired_SmallIMPL(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if res.IsFatal() {
 		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
@@ -278,7 +278,7 @@ func TestPrepareTier_E37Required_MissingReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if res.IsFatal() {
 		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
@@ -323,7 +323,7 @@ func TestPrepareTier_E37Required_WithPassReport(t *testing.T) {
 
 	programPath := writeTempProgram(t, []string{slug})
 
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if res.IsFatal() {
 		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
@@ -355,7 +355,7 @@ func TestPrepareTier_CollectsAllE37Failures(t *testing.T) {
 
 	programPath := writeTempProgram(t, slugs)
 
-	res := PrepareTier(PrepareTierOpts{ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
+	res := PrepareTier(PrepareTierOpts{Ctx: context.Background(), ProgramManifestPath: programPath, TierNumber: 1, RepoDir: repoDir})
 	if res.IsFatal() {
 		t.Fatalf("PrepareTier returned unexpected fatal: %v", res.Errors)
 	}
@@ -395,6 +395,7 @@ func TestPrepareTier_SkipCritic(t *testing.T) {
 	programPath := writeTempProgram(t, slugs)
 
 	res := PrepareTier(PrepareTierOpts{
+		Ctx:                 context.Background(),
 		ProgramManifestPath: programPath,
 		TierNumber:          1,
 		RepoDir:             repoDir,
@@ -557,6 +558,7 @@ func TestIMPLPrepareWaveResult_JSONFields(t *testing.T) {
 // PrepareTierOpts by constructing the struct (compile-time check).
 func TestPrepareTierOpts_NewFields(t *testing.T) {
 	opts := PrepareTierOpts{
+		Ctx:                 context.Background(),
 		ProgramManifestPath: "test.yaml",
 		TierNumber:          1,
 		RepoDir:             ".",
