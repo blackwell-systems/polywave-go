@@ -71,7 +71,7 @@ All pipeline steps are handled by the engine. The engine supports:
 
 			// apply-cascade-hotfix step: runs when verify-build fails exclusively
 			// due to caller cascade errors in future-wave files.
-			if r.Data.CallerCascadeOnly && len(r.Data.CallerCascadeErrors) > 0 {
+			if r.Data != nil && r.Data.CallerCascadeOnly && len(r.Data.CallerCascadeErrors) > 0 {
 				if dryRun {
 					// --dry-run: describe what would be fixed, exit 0.
 					dryRunResult := map[string]interface{}{
