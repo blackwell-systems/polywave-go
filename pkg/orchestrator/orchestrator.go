@@ -1,7 +1,8 @@
 // Package orchestrator drives SAW protocol execution: it advances the
 // 10-state machine, creates per-agent git worktrees, launches agents
-// concurrently via the Anthropic API, merges completed worktrees, runs
-// post-merge verification, and updates the IMPL doc status table.
+// concurrently via configurable LLM backends (Anthropic, OpenAI, Bedrock,
+// Ollama, LM Studio, CLI), merges completed worktrees, runs post-merge
+// verification, and updates the IMPL doc status table.
 // State mutations always go through TransitionTo — never set state directly.
 package orchestrator
 

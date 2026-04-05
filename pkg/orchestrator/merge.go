@@ -67,7 +67,12 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	}
 
 	// Build per-agent repo map for cross-repo support.
-	absRepoDir, _ := filepath.Abs(o.repoPath)
+	absRepoDir, err := filepath.Abs(o.repoPath)
+	if err != nil {
+		return result.NewFailure[MergeData]([]result.SAWError{
+			result.NewFatal("MERGE_PATH_ERROR", fmt.Sprintf("executeMergeWave: resolving repo path: %v", err)),
+		})
+	}
 	repoParent := filepath.Dir(absRepoDir)
 	agentRepoDir := make(map[string]string) // agent ID -> absolute repo path
 	for _, fo := range manifest.FileOwnership {
@@ -115,7 +120,6 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 
 	// Step 7 & 8: Merge each complete agent; clean up worktree afterward.
 	// Cross-repo agents are merged in their own repos.
-	var mergedAgents []string
 	for _, agent := range wave.Agents {
 		report, ok := reports[agent.ID]
 		if !ok || report.Status != protocol.StatusComplete {
@@ -200,7 +204,6 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 			o.log().Warn("executeMergeWave: could not delete branch", "branch", branch, "err", err)
 		}
 
-		mergedAgents = append(mergedAgents, agent.ID)
 	}
 
 	return result.NewSuccess(MergeData{WaveNum: waveNum})

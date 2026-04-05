@@ -167,6 +167,8 @@ func (o *Orchestrator) launchAgentStructured(
 			failureType = protocol.FailureFixable
 		case "needs_replan":
 			failureType = protocol.FailureNeedsReplan
+		case "timeout":
+			failureType = protocol.FailureTimeout
 		case "escalate":
 			failureType = protocol.FailureEscalate
 		default:
