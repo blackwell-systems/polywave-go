@@ -10,6 +10,7 @@ import (
 // PrepareTierOpts contains the options for PrepareTier, replacing positional
 // arguments and adding a SkipCritic flag.
 type PrepareTierOpts struct {
+	Ctx                 context.Context // Context for Load/Save calls; nil defaults to context.Background()
 	ProgramManifestPath string
 	TierNumber          int
 	RepoDir             string
@@ -77,6 +78,11 @@ type IMPLValidationResult struct {
 //  4. Validate each IMPL doc (with auto-fix of gate types).
 //  5. Create worktrees for the tier.
 func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
+	ctx := opts.Ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	manifest, err := ParseProgramManifest(opts.ProgramManifestPath)
 	if err != nil {
 		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
@@ -136,7 +142,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 			}})
 		}
 
-		m, err := Load(context.TODO(), implPath)
+		m, err := Load(ctx, implPath)
 		if err != nil {
 			return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
 				Code:     result.CodeParseError,
@@ -147,7 +153,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 
 		fixCount := FixGateTypes(m)
 		if fixCount > 0 {
-			if saveRes := Save(context.TODO(), m, implPath); saveRes.IsFatal() {
+			if saveRes := Save(ctx, m, implPath); saveRes.IsFatal() {
 				saveMsg := ""
 				if len(saveRes.Errors) > 0 {
 					saveMsg = saveRes.Errors[0].Message
@@ -180,7 +186,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 		// Only enforce when the threshold is met: 3+ agents in wave 1 OR 2+ repos.
 		if E37Required(m) && !CriticGatePasses(m, true) {
 			if opts.SkipCritic {
-				skipRes := SkipCriticForIMPL(context.TODO(), implPath, m)
+				skipRes := SkipCriticForIMPL(ctx, implPath, m)
 				if skipRes.IsFatal() {
 					skipMsg := ""
 					if len(skipRes.Errors) > 0 {
