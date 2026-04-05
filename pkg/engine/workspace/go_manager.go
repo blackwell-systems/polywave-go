@@ -77,6 +77,8 @@ func (m *GoWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths [
 	if !goWorkExists {
 		initCmd := exec.Command("go", "work", "init", ".")
 		initCmd.Dir = repoRoot
+		// Force the go tool to use the go.work in repoRoot, not an inherited GOWORK.
+		initCmd.Env = appendGoWorkEnv(os.Environ(), goWorkPath)
 		if out, err := initCmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("go work init failed: %v: %s", err, string(out))
 		}
@@ -86,6 +88,8 @@ func (m *GoWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths [
 	for _, path := range filteredPaths {
 		useCmd := exec.Command("go", "work", "use", path)
 		useCmd.Dir = repoRoot
+		// Force the go tool to use the go.work in repoRoot, not an inherited GOWORK.
+		useCmd.Env = appendGoWorkEnv(os.Environ(), goWorkPath)
 		_, _ = useCmd.CombinedOutput()
 	}
 
@@ -154,6 +158,19 @@ func readModulePath(goModPath string) (string, error) {
 		return "", err
 	}
 	return "", fmt.Errorf("module declaration not found in %s", goModPath)
+}
+
+// appendGoWorkEnv returns a copy of environ with GOWORK set to the given path.
+// This prevents subprocesses from inheriting a GOWORK value that points to a
+// different go.work file (e.g., a parent repo's go.work during tests).
+func appendGoWorkEnv(environ []string, goWorkPath string) []string {
+	out := make([]string, 0, len(environ)+1)
+	for _, e := range environ {
+		if !strings.HasPrefix(e, "GOWORK=") {
+			out = append(out, e)
+		}
+	}
+	return append(out, "GOWORK="+goWorkPath)
 }
 
 // Ensure GoWorkspaceManager implements WorkspaceManager at compile time.
