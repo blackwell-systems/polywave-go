@@ -99,15 +99,15 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	// to all files owned by agents in the parent IMPL.
 	failedFiles := failedGate.FailedFiles
 	if len(failedFiles) == 0 {
-		failedFiles = rl.filesFromIMPL()
+		failedFiles = rl.filesFromIMPL(ctx)
 	}
 
 	// Generate the retry IMPL manifest.
-	retryManifest := rl.GenerateRetryIMPL(failedFiles, failedGate.Output)
+	retryManifest := rl.GenerateRetryIMPL(ctx, failedFiles, failedGate.Output)
 
 	// Compute the output path relative to RepoPath.
 	retrySlug := fmt.Sprintf("%s-retry-%d", parentSlug, rl.attempt)
-	saveRes := rl.saveRetryIMPL(retryManifest, retrySlug)
+	saveRes := rl.saveRetryIMPL(ctx, retryManifest, retrySlug)
 	if saveRes.IsFatal() {
 		return result.NewFailure[*RetryAttempt]([]result.SAWError{
 			result.NewFatal(result.CodeRetrySaveIMPLFailed, fmt.Sprintf("failed to save retry IMPL: %s", saveRes.Errors[0].Message)).WithCause(saveRes.Errors[0]),
@@ -116,11 +116,6 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	retryIMPLPath := saveRes.GetData()
 
 	finalState := "retrying"
-	if rl.attempt >= rl.cfg.MaxRetries {
-		// This is the last allowed attempt; mark it clearly so callers know
-		// that if this retry also fails, the next Run call will be blocked.
-		finalState = "retrying"
-	}
 
 	return result.NewSuccess(&RetryAttempt{
 		AttemptNumber: rl.attempt,
@@ -138,15 +133,15 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 //
 // This method is also used directly by callers (e.g. CLI commands) who want
 // to generate a retry IMPL without calling Run().
-func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) *protocol.IMPLManifest {
+func (rl *RetryLoop) GenerateRetryIMPL(ctx context.Context, failedFiles []string, gateOutput string) *protocol.IMPLManifest {
 	parentSlug := slugFromIMPLPath(rl.cfg.IMPLPath)
-	gateCommand := gateCommandFromIMPL(rl.cfg.IMPLPath)
+	gateCommand := gateCommandFromIMPL(ctx, rl.cfg.IMPLPath)
 	return GenerateRetryIMPL(parentSlug, rl.attempt, failedFiles, gateOutput, gateCommand)
 }
 
 // saveRetryIMPL writes the manifest to docs/IMPL/IMPL-{slug}.yaml under RepoPath.
 // Creates the directory if it does not exist. Returns the relative path.
-func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) result.Result[string] {
+func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest, slug string) result.Result[string] {
 	implDir := protocol.IMPLDir(rl.cfg.RepoPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
 		return result.NewFailure[string]([]result.SAWError{
@@ -155,7 +150,7 @@ func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) result
 	}
 
 	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
-	if saveRes := protocol.Save(context.TODO(), m, absPath); saveRes.IsFatal() {
+	if saveRes := protocol.Save(ctx, m, absPath); saveRes.IsFatal() {
 		if len(saveRes.Errors) > 0 {
 			return result.NewFailure[string]([]result.SAWError{
 				result.NewFatal(result.CodeRetrySaveIMPLFailed, saveRes.Errors[0].Message).WithCause(saveRes.Errors[0]),
@@ -173,11 +168,11 @@ func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) result
 
 // filesFromIMPL reads the parent IMPL manifest and collects all files owned by
 // agents. Used as a fallback when QualityGateFailure.FailedFiles is empty.
-func (rl *RetryLoop) filesFromIMPL() []string {
+func (rl *RetryLoop) filesFromIMPL(ctx context.Context) []string {
 	if rl.cfg.IMPLPath == "" {
 		return nil
 	}
-	m, err := protocol.Load(context.TODO(), rl.cfg.IMPLPath)
+	m, err := protocol.Load(ctx, rl.cfg.IMPLPath)
 	if err != nil {
 		return nil
 	}
@@ -211,11 +206,11 @@ func slugFromIMPLPath(implPath string) string {
 
 // gateCommandFromIMPL loads the parent IMPL manifest and returns its test_command,
 // or a sensible default if the manifest cannot be read or has no test_command.
-func gateCommandFromIMPL(implPath string) string {
+func gateCommandFromIMPL(ctx context.Context, implPath string) string {
 	if implPath == "" {
 		return "go build ./..."
 	}
-	m, err := protocol.Load(context.TODO(), implPath)
+	m, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return "go build ./..."
 	}
