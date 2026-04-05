@@ -364,3 +364,5 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-roadmap-hardening.yaml
 - **wire-manager-lifecycle**: completed 2026-04-04, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-wire-manager-lifecycle.yaml
+- **solver-graph-wiring**: completed 2026-04-04, 1 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-solver-graph-wiring.yaml

@@ -1,3 +1,4 @@
+completion_date: "2026-04-04"
 title: Wire pkg/solver graph functions — close integration gaps
 feature_slug: solver-graph-wiring
 verdict: SUITABLE
@@ -640,7 +641,7 @@ critic_report:
         ValidateRefs message format. pkg/solver/solver_test.go has been added to Agent A's owned files.
     reviewed_at: "2026-04-05T05:23:12Z"
     issue_count: 0
-state: REVIEWED
+state: COMPLETE
 integration_reports:
     wave1:
         wave: 1

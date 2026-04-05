@@ -1,0 +1,275 @@
+title: "Fix pkg/retry context propagation gaps and dead code"
+feature_slug: retry-context-propagation
+verdict: SUITABLE_WITH_CAVEATS
+state: REVIEWED
+
+suitability_assessment: |
+  All four errors confirmed present in current codebase. Changes are localized
+  to pkg/retry/attempt.go, pkg/retry/loop.go, and their test files.
+
+  Caveat: This is a single-agent fix (4 small changes across 2 source files).
+  Parallelization provides no speed benefit — a single agent completes all
+  fixes faster than SAW coordination overhead. The IMPL doc value is as an
+  audit trail and verification spec, not parallelization.
+
+  Estimated times:
+  - Scout phase: ~3 min
+  - Agent execution: ~5 min (1 agent, small scope)
+  - Merge & verification: ~2 min
+  Total SAW time: ~10 min
+  Sequential baseline: ~5 min
+  Recommendation: Coordination value only. Single agent is correct.
+
+  Error status:
+  - Error 1 (attempt.go:50 context.TODO): confirmed TODO — needs ctx
+  - Error 2 (loop.go:158 saveRetryIMPL): confirmed no ctx param — needs threading
+  - Error 3 (loop.go:180,218 filesFromIMPL/gateCommandFromIMPL): confirmed TODO — needs ctx param
+  - Error 4 (loop.go:118-123 dead branch): confirmed no-op — remove
+
+test_command: "go test ./pkg/retry/..."
+lint_command: "go vet ./pkg/retry/..."
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./pkg/retry/..."
+      required: true
+    - type: lint
+      command: "go vet ./pkg/retry/..."
+      required: true
+    - type: test
+      command: "go test ./pkg/retry/..."
+      required: true
+
+scaffolds: []
+
+file_ownership:
+  - file: pkg/retry/attempt.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/loop.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/attempt_test.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/retry/loop_test.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+
+interface_contracts:
+  - name: saveRetryIMPL
+    description: "Add ctx context.Context as first parameter; pass to protocol.Save"
+    definition: |
+      func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest, slug string) result.Result[string]
+    location: pkg/retry/loop.go
+
+  - name: filesFromIMPL
+    description: "Add ctx context.Context as first parameter; pass to protocol.Load"
+    definition: |
+      func (rl *RetryLoop) filesFromIMPL(ctx context.Context) []string
+    location: pkg/retry/loop.go
+
+  - name: gateCommandFromIMPL
+    description: "Add ctx context.Context as first parameter; pass to protocol.Load"
+    definition: |
+      func gateCommandFromIMPL(ctx context.Context, implPath string) string
+    location: pkg/retry/loop.go
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          Fix four context propagation bugs and one dead code branch in pkg/retry.
+          All changes are in pkg/retry/attempt.go, pkg/retry/loop.go, and their
+          test files.
+
+          ## What to implement
+
+          ### Fix 1: BuildRetryAttempt discards ctx (attempt.go)
+          In `BuildRetryAttempt`, line 50 calls `protocol.Load(context.TODO(), manifestPath)`.
+          Replace `context.TODO()` with `ctx`.
+
+          Find this exact code:
+          ```go
+          	m, err := protocol.Load(context.TODO(), manifestPath)
+          ```
+          Replace with:
+          ```go
+          	m, err := protocol.Load(ctx, manifestPath)
+          ```
+
+          ### Fix 2: saveRetryIMPL missing ctx parameter (loop.go)
+          Add `ctx context.Context` as the first parameter to `saveRetryIMPL`.
+          Replace `protocol.Save(context.TODO(), m, absPath)` with `protocol.Save(ctx, m, absPath)`.
+
+          Current signature:
+          ```go
+          func (rl *RetryLoop) saveRetryIMPL(m *protocol.IMPLManifest, slug string) result.Result[string] {
+          ```
+          New signature:
+          ```go
+          func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest, slug string) result.Result[string] {
+          ```
+
+          Update the call site in `Run` (loop.go line 110):
+          ```go
+          	saveRes := rl.saveRetryIMPL(retryManifest, retrySlug)
+          ```
+          becomes:
+          ```go
+          	saveRes := rl.saveRetryIMPL(ctx, retryManifest, retrySlug)
+          ```
+
+          ### Fix 3: filesFromIMPL and gateCommandFromIMPL missing ctx (loop.go)
+
+          Add `ctx context.Context` as the first parameter to `filesFromIMPL`.
+
+          Current:
+          ```go
+          func (rl *RetryLoop) filesFromIMPL() []string {
+          ```
+          New:
+          ```go
+          func (rl *RetryLoop) filesFromIMPL(ctx context.Context) []string {
+          ```
+          Replace `protocol.Load(context.TODO(), rl.cfg.IMPLPath)` with
+          `protocol.Load(ctx, rl.cfg.IMPLPath)` inside the function body.
+
+          Update the call site in `Run` (loop.go line 102):
+          ```go
+          		failedFiles = rl.filesFromIMPL()
+          ```
+          becomes:
+          ```go
+          		failedFiles = rl.filesFromIMPL(ctx)
+          ```
+
+          Add `ctx context.Context` as the first parameter to `gateCommandFromIMPL`.
+
+          Current:
+          ```go
+          func gateCommandFromIMPL(implPath string) string {
+          ```
+          New:
+          ```go
+          func gateCommandFromIMPL(ctx context.Context, implPath string) string {
+          ```
+          Replace `protocol.Load(context.TODO(), implPath)` with
+          `protocol.Load(ctx, implPath)` inside the function body.
+
+          Update the call site in `GenerateRetryIMPL` (loop.go line 143):
+          ```go
+          	gateCommand := gateCommandFromIMPL(rl.cfg.IMPLPath)
+          ```
+          Note: `GenerateRetryIMPL` does not currently accept ctx. You must add
+          `ctx context.Context` as its first parameter too, and thread it from `Run`.
+
+          Current GenerateRetryIMPL signature:
+          ```go
+          func (rl *RetryLoop) GenerateRetryIMPL(failedFiles []string, gateOutput string) *protocol.IMPLManifest {
+          ```
+          New:
+          ```go
+          func (rl *RetryLoop) GenerateRetryIMPL(ctx context.Context, failedFiles []string, gateOutput string) *protocol.IMPLManifest {
+          ```
+
+          Update the call site in `Run` (loop.go line 106):
+          ```go
+          	retryManifest := rl.GenerateRetryIMPL(failedFiles, failedGate.Output)
+          ```
+          becomes:
+          ```go
+          	retryManifest := rl.GenerateRetryIMPL(ctx, failedFiles, failedGate.Output)
+          ```
+
+          ### Fix 4: Remove dead code branch (loop.go)
+          Remove the no-op if-block at lines 118-123. This block:
+          ```go
+          	finalState := "retrying"
+          	if rl.attempt >= rl.cfg.MaxRetries {
+          		// This is the last allowed attempt; mark it clearly so callers know
+          		// that if this retry also fails, the next Run call will be blocked.
+          		finalState = "retrying"
+          	}
+          ```
+          Replace with just:
+          ```go
+          	finalState := "retrying"
+          ```
+
+          ### Fix 5: Check for external callers of GenerateRetryIMPL
+          Since GenerateRetryIMPL is exported and its signature changes, check all
+          callers outside pkg/retry. Use LSP or grep to find callers. Known callers:
+          - No external callers found in grep — but verify before committing.
+          If external callers exist, update them to pass ctx.
+
+          ## Test updates
+
+          ### attempt_test.go
+          No signature changes to BuildRetryAttempt — tests should pass as-is.
+          The internal behavior change (ctx passed to protocol.Load instead of
+          context.TODO()) is transparent to callers.
+
+          ### loop_test.go (package retry — internal tests)
+          Update all direct calls to the renamed functions:
+
+          1. `TestRetryLoop_saveRetryIMPL_Errors` (line 557):
+             `loop.saveRetryIMPL(m, "test-slug")` → `loop.saveRetryIMPL(context.Background(), m, "test-slug")`
+
+          2. `TestRetryLoop_saveRetryIMPL_SaveFailed` (line 593):
+             `loop.saveRetryIMPL(m, "test-slug")` → `loop.saveRetryIMPL(context.Background(), m, "test-slug")`
+
+          3. `TestRetryLoop_filesFromIMPL_LoadError` (line 611):
+             `loop.filesFromIMPL()` → `loop.filesFromIMPL(context.Background())`
+
+          4. `TestRetryLoop_gateCommandFromIMPL_LoadError` (line 621):
+             `gateCommandFromIMPL(invalidPath)` → `gateCommandFromIMPL(context.Background(), invalidPath)`
+
+          ## Verification gate
+          ```bash
+          go build ./pkg/retry/...
+          go vet ./pkg/retry/...
+          go test ./pkg/retry/...
+          ```
+
+          ### Postconditions
+          ```bash
+          # No context.TODO() calls remain in pkg/retry source files (excluding tests)
+          ! grep -n 'context.TODO()' pkg/retry/attempt.go pkg/retry/loop.go
+          # Dead branch removed — no duplicate "retrying" assignment
+          ! grep -n 'finalState = "retrying"' pkg/retry/loop.go | grep -v '^.*:.*finalState := '
+          ```
+
+          ## Constraints
+          - Do NOT modify files outside pkg/retry/. All changes are internal.
+          - Do NOT change the signature of BuildRetryAttempt — it already accepts ctx.
+          - Do NOT remove the "context" import from loop.go — it is still needed for the ctx parameters.
+        files:
+          - pkg/retry/attempt.go
+          - pkg/retry/loop.go
+          - pkg/retry/attempt_test.go
+          - pkg/retry/loop_test.go
+        dependencies: []
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "GenerateRetryIMPL has external callers whose signatures break"
+      likelihood: low
+      impact: medium
+      mitigation: "Agent must grep entire repo for GenerateRetryIMPL callers before committing. No external callers found in initial scan."
+    - scenario: "Removing dead branch changes behavior (finalState should have been different)"
+      likelihood: low
+      impact: low
+      mitigation: "Code review confirms both branches assign identical value 'retrying'. The block is provably a no-op."
