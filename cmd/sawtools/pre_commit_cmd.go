@@ -49,6 +49,16 @@ func runGateCommand(repoDir, command string) error {
 	cmd.Dir = repoDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	// Unset GOWORK so gate commands run against the repo's own module, not a
+	// parent shell's go.work that doesn't include this repo.
+	env := os.Environ()
+	filtered := env[:0]
+	for _, e := range env {
+		if len(e) < 7 || e[:7] != "GOWORK=" {
+			filtered = append(filtered, e)
+		}
+	}
+	cmd.Env = append(filtered, "GOWORK=off")
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return fmt.Errorf("gate failed: exit %d", exitErr.ExitCode())
