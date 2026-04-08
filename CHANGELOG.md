@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-04-07)
+- **`close-impl` restores original branch instead of hard-coded `main`** — supports any branching strategy (develop, feature branches, etc.); reads `original_branch` from IMPL manifest first, falls back to `.saw-state/wave*/prepare-result.json`, then `"main"` as last resort
+- **`IMPLManifest.OriginalBranch` field added** — `prepare-wave` writes the active branch on first run (skipped on retries); persists in the IMPL doc, survives `.saw-state` cleanup; available to `close-impl` and any other tooling that needs to know the working branch
+
 ### Fixed (inspector-findings-core)
 - `result.NewPartial` now panics on empty `errs` slice — a `PARTIAL` result with no diagnostics is a programming error (symmetric guard with `NewFailure`)
 - Removed `result.NewInfo` exported constructor — zero production callers; no web app references
