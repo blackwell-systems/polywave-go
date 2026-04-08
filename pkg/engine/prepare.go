@@ -200,6 +200,19 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	recordStep(res, opts.OnEvent, "load_manifest", "success", "manifest loaded")
 
+	// Record original branch on first prepare-wave run (once only, not overwritten on retries).
+	if doc.OriginalBranch == "" {
+		if branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current"); branchErr == nil {
+			if b := strings.TrimSpace(string(branchOut)); b != "" {
+				doc.OriginalBranch = b
+				if saveRes := protocol.Save(ctx, doc, opts.IMPLPath); saveRes.IsFatal() {
+					recordStep(res, opts.OnEvent, "record_original_branch", "warning",
+						fmt.Sprintf("could not save original_branch to manifest: %v", saveRes.Errors))
+				}
+			}
+		}
+	}
+
 	// Step: I1 fast-fail check (early detection)
 	// This runs before wave_sequencing and other expensive operations to catch
 	// Scout planning errors immediately. The existing I1 check at line 537 remains

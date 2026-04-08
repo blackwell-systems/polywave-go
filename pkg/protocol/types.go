@@ -59,6 +59,9 @@ type IMPLManifest struct {
 	FrozenContractsHash string     `yaml:"frozen_contracts_hash,omitempty" json:"frozen_contracts_hash,omitempty"`
 	FrozenScaffoldsHash string     `yaml:"frozen_scaffolds_hash,omitempty" json:"frozen_scaffolds_hash,omitempty"`
 	CompletionDate      string     `yaml:"completion_date,omitempty"        json:"completion_date,omitempty"`
+	// OriginalBranch records the git branch active when prepare-wave first ran.
+	// Written once; used by close-impl to restore the working branch after cleanup.
+	OriginalBranch      string     `yaml:"original_branch,omitempty"        json:"original_branch,omitempty"`
 	// InjectionMethod records how the Scout agent received its reference file content.
 	// Written by the Scout itself before completing; absent on pre-feature IMPLs.
 	InjectionMethod InjectionMethod `yaml:"injection_method,omitempty" json:"injection_method,omitempty"`

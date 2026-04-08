@@ -132,7 +132,8 @@ Examples:
 				}
 			}
 
-			// Step 6: Restore main branch if currently on a SAW-managed branch
+			// Step 6: Restore original branch if currently on a SAW-managed branch.
+			// Priority: (1) manifest.OriginalBranch, (2) .saw-state prepare-result.json, (3) "main".
 			branchRestored := false
 			branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current")
 			if branchErr == nil {
@@ -140,10 +141,35 @@ Examples:
 				isSAWBranch := strings.HasPrefix(currentBranch, "saw/") ||
 					(strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-"))
 				if isSAWBranch {
-					if _, checkoutErr := git.Run(projectRoot, "checkout", "main"); checkoutErr != nil {
-						fmt.Fprintf(os.Stderr, "close-impl: warning: could not restore main branch: %v\n", checkoutErr)
+					restoreBranch := "main"
+					// 1. Check manifest field (most reliable — survives .saw-state cleanup)
+					if manifest.OriginalBranch != "" {
+						restoreBranch = manifest.OriginalBranch
 					} else {
-						fmt.Fprintf(os.Stderr, "close-impl: restored main branch (was on %s)\n", currentBranch)
+						// 2. Fall back to .saw-state prepare-result.json
+						if entries, err := os.ReadDir(sawStatePath); err == nil {
+							for _, e := range entries {
+								if !e.IsDir() || len(e.Name()) < 4 || e.Name()[:4] != "wave" {
+									continue
+								}
+								data, err := os.ReadFile(filepath.Join(sawStatePath, e.Name(), "prepare-result.json"))
+								if err != nil {
+									continue
+								}
+								var result struct {
+									OriginalBranch string `json:"original_branch"`
+								}
+								if err := json.Unmarshal(data, &result); err == nil && result.OriginalBranch != "" {
+									restoreBranch = result.OriginalBranch
+									break
+								}
+							}
+						}
+					}
+					if _, checkoutErr := git.Run(projectRoot, "checkout", restoreBranch); checkoutErr != nil {
+						fmt.Fprintf(os.Stderr, "close-impl: warning: could not restore branch %q: %v\n", restoreBranch, checkoutErr)
+					} else {
+						fmt.Fprintf(os.Stderr, "close-impl: restored branch %q (was on %s)\n", restoreBranch, currentBranch)
 						branchRestored = true
 					}
 				}
