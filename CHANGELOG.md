@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-04-08)
+- **`verify-build` failure now surfaces test/lint output** — `StepVerifyBuild` appends actual stdout+stderr to the event detail when a gate fails; previously only `test_passed=false, lint_passed=true` was visible in the finalize-wave log, requiring source diving to diagnose
+- **`VerifyBuild` prefers quality gate commands over `test_command`** — `quality_gates` entries of `type: test` and `type: lint` now take precedence over the top-level `test_command` / `lint_command` fields; quality gates are derived from CI config and scope out integration-only packages, making them the canonical post-merge test command; `test_command` remains the fallback when no matching gate exists
+- **`schema_unknown_keys`: scaffold `file` key renamed to `file_path`** — aligns allowlist with `ScaffoldFile` yaml struct tag
+
 ### Fixed (2026-04-07)
 - **`close-impl` restores original branch instead of hard-coded `main`** — supports any branching strategy (develop, feature branches, etc.); reads `original_branch` from IMPL manifest first, falls back to `.saw-state/wave*/prepare-result.json`, then `"main"` as last resort
 - **`IMPLManifest.OriginalBranch` field added** — `prepare-wave` writes the active branch on first run (skipped on retries); persists in the IMPL doc, survives `.saw-state` cleanup; available to `close-impl` and any other tooling that needs to know the working branch
