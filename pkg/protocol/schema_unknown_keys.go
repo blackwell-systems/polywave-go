@@ -89,7 +89,7 @@ var knownKeys = map[string]map[string]bool{
 		"timing":      true,
 	},
 	"scaffold": {
-		"file":        true,
+		"file_path":   true,
 		"contents":    true,
 		"import_path": true,
 		"status":      true,

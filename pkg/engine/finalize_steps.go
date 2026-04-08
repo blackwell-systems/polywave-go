@@ -347,6 +347,12 @@ func StepVerifyBuild(ctx context.Context, opts FinalizeWaveOpts, onEvent EventCa
 		}
 
 		detail := fmt.Sprintf("test_passed=%v, lint_passed=%v", verifyData.TestPassed, verifyData.LintPassed)
+		if !verifyData.TestPassed && verifyData.TestOutput != "" {
+			detail += "\n" + verifyData.TestOutput
+		}
+		if !verifyData.LintPassed && verifyData.LintOutput != "" {
+			detail += "\n" + verifyData.LintOutput
+		}
 		emitStepEvent(onEvent, stepName, "failed", detail)
 		stepResult := &StepResult{
 			Step:   stepName,

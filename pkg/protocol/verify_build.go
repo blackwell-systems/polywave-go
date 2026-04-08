@@ -23,8 +23,14 @@ type VerifyBuildData struct {
 	LintOutput  string `json:"lint_output,omitempty"`
 }
 
-// VerifyBuild loads the IMPL manifest and runs the test_command and lint_command.
+// VerifyBuild loads the IMPL manifest and runs the test and lint commands.
 // It returns pass/fail status and combined stdout+stderr for each command.
+//
+// Command selection: quality_gates entries (type "test" / "lint") take precedence
+// over the top-level test_command / lint_command fields. Quality gates are set by
+// the scout after examining the repo's CI config and typically exclude integration-
+// only packages (e.g. ./test/). When a matching quality gate is present it is used
+// as the canonical command; test_command / lint_command are fallbacks.
 //
 // If a command is an empty string, it is skipped and marked as passed.
 // The repoDir parameter is the working directory for command execution.
@@ -45,14 +51,30 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 		})
 	}
 
+	// Prefer quality gate commands over top-level test_command / lint_command.
+	// Quality gates are derived from the repo's actual CI config by the scout and
+	// explicitly scope out integration-only packages. test_command is the fallback.
+	testCmd := manifest.TestCommand
+	lintCmd := manifest.LintCommand
+	if manifest.QualityGates != nil {
+		for _, gate := range manifest.QualityGates.Gates {
+			if gate.Type == "test" && gate.Command != "" && testCmd == manifest.TestCommand {
+				testCmd = gate.Command
+			}
+			if gate.Type == "lint" && gate.Command != "" && lintCmd == manifest.LintCommand {
+				lintCmd = gate.Command
+			}
+		}
+	}
+
 	data := VerifyBuildData{
-		TestCommand: manifest.TestCommand,
-		LintCommand: manifest.LintCommand,
+		TestCommand: testCmd,
+		LintCommand: lintCmd,
 	}
 
 	// Run test command if present and applicable to this repo
-	if isRealCommand(manifest.TestCommand) && commandApplies(manifest.TestCommand, repoDir) {
-		testPassed, testOutput := runCommand(ctx, manifest.TestCommand, repoDir)
+	if isRealCommand(testCmd) && commandApplies(testCmd, repoDir) {
+		testPassed, testOutput := runCommand(ctx, testCmd, repoDir)
 		data.TestPassed = testPassed
 		data.TestOutput = testOutput
 	} else {
@@ -61,8 +83,8 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 	}
 
 	// Run lint command if present and applicable to this repo
-	if isRealCommand(manifest.LintCommand) && commandApplies(manifest.LintCommand, repoDir) {
-		lintPassed, lintOutput := runCommand(ctx, manifest.LintCommand, repoDir)
+	if isRealCommand(lintCmd) && commandApplies(lintCmd, repoDir) {
+		lintPassed, lintOutput := runCommand(ctx, lintCmd, repoDir)
 		data.LintPassed = lintPassed
 		data.LintOutput = lintOutput
 	} else {
