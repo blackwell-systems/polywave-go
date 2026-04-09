@@ -4,9 +4,41 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
+
+// resolveSiblingCaseInsensitive looks for a directory in parentDir whose name
+// matches name case-insensitively. Returns the canonical path (preserving the
+// actual case on disk) and true if found. This handles the common case where
+// an IMPL doc uses "lsp-mcp-go" but the directory is "LSP-MCP-GO".
+func resolveSiblingCaseInsensitive(parentDir, name string) (string, bool) {
+	entries, err := os.ReadDir(parentDir)
+	if err != nil {
+		return "", false
+	}
+	for _, e := range entries {
+		if e.IsDir() && strings.EqualFold(e.Name(), name) {
+			return filepath.Join(parentDir, e.Name()), true
+		}
+	}
+	return "", false
+}
+
+// configLookupCI performs case-insensitive lookup in a config repo map.
+// Returns the path and true if found.
+func configLookupCI(lookup map[string]string, name string) (string, bool) {
+	if p, ok := lookup[name]; ok {
+		return p, true
+	}
+	for k, v := range lookup {
+		if strings.EqualFold(k, name) {
+			return v, true
+		}
+	}
+	return "", false
+}
 
 // RepoEntry maps a repository name to its absolute path on disk.
 // Used by cmd/saw and web app to pass configured repository locations.
@@ -48,14 +80,13 @@ func ResolveTargetRepos(manifest *IMPLManifest, fallbackRepoPath string, configR
 	if len(repoNames) > 0 {
 		// Resolve each referenced repo name
 		for name := range repoNames {
-			if p, ok := configLookup[name]; ok {
+			if p, ok := configLookupCI(configLookup, name); ok {
 				resolved[name] = p
 				continue
 			}
-			// Try sibling directory resolution
+			// Try sibling directory resolution (case-insensitive)
 			if fallbackRepoPath != "" {
-				siblingPath := filepath.Join(filepath.Dir(fallbackRepoPath), name)
-				if info, err := os.Stat(siblingPath); err == nil && info.IsDir() {
+				if siblingPath, found := resolveSiblingCaseInsensitive(filepath.Dir(fallbackRepoPath), name); found {
 					resolved[name] = siblingPath
 					continue
 				}

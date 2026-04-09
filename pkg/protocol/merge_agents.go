@@ -365,21 +365,30 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 			mergeSHA = "unknown"
 		}
 
-		// POST-MERGE VERIFICATION: Ensure agent's commit is actually in HEAD's history
-		// This catches cases where merge operation succeeded but commit didn't land
-		// (e.g., due to conflict handling bugs, partial merges, or git anomalies)
+		// POST-MERGE VERIFICATION: Verify that the merged branch tip is
+		// reachable from HEAD. This is the authoritative check — the branch
+		// tip is what we actually merged. If the branch tip is reachable but
+		// report.Commit is not, that means the completion report recorded a
+		// commit that was later amended/rebased; the merge itself succeeded.
+		branchTip, _ := git.RevParse(repoDir, activeBranch)
+		if branchTip != "" && !git.IsAncestor(repoDir, branchTip, "HEAD") {
+			status.Success = false
+			status.Error = fmt.Sprintf("merge operation succeeded but branch tip %s not found in HEAD history (verification failed)", branchTip)
+			data.Merges = append(data.Merges, status)
+			return result.NewPartial(data, []result.SAWError{{
+				Code:     "MERGE_VERIFICATION_FAILED",
+				Message:  fmt.Sprintf("agent %s: merge succeeded but branch %s tip (%s) not in HEAD history", agent.ID, activeBranch, branchTip),
+				Severity: "error",
+				Field:    "agent",
+				Context:  map[string]string{"agent": agent.ID, "branch": activeBranch, "branch_tip": branchTip, "merge_sha": mergeSHA},
+			}})
+		}
+		// If branch tip is reachable but report.Commit differs, log it but don't fail —
+		// the merge succeeded; the completion report just recorded a stale SHA.
 		if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
 			if !git.IsAncestor(repoDir, report.Commit, "HEAD") {
-				status.Success = false
-				status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed)", report.Commit)
-				data.Merges = append(data.Merges, status)
-				return result.NewPartial(data, []result.SAWError{{
-					Code:     "MERGE_VERIFICATION_FAILED",
-					Message:  fmt.Sprintf("agent %s: merge succeeded but commit %s not in HEAD history", agent.ID, report.Commit),
-					Severity: "error",
-					Field:    "agent",
-					Context:  map[string]string{"agent": agent.ID, "commit": report.Commit, "merge_sha": mergeSHA},
-				}})
+				log.Warn("protocol: agent completion report commit not in HEAD (likely amended/rebased); merge verified via branch tip",
+					"agent", agent.ID, "report_commit", report.Commit, "branch_tip", branchTip)
 			}
 		}
 
@@ -523,19 +532,24 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 				mergeSHA = "unknown"
 			}
 
-			// POST-MERGE VERIFICATION: Ensure agent's commit is actually in HEAD's history
+			// POST-MERGE VERIFICATION: Verify branch tip is reachable from HEAD.
+			branchTip, _ := git.RevParse(absRepoDir, activeBranch)
+			if branchTip != "" && !git.IsAncestor(absRepoDir, branchTip, "HEAD") {
+				status.Success = false
+				status.Error = fmt.Sprintf("merge operation succeeded but branch tip %s not found in HEAD history (verification failed, repo: %s)", branchTip, repoDir)
+				data.Merges = append(data.Merges, status)
+				return result.NewPartial(data, []result.SAWError{{
+					Code:     "MERGE_VERIFICATION_FAILED",
+					Message:  fmt.Sprintf("agent %s in repo %s: merge succeeded but branch %s tip (%s) not in HEAD history", agent.ID, repoDir, activeBranch, branchTip),
+					Severity: "error",
+					Field:    "agent",
+					Context:  map[string]string{"agent": agent.ID, "branch": activeBranch, "branch_tip": branchTip, "merge_sha": mergeSHA, "repo": repoDir},
+				}})
+			}
 			if report, ok := manifest.CompletionReports[agent.ID]; ok && report.Commit != "" {
 				if !git.IsAncestor(absRepoDir, report.Commit, "HEAD") {
-					status.Success = false
-					status.Error = fmt.Sprintf("merge operation succeeded but agent commit %s not found in HEAD history (verification failed, repo: %s)", report.Commit, repoDir)
-					data.Merges = append(data.Merges, status)
-					return result.NewPartial(data, []result.SAWError{{
-						Code:     "MERGE_VERIFICATION_FAILED",
-						Message:  fmt.Sprintf("agent %s in repo %s: merge succeeded but commit %s not in HEAD history", agent.ID, repoDir, report.Commit),
-						Severity: "error",
-						Field:    "agent",
-						Context:  map[string]string{"agent": agent.ID, "commit": report.Commit, "merge_sha": mergeSHA, "repo": repoDir},
-					}})
+					log.Warn("protocol: agent completion report commit not in HEAD (likely amended/rebased); merge verified via branch tip",
+						"agent", agent.ID, "report_commit", report.Commit, "branch_tip", branchTip, "repo", repoDir)
 				}
 			}
 

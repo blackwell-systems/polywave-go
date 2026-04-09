@@ -139,8 +139,12 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 			// No repo specified OR same-repo with unnecessary repo field - use absRepoDir
 			agentRepoDir = absRepoDir
 		} else {
-			// Cross-repo: resolve as sibling directory
-			agentRepoDir = filepath.Join(repoParent, agentRepo)
+			// Cross-repo: resolve as sibling directory (case-insensitive)
+			if siblingPath, found := resolveSiblingCaseInsensitive(repoParent, agentRepo); found {
+				agentRepoDir = siblingPath
+			} else {
+				agentRepoDir = filepath.Join(repoParent, agentRepo)
+			}
 		}
 
 		// Construct worktree path and branch name using slug-scoped helpers

@@ -1,5 +1,7 @@
 package protocol
 
+import "strings"
+
 // ResolveAgentRepo returns the absolute repo root path for an agent.
 // It looks up the agent's repo name from fileOwnership, then resolves
 // the path from the repos registry. Falls back to fallbackRoot if the
@@ -21,7 +23,7 @@ func ResolveAgentRepo(
 		return fallbackRoot
 	}
 	for _, r := range repos {
-		if r.Name == repoName {
+		if strings.EqualFold(r.Name, repoName) {
 			return r.Path
 		}
 	}

@@ -78,16 +78,12 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 		// Resolve which repo this file belongs to
 		repoPath := primaryRepoPath
 		if fo.Repo != "" {
-			if p, ok := configLookup[fo.Repo]; ok {
+			if p, ok := configLookupCI(configLookup, fo.Repo); ok {
 				repoPath = p
-			} else {
-				// Try sibling directory
-				siblingPath := filepath.Join(filepath.Dir(primaryRepoPath), fo.Repo)
-				if info, err := os.Stat(siblingPath); err == nil && info.IsDir() {
-					repoPath = siblingPath
-				}
-				// If we can't resolve the repo, check in primaryRepoPath anyway
+			} else if siblingPath, found := resolveSiblingCaseInsensitive(filepath.Dir(primaryRepoPath), fo.Repo); found {
+				repoPath = siblingPath
 			}
+			// If we can't resolve the repo, check in primaryRepoPath anyway
 		}
 
 		fullPath := filepath.Join(repoPath, fo.File)
