@@ -524,3 +524,182 @@ waves:
 		t.Errorf("expected symbol_missing issue for NonExistentSymbol, got issues: %+v", agentC.Issues)
 	}
 }
+
+// --- wave_reference_invalid tests ---
+
+func TestExtractWaveAgentRefs_Basic(t *testing.T) {
+	refs := extractWaveAgentRefs("This agent depends on Wave 2 Agent G completing.")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d: %+v", len(refs), refs)
+	}
+	if refs[0].Wave != 2 || refs[0].AgentID != "G" {
+		t.Errorf("expected Wave=2 AgentID=G, got %+v", refs[0])
+	}
+}
+
+func TestExtractWaveAgentRefs_CaseInsensitive(t *testing.T) {
+	refs := extractWaveAgentRefs("See Wave 3 agent B for the interface contract.")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].Wave != 3 || refs[0].AgentID != "B" {
+		t.Errorf("expected Wave=3 AgentID=B, got %+v", refs[0])
+	}
+}
+
+func TestExtractWaveAgentRefs_MultiGeneration(t *testing.T) {
+	refs := extractWaveAgentRefs("Wave 1 Agent A2 provides the scaffold.")
+	if len(refs) != 1 {
+		t.Fatalf("expected 1 ref, got %d", len(refs))
+	}
+	if refs[0].AgentID != "A2" {
+		t.Errorf("expected AgentID=A2, got %q", refs[0].AgentID)
+	}
+}
+
+func TestExtractWaveAgentRefs_None(t *testing.T) {
+	refs := extractWaveAgentRefs("No wave references in this text.")
+	if len(refs) != 0 {
+		t.Errorf("expected 0 refs, got %d: %+v", len(refs), refs)
+	}
+}
+
+func TestBuildAgentWaveMap_Basic(t *testing.T) {
+	m := &IMPLManifest{
+		Waves: []Wave{
+			{Number: 1, Agents: []Agent{{ID: "A"}, {ID: "B"}}},
+			{Number: 2, Agents: []Agent{{ID: "C"}}},
+		},
+	}
+	waveMap := buildAgentWaveMap(m)
+	if waveMap["A"] != 1 || waveMap["B"] != 1 || waveMap["C"] != 2 {
+		t.Errorf("unexpected wave map: %+v", waveMap)
+	}
+}
+
+func TestValidateBriefs_WaveReferenceInvalid(t *testing.T) {
+	tmp := t.TempDir()
+
+	goFile := filepath.Join(tmp, "myfile.go")
+	if err := os.WriteFile(goFile, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Agent D's task says "Wave 2 Agent G" but Agent G is in Wave 3 — the bug from production.
+	implContent := `title: Test Wave Reference
+feature_slug: test-wave-ref
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+repository: ` + tmp + `
+file_ownership:
+  - file: myfile.go
+    agent: D
+    wave: 2
+    action: modify
+  - file: myfile.go
+    agent: G
+    wave: 3
+    action: modify
+waves:
+  - number: 2
+    agents:
+      - id: D
+        task: |
+          Wire up new functionality. This depends on Wave 2 Agent G completing the interface.
+        files:
+          - myfile.go
+  - number: 3
+    agents:
+      - id: G
+        task: |
+          Implement the core logic.
+        files:
+          - myfile.go
+`
+
+	implPath := filepath.Join(tmp, "IMPL-wave-ref.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ValidateBriefs(t.Context(), implPath)
+	if err != nil {
+		t.Fatalf("ValidateBriefs returned error: %v", err)
+	}
+
+	agentD := result.AgentResults["D"]
+	found := false
+	for _, issue := range agentD.Issues {
+		if issue.Check == "wave_reference_invalid" && issue.Severity == "error" {
+			if strings.Contains(issue.Description, "Wave 2") && strings.Contains(issue.Description, "Wave 3") {
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected wave_reference_invalid error for Agent D referencing wrong wave, got issues: %+v", agentD.Issues)
+	}
+	if result.Valid {
+		t.Error("expected result.Valid=false due to wave_reference_invalid error")
+	}
+}
+
+func TestValidateBriefs_WaveReferenceCorrect(t *testing.T) {
+	tmp := t.TempDir()
+
+	goFile := filepath.Join(tmp, "myfile.go")
+	if err := os.WriteFile(goFile, []byte("package main\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Agent D correctly references "Wave 3 Agent G" where G is actually in Wave 3.
+	implContent := `title: Test Wave Reference Correct
+feature_slug: test-wave-ref-ok
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+repository: ` + tmp + `
+file_ownership:
+  - file: myfile.go
+    agent: D
+    wave: 2
+    action: modify
+  - file: myfile.go
+    agent: G
+    wave: 3
+    action: modify
+waves:
+  - number: 2
+    agents:
+      - id: D
+        task: |
+          Wire up new functionality. This depends on Wave 3 Agent G completing the interface.
+        files:
+          - myfile.go
+  - number: 3
+    agents:
+      - id: G
+        task: |
+          Implement the core logic.
+        files:
+          - myfile.go
+`
+
+	implPath := filepath.Join(tmp, "IMPL-wave-ref-ok.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := ValidateBriefs(t.Context(), implPath)
+	if err != nil {
+		t.Fatalf("ValidateBriefs returned error: %v", err)
+	}
+
+	agentD := result.AgentResults["D"]
+	for _, issue := range agentD.Issues {
+		if issue.Check == "wave_reference_invalid" && issue.Severity == "error" {
+			t.Errorf("unexpected wave_reference_invalid error for correct reference: %+v", issue)
+		}
+	}
+}

@@ -46,7 +46,7 @@ type AgentBriefResult struct {
 
 // BriefIssue describes a single validation failure.
 type BriefIssue struct {
-	Check       string   `json:"check"`                  // "symbol_missing" | "line_invalid"
+	Check       string   `json:"check"`                  // "symbol_missing" | "line_invalid" | "wave_reference_invalid"
 	Severity    string   `json:"severity"`               // "error" | "warning"
 	Description string   `json:"description"`
 	File        string   `json:"file,omitempty"`
@@ -88,6 +88,9 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 			agentNewFiles[fo.Agent][filePath] = true
 		}
 	}
+
+	// Build agent-to-wave index for wave_reference_invalid checks.
+	agentWave := buildAgentWaveMap(manifest)
 
 	agentResults := make(map[string]AgentBriefResult)
 	totalIssues := 0
@@ -190,6 +193,36 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 				}
 			}
 
+			// Check "Wave N Agent X" references for wave number consistency.
+			waveRefs := extractWaveAgentRefs(agent.Task)
+			seen := make(map[string]bool) // deduplicate by "N:X"
+			for _, ref := range waveRefs {
+				key := fmt.Sprintf("%d:%s", ref.Wave, ref.AgentID)
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				actualWave, exists := agentWave[ref.AgentID]
+				if !exists {
+					issues = append(issues, BriefIssue{
+						Check:       "wave_reference_invalid",
+						Severity:    "warning",
+						Description: fmt.Sprintf("brief references Agent %s but that agent is not defined in the IMPL doc", ref.AgentID),
+					})
+					continue
+				}
+				if actualWave != ref.Wave {
+					issues = append(issues, BriefIssue{
+						Check:    "wave_reference_invalid",
+						Severity: "error",
+						Description: fmt.Sprintf(
+							"brief says 'Wave %d Agent %s' but Agent %s is in Wave %d — update this reference",
+							ref.Wave, ref.AgentID, ref.AgentID, actualWave,
+						),
+					})
+				}
+			}
+
 			passed := true
 			for _, issue := range issues {
 				if issue.Severity == "error" {
@@ -223,6 +256,36 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 		AgentResults: agentResults,
 		Summary:      summary,
 	}, nil
+}
+
+// waveAgentRef is a parsed "Wave N Agent X" reference found in a brief.
+type waveAgentRef struct {
+	Wave    int
+	AgentID string
+}
+
+// buildAgentWaveMap returns a map from agent ID to the wave number it belongs to.
+func buildAgentWaveMap(m *IMPLManifest) map[string]int {
+	agentWave := make(map[string]int)
+	for _, wave := range m.Waves {
+		for _, agent := range wave.Agents {
+			agentWave[agent.ID] = wave.Number
+		}
+	}
+	return agentWave
+}
+
+// extractWaveAgentRefs parses task text for "Wave N Agent X" patterns.
+// Matches both "Wave 2 Agent G" and "Wave 2 agent G" (case-insensitive "Agent").
+// Returns all references found, including duplicates.
+func extractWaveAgentRefs(taskText string) []waveAgentRef {
+	re := regexp.MustCompile(`(?i)\bWave\s+(\d+)\s+[Aa]gent\s+([A-Z][2-9]?)\b`)
+	var refs []waveAgentRef
+	for _, m := range re.FindAllStringSubmatch(taskText, -1) {
+		waveNum, _ := strconv.Atoi(m[1])
+		refs = append(refs, waveAgentRef{Wave: waveNum, AgentID: strings.ToUpper(m[2])})
+	}
+	return refs
 }
 
 // briefResolveFilePath builds the absolute file path from a FileOwnership entry,
