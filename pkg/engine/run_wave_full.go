@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // RunWaveFullOpts configures a full wave lifecycle execution.
@@ -36,23 +37,22 @@ type RunWaveFullResult struct {
 // Steps 3-6 (verify commits, merge, verify build, cleanup) are delegated to
 // engine.FinalizeWave(), eliminating a third copy of the finalization sequence.
 //
-// Returns a RunWaveFullResult with detailed status for each step, and an
-// error if any critical step fails. Success is true only if FinalizeWave
-// reports success (both test and lint commands pass during build verification).
-//
-// TODO(result-migration): migrate return type to result.Result[RunWaveFullResult].
-// Production callers in cmd/sawtools/run_wave_cmd.go, cmd/sawtools/auto_cmd.go,
-// and pkg/engine/program_tier_loop.go must be updated concurrently.
-func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult, error) {
-	result := &RunWaveFullResult{Wave: opts.WaveNum}
+// Returns a Result[RunWaveFullResult] with detailed status for each step.
+// Success is true only if FinalizeWave reports success (both test and lint
+// commands pass during build verification). Partial results are returned
+// when finalize fails but worktree creation succeeded.
+func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) result.Result[RunWaveFullResult] {
+	res := RunWaveFullResult{Wave: opts.WaveNum}
 
 	// Step 1: Create worktrees for all agents in the wave
 	wtRes := protocol.CreateWorktrees(ctx, opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)
 	if !wtRes.IsSuccess() {
-		return result, fmt.Errorf("create worktrees: %v", wtRes.Errors)
+		return result.NewFailure[RunWaveFullResult]([]result.SAWError{
+			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("create worktrees: %v", wtRes.Errors)),
+		})
 	}
 	wt := wtRes.GetData()
-	result.WorktreesCreated = &wt
+	res.WorktreesCreated = &wt
 
 	// Step 2: Agent execution happens externally (orchestrator launches agents)
 	// This function handles pre/post agent work only.
@@ -77,15 +77,17 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) (*RunWaveFullResult,
 	finalizeRes := FinalizeWave(ctx, finalizeOpts)
 	if finalizeRes.Data != nil {
 		fd := finalizeRes.GetData()
-		result.FinalizeResult = &fd
+		res.FinalizeResult = &fd
 	}
 	if !finalizeRes.IsSuccess() {
-		if len(finalizeRes.Errors) > 0 {
-			return result, fmt.Errorf("finalize wave: [%s] %s", finalizeRes.Errors[0].Code, finalizeRes.Errors[0].Message)
+		// Return partial result: worktrees created but finalize failed
+		errs := finalizeRes.Errors
+		if len(errs) == 0 {
+			errs = []result.SAWError{result.NewFatal(result.CodeWaveFailed, "finalize wave failed")}
 		}
-		return result, fmt.Errorf("finalize wave failed")
+		return result.NewPartial(res, errs)
 	}
 	finalizeData := finalizeRes.GetData()
-	result.Success = finalizeData.Success
-	return result, nil
+	res.Success = finalizeData.Success
+	return result.NewSuccess(res)
 }

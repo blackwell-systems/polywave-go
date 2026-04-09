@@ -245,15 +245,19 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 					}
 				}
 
-				_, waveErr := RunWaveFull(ctx, RunWaveFullOpts{
+				waveRes := RunWaveFull(ctx, RunWaveFullOpts{
 					ManifestPath: implPath,
 					RepoPath:     opts.RepoPath,
 					WaveNum:      waveNum,
 					MergeTarget:  implBranch,
 				})
-				if waveErr != nil {
+				if !waveRes.IsSuccess() {
+					errMsg := "unknown error"
+					if len(waveRes.Errors) > 0 {
+						errMsg = waveRes.Errors[0].Message
+					}
 					loopResult.Errors = append(loopResult.Errors,
-						fmt.Sprintf("wave %d for %s failed: %s", waveNum, slug, waveErr))
+						fmt.Sprintf("wave %d for %s failed: %s", waveNum, slug, errMsg))
 				} else {
 					waveProgress[slug] = waveNum
 

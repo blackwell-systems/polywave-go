@@ -67,7 +67,6 @@ Examples:
 				Timeout:     timeout,
 				Logger:      newSawLogger(),
 			}
-			// TODO(result-migration): Wave 5 Agent U will update this to full result.Result handling.
 			scoutResultR := engine.RunScoutFull(cmd.Context(), scoutOpts, func(chunk string) {
 				fmt.Print(chunk)
 			})
@@ -140,17 +139,20 @@ Examples:
 			fmt.Println()
 			for waveNum := 1; waveNum <= waveCount; waveNum++ {
 				fmt.Printf("Wave %d of %d...\n", waveNum, waveCount)
-				waveRes, err := engine.RunWaveFull(cmd.Context(), engine.RunWaveFullOpts{
+				waveRes := engine.RunWaveFull(cmd.Context(), engine.RunWaveFullOpts{
 					ManifestPath: implPath,
 					RepoPath:     repoDir,
 					WaveNum:      waveNum,
 				})
-				if err != nil || (waveRes != nil && !waveRes.Success) {
+				if waveRes.IsFatal() {
 					msg := "wave execution failed"
-					if err != nil {
-						msg = err.Error()
+					if len(waveRes.Errors) > 0 {
+						msg = waveRes.Errors[0].Message
 					}
 					return fmt.Errorf("auto: wave %d failed: %s", waveNum, msg)
+				}
+				if !waveRes.GetData().Success {
+					return fmt.Errorf("auto: wave %d failed: wave execution failed", waveNum)
 				}
 				fmt.Printf("Wave %d complete.\n\n", waveNum)
 			}

@@ -26,24 +26,21 @@ func newRunWaveCmd() *cobra.Command {
 				os.Setenv("SAW_NO_PRIORITIZE", "1")
 			}
 
-			result, err := engine.RunWaveFull(context.Background(), engine.RunWaveFullOpts{
+			res := engine.RunWaveFull(context.Background(), engine.RunWaveFullOpts{
 				ManifestPath: manifestPath,
 				RepoPath:     repoDir,
 				WaveNum:      waveNum,
 			})
-			if err != nil {
-				// Still output partial result if available
-				if result != nil {
-					out, _ := json.MarshalIndent(result, "", "  ")
-					fmt.Println(string(out))
-				}
-				return fmt.Errorf("run-wave: %w", err)
-			}
 
-			out, _ := json.MarshalIndent(result, "", "  ")
+			// Always output result data (includes partial results on failure)
+			data := res.GetData()
+			out, _ := json.MarshalIndent(data, "", "  ")
 			fmt.Println(string(out))
 
-			if !result.Success {
+			if res.IsFatal() {
+				return fmt.Errorf("run-wave: %s", res.Errors[0].Message)
+			}
+			if !data.Success {
 				return fmt.Errorf("run-wave: wave execution failed")
 			}
 			return nil

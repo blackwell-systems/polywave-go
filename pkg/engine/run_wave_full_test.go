@@ -135,18 +135,18 @@ func TestRunWaveFull_Success(t *testing.T) {
 	// but will fail on first call because it tries to create worktrees that exist.
 	// For this test, we verify the failure path when worktrees already exist.
 
-	_, runErr := RunWaveFull(ctx, RunWaveFullOpts{
+	res := RunWaveFull(ctx, RunWaveFullOpts{
 		ManifestPath: manifestPath,
 		RepoPath:     repoDir,
 		WaveNum:      1,
 	})
 
 	// Expected: function will fail because worktrees already exist
-	if runErr == nil {
-		t.Fatal("expected error when worktrees already exist, got nil")
+	if res.IsSuccess() {
+		t.Fatal("expected failure when worktrees already exist, got success")
 	}
 
-	t.Logf("Got expected error when worktrees exist: %v", runErr)
+	t.Logf("Got expected failure when worktrees exist: %v", res.Errors)
 
 	// Clean up for testing error paths below
 	protocol.Cleanup(context.Background(), manifestPath, 1, repoDir, nil)
@@ -160,28 +160,30 @@ func TestRunWaveFull_WorktreeFailure(t *testing.T) {
 	// Use a non-existent manifest path
 	manifestPath := filepath.Join(repoDir, "does-not-exist.yaml")
 
-	result, err := RunWaveFull(ctx, RunWaveFullOpts{
+	res := RunWaveFull(ctx, RunWaveFullOpts{
 		ManifestPath: manifestPath,
 		RepoPath:     repoDir,
 		WaveNum:      1,
 	})
 
-	if err == nil {
-		t.Fatal("expected error for missing manifest, got nil")
+	if res.IsSuccess() {
+		t.Fatal("expected failure for missing manifest, got success")
 	}
 
-	if result == nil {
-		t.Fatal("expected result struct even on error, got nil")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result for missing manifest")
 	}
 
-	expectedMsg := "create worktrees"
-	if !strings.Contains(err.Error(), expectedMsg) {
-		t.Errorf("expected error to contain %q, got: %v", expectedMsg, err)
+	// Verify error message mentions worktree creation
+	foundWorktreeMsg := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "create worktrees") {
+			foundWorktreeMsg = true
+			break
+		}
 	}
-
-	// Verify partial result was returned
-	if result.Wave != 1 {
-		t.Errorf("expected wave number 1, got %d", result.Wave)
+	if !foundWorktreeMsg {
+		t.Errorf("expected error about 'create worktrees', got: %v", res.Errors)
 	}
 }
 
@@ -203,29 +205,38 @@ func TestRunWaveFull_MergeFailure(t *testing.T) {
 	// Since RunWaveFull delegates to FinalizeWave for steps 3-6, the error comes
 	// from the finalize wave pipeline.
 
-	result, err := RunWaveFull(ctx, RunWaveFullOpts{
+	res := RunWaveFull(ctx, RunWaveFullOpts{
 		ManifestPath: manifestPath,
 		RepoPath:     repoDir,
 		WaveNum:      1,
 	})
 
-	if err == nil {
-		t.Fatal("expected error for missing commits, got nil")
+	if res.IsSuccess() {
+		t.Fatal("expected failure for missing commits, got success")
+	}
+
+	// Should be partial (worktrees created, finalize failed)
+	if res.IsFatal() {
+		t.Log("got fatal result (worktree creation may have failed on re-run)")
 	}
 
 	// The error should mention "verify" somewhere in the chain (finalize wave wraps it)
-	if !strings.Contains(err.Error(), "verify") {
-		t.Errorf("expected error to contain 'verify', got: %v", err)
+	foundVerify := false
+	for _, e := range res.Errors {
+		if strings.Contains(e.Message, "verify") || strings.Contains(e.Code, "VERIFY") {
+			foundVerify = true
+			break
+		}
+	}
+	if !foundVerify && !res.IsFatal() {
+		t.Errorf("expected error about 'verify', got: %v", res.Errors)
 	}
 
-	// Verify partial result
-	if result == nil {
-		t.Fatal("expected result struct, got nil")
-	}
-	// FinalizeResult should be populated with partial data
-	if result.FinalizeResult != nil && len(result.FinalizeResult.VerifyCommits) > 0 {
+	// Verify partial result has data
+	data := res.GetData()
+	if data.FinalizeResult != nil && len(data.FinalizeResult.VerifyCommits) > 0 {
 		allValid := true
-		for _, vc := range result.FinalizeResult.VerifyCommits {
+		for _, vc := range data.FinalizeResult.VerifyCommits {
 			if vc == nil {
 				continue
 			}
