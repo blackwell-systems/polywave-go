@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (2026-04-09)
+- **`RunScoutFullOpts.ImplOutputPath` field + `--impl-output-path` CLI flag** — optional explicit IMPL output path for `sawtools run-scout`. When set, overrides the default `repoPath/docs/IMPL/IMPL-<slug>.yaml` derivation. Enables cross-repo scouting where the IMPL doc lands in a different repo than the analysis target. Flag: `sawtools run-scout --impl-output-path /abs/path/to/IMPL.yaml`.
+- **`SAW_WORKTREE_ROOT` injection in `prepare-wave`** — after writing `.saw-agent-brief.md`, now also writes `.saw-worktree-env` (containing `SAW_WORKTREE_ROOT=<worktree_path>`) into each agent worktree. The `hooks/saw-worktree-boundary.sh` PreToolUse hook reads this variable to hard-deny writes targeting the main repo instead of the worktree. Non-fatal: failure emits a warning but does not abort prepare-wave. `AgentBriefInfo` gains `WorktreeEnvPath string` field (`json:"worktree_env_path,omitempty"`).
+
 ### Fixed (2026-04-09)
 - **`check-type-collisions` false positives on non-main branches** — diff base was hardcoded to `main`, causing all types added on `develop` or a feature branch to appear as "new" in every agent branch, producing spurious collisions. Now computes `git merge-base HEAD <branch>` dynamically so only types the agent actually introduced are checked. Fallback to `main` if merge-base fails.
 
