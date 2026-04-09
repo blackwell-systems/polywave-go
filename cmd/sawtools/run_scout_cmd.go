@@ -12,6 +12,7 @@ func newRunScoutCmd() *cobra.Command {
 	var (
 		repoPath            string
 		sawRepoPath         string
+		implOutputPath      string // --impl-output-path: explicit IMPL doc output path
 		scoutModel          string
 		timeout             int    // minutes
 		programManifestPath string // path to PROGRAM manifest
@@ -66,6 +67,7 @@ Output:
 			opts := engine.RunScoutFullOpts{
 				Feature:             featureDesc,
 				RepoPath:            repoPath,
+				ImplOutputPath:      implOutputPath,
 				SAWRepoPath:         sawRepoPath,
 				ScoutModel:          scoutModel,
 				Timeout:             timeout,
@@ -100,6 +102,7 @@ Output:
 
 	cmd.Flags().StringVar(&repoPath, "repo-dir", "", "Target repository path (default: current directory)")
 	cmd.Flags().StringVar(&sawRepoPath, "saw-repo", "", "Scout-and-Wave protocol repo path (default: $SAW_REPO or ~/code/scout-and-wave)")
+	cmd.Flags().StringVar(&implOutputPath, "impl-output-path", "", "Explicit IMPL doc output path (overrides default derivation from --repo-dir + slug)")
 	cmd.Flags().StringVar(&scoutModel, "scout-model", "", "Scout model override (e.g., claude-opus-4-6)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")
 	cmd.Flags().StringVar(&programManifestPath, "program", "", "Path to PROGRAM manifest (Scout receives frozen contracts as input)")

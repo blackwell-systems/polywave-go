@@ -61,6 +61,7 @@ func runCriticOptsBuilder(implPath, criticModel, sawRepoPath string, logger *slo
 type RunScoutFullOpts struct {
 	Feature             string
 	RepoPath            string
+	ImplOutputPath      string // optional: explicit IMPL output path; overrides default derivation
 	SAWRepoPath         string
 	ScoutModel          string
 	Timeout             int    // minutes; default 10
@@ -123,6 +124,9 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// Generate slug and compute IMPL path.
 	slug := generateSlug(opts.Feature)
 	implPath := protocol.IMPLPath(repoPath, slug)
+	if opts.ImplOutputPath != "" {
+		implPath = opts.ImplOutputPath
+	}
 
 	log.Debug("RunScoutFull: starting", "feature", opts.Feature, "slug", slug, "impl_path", implPath)
 
