@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-04-09)
+- **`check-type-collisions` false positives on non-main branches** — diff base was hardcoded to `main`, causing all types added on `develop` or a feature branch to appear as "new" in every agent branch, producing spurious collisions. Now computes `git merge-base HEAD <branch>` dynamically so only types the agent actually introduced are checked. Fallback to `main` if merge-base fails.
+
 ### Added (2026-04-09)
 - **`sawtools --version` flag** — `rootCmd.Version` now set so both `sawtools --version` and `sawtools version` work identically; output format matches the existing subcommand: `sawtools <version> (commit: <sha>, built: <date>)`
 
