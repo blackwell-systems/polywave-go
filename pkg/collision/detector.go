@@ -23,7 +23,7 @@ import (
 // Algorithm:
 // 1. Load IMPL manifest and identify all agents in target wave
 // 2. For each agent, determine branch name (saw/{slug}/waveN-agent-{ID} or legacy waveN-agent-{ID})
-// 3. Run git diff main...branch --name-only to get changed .go files
+// 3. Run git diff <merge-base HEAD branch>..branch --name-only to get changed .go files
 // 4. For each .go file, parse AST and extract type declarations
 // 5. Group types by package path
 // 6. Detect collisions: any type name in 2+ agent branches within same package
@@ -127,15 +127,27 @@ func buildBranchName(slug string, waveNum int, agentID string) string {
 }
 
 // getChangedGoFiles returns the list of .go files changed in the given branch
-// relative to main. Uses three-dot diff to find changes introduced by the branch.
+// relative to its merge base with HEAD. Uses merge-base to find the actual
+// divergence point, so the diff is correct regardless of whether HEAD is on
+// main, develop, or a feature branch.
 func getChangedGoFiles(ctx context.Context, repoPath, branchName string) result.Result[[]string] {
 	if err := ctx.Err(); err != nil {
 		return result.NewFailure[[]string]([]result.SAWError{
 			result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
 		})
 	}
-	// Use three-dot range to get changes introduced by branch
-	out, err := igit.Run(repoPath, "diff", "main..."+branchName, "--name-only", "--", "*.go")
+	// Compute the actual fork point between the current working branch and the
+	// agent branch. This handles main, develop, and arbitrary feature branches
+	// without hardcoding a branch name.
+	mergeBaseOut, mbErr := igit.Run(repoPath, "merge-base", "HEAD", branchName)
+	var diffBase string
+	if mbErr != nil || strings.TrimSpace(mergeBaseOut) == "" {
+		// Fallback: diff against main if merge-base fails (e.g., no common ancestor).
+		diffBase = "main"
+	} else {
+		diffBase = strings.TrimSpace(mergeBaseOut)
+	}
+	out, err := igit.Run(repoPath, "diff", diffBase+".."+branchName, "--name-only", "--", "*.go")
 	if err != nil {
 		return result.NewFailure[[]string]([]result.SAWError{
 			result.NewFatal(result.CodeCollisionGitDiffFailed, fmt.Sprintf("git diff: %s", err.Error())).WithCause(err),
