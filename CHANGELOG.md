@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (2026-04-09)
+- **`sawtools --version` flag** — `rootCmd.Version` now set so both `sawtools --version` and `sawtools version` work identically; output format matches the existing subcommand: `sawtools <version> (commit: <sha>, built: <date>)`
+
 ### Changed (2026-04-08)
 - **`RunWaveFull` migrated to `result.Result[RunWaveFullResult]`** — completes the `result.Result[T]` migration across the engine. Previously returned `(*RunWaveFullResult, error)` which forced callers to handle the Go two-return anti-pattern where both values could be non-nil. Now returns `Result[RunWaveFullResult]` with proper three-state semantics: `SUCCESS` (wave completed), `PARTIAL` (worktrees created but finalize failed — partial data preserved), `FATAL` (worktree creation failed). All callers updated: `run_wave_cmd.go`, `auto_cmd.go`, `program_tier_loop.go`. Removes both remaining `TODO(result-migration)` markers.
 
