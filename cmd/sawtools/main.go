@@ -26,6 +26,8 @@ func newVersionCmd() *cobra.Command {
 
 func main() {
 	rootCmd := newRootCmd()
+	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date)
+	rootCmd.SetVersionTemplate("sawtools {{.Version}}\n")
 	rootCmd.AddCommand(
 		newVersionCmd(),
 		newCreateWorktreesCmd(),
