@@ -976,6 +976,17 @@ func extractBriefsAndInitJournals(
 			return nil, fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
 		}
 
+		// Write .saw-worktree-env for PreToolUse hook enforcement (E43 / saw-worktree-boundary.sh).
+		// SAW_WORKTREE_ROOT is read by hooks/saw-worktree-boundary.sh to hard-deny writes
+		// targeting the main repo instead of the agent's assigned worktree.
+		worktreeEnvPath := filepath.Join(wtInfo.Path, ".saw-worktree-env")
+		worktreeEnvContent := fmt.Sprintf("SAW_WORKTREE_ROOT=%s\n", wtInfo.Path)
+		if err := os.WriteFile(worktreeEnvPath, []byte(worktreeEnvContent), 0644); err != nil {
+			// Non-fatal: log warning but don't abort — boundary hook will be no-op without this file
+			fmt.Fprintf(os.Stderr, "prepare-wave: warning: failed to write .saw-worktree-env for agent %s: %v\n", agentID, err)
+			worktreeEnvPath = ""
+		}
+
 		// Resolve the repo root for this agent
 		agentRoot := protocol.ResolveAgentRepo(doc.FileOwnership, agentID, opts.RepoPath, repos)
 
@@ -1035,6 +1046,7 @@ func extractBriefsAndInitJournals(
 			MergeTarget:             opts.MergeTarget,
 			JournalContextAvailable: journalContextAvailable,
 			JournalContextFile:      journalContextFile,
+			WorktreeEnvPath:         worktreeEnvPath,
 		})
 	}
 
