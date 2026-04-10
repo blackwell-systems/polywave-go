@@ -42,12 +42,13 @@ NOTE: For solo agents (1 agent in wave), use prepare-agent --no-worktree instead
 prepare-wave always creates worktrees, which is unnecessary overhead for single-agent
 waves that execute on the main branch.
 
-Use --commit-state in PROGRAM context when calling prepare-wave for
-multiple IMPLs in a tier. SAW-owned state changes (IMPL yaml state
-advances, gate-cache updates) are auto-committed so the second
-prepare-wave call does not fail with "working directory is dirty".
-User code changes are NOT auto-committed; they still cause the command
-to fail with a descriptive error.`,
+SAW-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md)
+are auto-committed before the working-directory check by default, so tools
+that write to the IMPL doc between the critic commit and prepare-wave
+(e.g., pre-wave-validate --fix, set-injection-method) do not cause false
+dirty-dir failures. User code changes are NOT auto-committed; they still
+cause the command to fail with a descriptive error. Use --commit-state=false
+to disable auto-commit of SAW state files.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if waveNum == 0 {
@@ -142,7 +143,7 @@ to fail with a descriptive error.`,
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
 	cmd.Flags().BoolVar(&commitBaseline, "commit-baseline", false, "Auto-commit baseline fixes if working directory is dirty")
-	cmd.Flags().BoolVar(&commitState, "commit-state", false, "Auto-commit SAW-owned state changes (IMPL yaml + gate-cache) before working-dir check. Does not commit user code.")
+	cmd.Flags().BoolVar(&commitState, "commit-state", true, "Auto-commit SAW-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md) before working-dir check. Does not commit user code. Use --commit-state=false to disable.")
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
 	cmd.Flags().BoolVar(&noGoWork, "no-gowork", false, "Skip go.work setup for LSP cross-package resolution (Go repos only)")

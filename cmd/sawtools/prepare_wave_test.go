@@ -514,3 +514,17 @@ func TestPrepareWave_NoMergeTargetNoBriefSection(t *testing.T) {
 		t.Errorf("expected brief to NOT contain '## Merge Target' when mergeTarget is empty, got:\n%s", brief)
 	}
 }
+
+// TestPrepareWaveCmd_CommitStateFlagDefaultsToTrue verifies that the
+// --commit-state flag defaults to true (auto-commit SAW state before
+// working-dir check is on by default).
+func TestPrepareWaveCmd_CommitStateFlagDefaultsToTrue(t *testing.T) {
+	cmd := newPrepareWaveCmd()
+	flag := cmd.Flags().Lookup("commit-state")
+	if flag == nil {
+		t.Fatal("expected --commit-state flag to be registered")
+	}
+	if flag.DefValue != "true" {
+		t.Errorf("expected --commit-state default to be %q, got %q", "true", flag.DefValue)
+	}
+}
