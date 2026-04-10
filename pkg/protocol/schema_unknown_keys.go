@@ -52,7 +52,8 @@ var knownKeys = map[string]map[string]bool{
 		"wave":       true,
 		"action":     true,
 		"depends_on": true,
-		"repo":       true,
+		"repo":        true,
+		"v048_exempt": true,
 	},
 	"wave": {
 		"number":             true,
