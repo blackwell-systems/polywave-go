@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"gopkg.in/yaml.v3"
 )
@@ -109,5 +112,53 @@ func TestCloseImplCmd_InvalidState_ContinuesGracefully(t *testing.T) {
 	// WriteCompletionMarker must still succeed even if state transition failed.
 	if err := protocol.WriteCompletionMarker(manifestPath, "2026-03-24"); err != nil {
 		t.Errorf("WriteCompletionMarker should succeed even after failed state transition, got: %v", err)
+	}
+}
+
+// TestCloseImplCmd_GitRm verifies that git.Rm stages a file deletion.
+// Uses a real git repo (git init) to verify the command works end-to-end.
+func TestCloseImplCmd_GitRm(t *testing.T) {
+	// Create a temp directory and init a git repo in it.
+	dir := t.TempDir()
+	cmds := [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@example.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+	}
+	for _, c := range cmds {
+		cmd := exec.Command(c[0], c[1:]...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", c, err, out)
+		}
+	}
+
+	// Create a file, add and commit it.
+	testFile := filepath.Join(dir, "IMPL-test.yaml")
+	if err := os.WriteFile(testFile, []byte("title: test\n"), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	for _, c := range [][]string{
+		{"git", "-C", dir, "add", "IMPL-test.yaml"},
+		{"git", "-C", dir, "commit", "--no-verify", "-m", "add file"},
+	} {
+		cmd := exec.Command(c[0], c[1:]...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("setup %v: %v\n%s", c, err, out)
+		}
+	}
+
+	// Now call git.Rm to stage the deletion.
+	if err := git.Rm(dir, testFile); err != nil {
+		t.Fatalf("git.Rm: %v", err)
+	}
+
+	// Verify the file is staged for deletion (git status --porcelain shows "D ").
+	out, err := exec.Command("git", "-C", dir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatalf("git status: %v", err)
+	}
+	status := strings.TrimSpace(string(out))
+	if !strings.Contains(status, "D ") && !strings.Contains(status, "D\t") {
+		t.Errorf("expected staged deletion in git status, got: %q", status)
 	}
 }
