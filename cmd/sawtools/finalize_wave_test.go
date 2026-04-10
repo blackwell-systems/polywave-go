@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"gopkg.in/yaml.v3"
 )
 
 func TestFinalizeWaveResult_CollisionReportsField(t *testing.T) {
@@ -495,5 +497,139 @@ func TestFinalizeWave_BuildPassedField(t *testing.T) {
 	s := string(out)
 	if !strings.Contains(s, `"build_passed":true`) {
 		t.Errorf("expected build_passed:true in JSON, got: %s", s)
+	}
+}
+
+// writeFinalizeTestIMPL writes a minimal IMPL manifest YAML with the given
+// file_ownership entries to a temp file and returns the file path.
+func writeFinalizeTestIMPL(t *testing.T, dir string, ownerships []protocol.FileOwnership) string {
+	t.Helper()
+	m := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+		FileOwnership: ownerships,
+	}
+	data, err := yaml.Marshal(m)
+	if err != nil {
+		t.Fatalf("failed to marshal IMPL manifest: %v", err)
+	}
+	path := filepath.Join(dir, "IMPL-test.yaml")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
+	}
+	return path
+}
+
+// writeSAWConfig writes a saw.config.json with the given repos to dir.
+func writeSAWConfig(t *testing.T, dir string, repos []map[string]string) {
+	t.Helper()
+	data, err := json.Marshal(map[string]interface{}{"repos": repos})
+	if err != nil {
+		t.Fatalf("failed to marshal saw.config.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write saw.config.json: %v", err)
+	}
+}
+
+// TestAutoDetectRepoDir_CrossRepo verifies that autoDetectRepoDir returns
+// detected=true and the resolved path when the IMPL has cross-repo entries
+// and saw.config.json has a matching repo entry.
+func TestAutoDetectRepoDir_CrossRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write minimal IMPL with cross-repo file_ownership.
+	implPath := writeFinalizeTestIMPL(t, tmpDir, []protocol.FileOwnership{
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
+	})
+
+	// Write saw.config.json with matching repo entry.
+	writeSAWConfig(t, tmpDir, []map[string]string{
+		{"name": "scout-and-wave-go", "path": "/tmp/fake-repo"},
+	})
+
+	path, detected, repoName, err := autoDetectRepoDir(implPath, 1)
+	if err != nil {
+		t.Fatalf("autoDetectRepoDir returned unexpected error: %v", err)
+	}
+	if !detected {
+		t.Error("expected detected=true for cross-repo IMPL with matching config")
+	}
+	if repoName != "scout-and-wave-go" {
+		t.Errorf("expected repoName=scout-and-wave-go, got %q", repoName)
+	}
+	// The resolved path should be the absolute form of /tmp/fake-repo.
+	wantPath, _ := filepath.Abs("/tmp/fake-repo")
+	if path != wantPath {
+		t.Errorf("expected path=%q, got %q", wantPath, path)
+	}
+}
+
+// TestAutoDetectRepoDir_SingleRepo verifies that autoDetectRepoDir returns
+// detected=false when the IMPL has no Repo fields in file_ownership.
+func TestAutoDetectRepoDir_SingleRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write IMPL with no Repo fields.
+	implPath := writeFinalizeTestIMPL(t, tmpDir, []protocol.FileOwnership{
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1},
+	})
+
+	// Write saw.config.json (doesn't matter for this case).
+	writeSAWConfig(t, tmpDir, []map[string]string{
+		{"name": "some-repo", "path": "/tmp/some-repo"},
+	})
+
+	_, detected, _, err := autoDetectRepoDir(implPath, 1)
+	if err != nil {
+		t.Fatalf("autoDetectRepoDir returned unexpected error: %v", err)
+	}
+	if detected {
+		t.Error("expected detected=false for single-repo IMPL (no Repo fields)")
+	}
+}
+
+// TestCrossRepoOwnsFiles_Match verifies that crossRepoOwnsFiles returns true
+// when the repoDir base name matches a Repo field in file_ownership.
+func TestCrossRepoOwnsFiles_Match(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
+		},
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
+		},
+	}
+
+	// repoDir whose base name matches "scout-and-wave-go".
+	repoDir := "/Users/dev/scout-and-wave-go"
+	if !crossRepoOwnsFiles(manifest, 1, repoDir) {
+		t.Error("expected crossRepoOwnsFiles=true when repoDir base name matches Repo field")
+	}
+}
+
+// TestCrossRepoOwnsFiles_NoMatch verifies that crossRepoOwnsFiles returns
+// false when the repoDir base name does not match any Repo field.
+func TestCrossRepoOwnsFiles_NoMatch(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
+		},
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
+		},
+	}
+
+	// repoDir whose base name does NOT match "scout-and-wave-go".
+	repoDir := "/Users/dev/wrong-repo"
+	if crossRepoOwnsFiles(manifest, 1, repoDir) {
+		t.Error("expected crossRepoOwnsFiles=false when repoDir base name does not match Repo field")
 	}
 }
