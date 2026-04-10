@@ -148,3 +148,43 @@ waves: []
 		t.Errorf("expected empty LintCommand, got %q", data.LintCommand)
 	}
 }
+
+func TestVerifyBuild_CrossRepoGateRouting(t *testing.T) {
+	tmpDir := t.TempDir()
+	primaryRepo := filepath.Join(tmpDir, "primary-repo")
+	targetRepo := filepath.Join(tmpDir, "target-repo")
+	os.MkdirAll(primaryRepo, 0755)
+	os.MkdirAll(targetRepo, 0755)
+	os.WriteFile(filepath.Join(targetRepo, "sentinel.txt"), []byte("here"), 0644)
+
+	configJSON := `{"repos":[{"name":"target-repo","path":"` + targetRepo + `"}]}`
+	os.WriteFile(filepath.Join(tmpDir, "saw.config.json"), []byte(configJSON), 0644)
+	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
+
+	manifestContent := `
+title: "Test"
+feature_slug: "test"
+verdict: "SUITABLE"
+test_command: "false"
+lint_command: "true"
+file_ownership: []
+waves: []
+quality_gates:
+  level: quick
+  gates:
+    - type: test
+      command: "test -f sentinel.txt"
+      required: true
+      repo: target-repo
+`
+	os.WriteFile(manifestPath, []byte(manifestContent), 0644)
+
+	res := VerifyBuild(context.Background(), manifestPath, primaryRepo)
+	if !res.IsSuccess() {
+		t.Fatalf("VerifyBuild returned error: %v", res.Errors)
+	}
+	data := res.GetData()
+	if !data.TestPassed {
+		t.Errorf("TestPassed should be true (gate ran in targetRepo); output: %s", data.TestOutput)
+	}
+}
