@@ -57,8 +57,8 @@ type PrepareWaveOpts struct {
 	CommitBaseline bool // Auto-commit baseline fixes if working directory is dirty
 	// CommitState auto-commits SAW-owned state changes (IMPL yaml, gate-cache,
 	// docs/IMPL/, docs/CONTEXT.md) before the working-directory check. It does
-	// NOT commit user code changes. Intended for program-context prepare-wave
-	// calls where the orchestrator manages SAW state between waves.
+	// NOT commit user code changes. Enabled by default via the --commit-state
+	// flag (default: true) in cmd/sawtools/prepare_wave.go.
 	CommitState bool
 	// Deprecated: use NoWorkspaceSetup. Will be removed in a future version.
 	// TODO: Remove once cmd/sawtools/prepare_wave.go no longer references NoGoWork.
