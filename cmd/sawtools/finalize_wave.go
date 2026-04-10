@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/spf13/cobra"
 )
 
@@ -48,6 +52,53 @@ All pipeline steps are handled by the engine. The engine supports:
 			if defaultRepoPath == "" {
 				defaultRepoPath, _ = os.Getwd()
 			}
+
+			// Auto-detect repo-dir for cross-repo IMPLs when not explicitly set.
+			var loadedManifest *protocol.IMPLManifest
+			if repoDir == "" || repoDir == "." {
+				m, loadErr := protocol.Load(cmd.Context(), manifestPath)
+				if loadErr == nil {
+					loadedManifest = m
+					// Check if any file_ownership for this wave has a Repo field.
+					hasCrossRepo := false
+					for _, fo := range m.FileOwnership {
+						if fo.Wave == waveNum && fo.Repo != "" {
+							hasCrossRepo = true
+							break
+						}
+					}
+					if hasCrossRepo {
+						if detectedPath, detected, repoName, _ := autoDetectRepoDir(manifestPath, waveNum); detected {
+							defaultRepoPath = detectedPath
+							fmt.Fprintf(os.Stderr, "finalize-wave: auto-detected repo-dir: %s (from saw.config.json -- primary repo for wave %d: %s)\n",
+								detectedPath, waveNum, repoName)
+						}
+					}
+				}
+			}
+
+			// Pre-flight warning when --repo-dir is explicitly set for a cross-repo IMPL.
+			if repoDir != "" && repoDir != "." {
+				m := loadedManifest
+				if m == nil {
+					m, _ = protocol.Load(cmd.Context(), manifestPath)
+				}
+				if m != nil {
+					hasCrossRepo := false
+					for _, fo := range m.FileOwnership {
+						if fo.Wave == waveNum && fo.Repo != "" {
+							hasCrossRepo = true
+							break
+						}
+					}
+					if hasCrossRepo && !crossRepoOwnsFiles(m, waveNum, defaultRepoPath) {
+						suggestedPath, _, _, _ := autoDetectRepoDir(manifestPath, waveNum)
+						return fmt.Errorf("finalize-wave: IMPL is cross-repo but --repo-dir %s owns 0 files for wave %d -- did you mean --repo-dir %s?",
+							defaultRepoPath, waveNum, suggestedPath)
+					}
+				}
+			}
+
 			onEvent := engine.EventCallback(func(step, status, detail string) {
 				if detail != "" {
 					fmt.Fprintf(os.Stderr, "finalize-wave: [%s] %s — %s\n", step, status, detail)
@@ -160,4 +211,81 @@ func uniqueFiles(errors []engine.CallerCascadeError) []string {
 		}
 	}
 	return files
+}
+
+// autoDetectRepoDir finds the primary repo for a given wave by counting
+// file_ownership entries per repo name, then resolving the name to a path
+// via saw.config.json.
+// Returns ("", false, "", nil) when auto-detect is not applicable.
+func autoDetectRepoDir(manifestPath string, waveNum int) (string, bool, string, error) {
+	cfgResult := config.Load(filepath.Dir(manifestPath))
+	if !cfgResult.IsSuccess() {
+		return "", false, "", nil
+	}
+	cfg := cfgResult.GetData()
+
+	// Count file_ownership entries per repo name for the given wave.
+	m, err := protocol.Load(context.Background(), manifestPath)
+	if err != nil {
+		return "", false, "", nil
+	}
+
+	counts := make(map[string]int)
+	for _, fo := range m.FileOwnership {
+		if fo.Wave == waveNum && fo.Repo != "" {
+			counts[fo.Repo]++
+		}
+	}
+	if len(counts) == 0 {
+		return "", false, "", nil
+	}
+
+	// Find the repo name with the most entries.
+	var bestName string
+	var bestCount int
+	for name, count := range counts {
+		if count > bestCount {
+			bestCount = count
+			bestName = name
+		}
+	}
+
+	// Look up that name in cfg.Repos.
+	for _, repo := range cfg.Repos {
+		if repo.Name == bestName {
+			resolved, err := filepath.Abs(repo.Path)
+			if err != nil {
+				return "", false, "", nil
+			}
+			return resolved, true, bestName, nil
+		}
+	}
+
+	return "", false, "", nil
+}
+
+// crossRepoOwnsFiles returns true if repoDir owns at least one file
+// in file_ownership for the given wave.
+func crossRepoOwnsFiles(manifest *protocol.IMPLManifest, waveNum int, repoDir string) bool {
+	absRepoDir, err := filepath.Abs(repoDir)
+	if err != nil {
+		absRepoDir = repoDir
+	}
+	baseName := filepath.Base(absRepoDir)
+
+	hasCrossRepo := false
+	for _, fo := range manifest.FileOwnership {
+		if fo.Wave == waveNum && fo.Repo != "" {
+			hasCrossRepo = true
+			if fo.Repo == baseName {
+				return true
+			}
+		}
+	}
+
+	// If no entries have Repo set (single-repo IMPL), return true.
+	if !hasCrossRepo {
+		return true
+	}
+	return false
 }
