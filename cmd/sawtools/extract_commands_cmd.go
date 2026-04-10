@@ -29,6 +29,7 @@ Output format matches the Scout IMPL doc command specification.`,
 			// Create extractor and register all parsers
 			extractor := commands.New()
 			extractor.RegisterCIParser(&commands.GithubActionsParser{})
+			extractor.RegisterBuildSystemParser(&commands.SawConfigParser{})
 			extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 			extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 

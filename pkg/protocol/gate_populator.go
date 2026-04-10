@@ -341,8 +341,9 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	toolchains := make(map[string]string)
 
 	extractor := commands.New()
-	// Register default parsers
+	// Register default parsers (SawConfigParser at 200 takes precedence over CI at 100)
 	extractor.RegisterCIParser(&commands.GithubActionsParser{})
+	extractor.RegisterBuildSystemParser(&commands.SawConfigParser{})
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 

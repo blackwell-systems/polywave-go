@@ -12,6 +12,7 @@ import (
 func ExtractCommands(ctx context.Context, repoRoot string) result.Result[ExtractData] {
 	e := New()
 	e.RegisterCIParser(&GithubActionsParser{})
+	e.RegisterBuildSystemParser(&SawConfigParser{})
 	e.RegisterBuildSystemParser(&MakefileParser{})
 	e.RegisterBuildSystemParser(&PackageJSONParser{})
 	return e.Extract(ctx, repoRoot)

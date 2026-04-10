@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
@@ -93,11 +94,13 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 
 	var workflow struct {
 		Jobs map[string]struct {
+			Env      map[string]string `yaml:"env"`
 			Strategy *struct {
 				Matrix map[string][]interface{} `yaml:"matrix"`
 			} `yaml:"strategy"`
 			Steps []struct {
-				Run string `yaml:"run"`
+				Run string            `yaml:"run"`
+				Env map[string]string `yaml:"env"`
 			} `yaml:"steps"`
 		} `yaml:"jobs"`
 	}
@@ -144,9 +147,14 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 			}
 		}
 
-		// Extract commands from steps
+		// Extract commands from steps, merging job-level env with step-level env.
+		// Job env is the base; step env overrides. The merged env is prepended
+		// to each extracted command so the gate runner sees the correct environment
+		// even when GOWORK or similar vars are declared at the job level.
 		for _, step := range job.Steps {
 			if step.Run != "" {
+				merged := mergeEnvMaps(job.Env, step.Env)
+				envPrefix := envMapToPrefix(merged)
 				// Split multi-line run commands
 				lines := strings.Split(step.Run, "\n")
 				for _, line := range lines {
@@ -154,6 +162,9 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 					// Ignore empty lines and comments
 					if line == "" || strings.HasPrefix(line, "#") {
 						continue
+					}
+					if envPrefix != "" {
+						line = envPrefix + line
 					}
 					commands = append(commands, line)
 				}
@@ -233,6 +244,42 @@ func (p *GithubActionsParser) classifyCommands(commands []string) Commands {
 	}
 
 	return result
+}
+
+// mergeEnvMaps merges base and override into a new map.
+// Keys in override take precedence over keys in base.
+func mergeEnvMaps(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(override))
+	for k, v := range base {
+		merged[k] = v
+	}
+	for k, v := range override {
+		merged[k] = v
+	}
+	return merged
+}
+
+// envMapToPrefix converts an env map to a shell-inline prefix string like "KEY=val ".
+// Keys are sorted for determinism. Values containing spaces or shell metacharacters
+// are not quoted; callers should ensure values are safe for inline use (typical CI
+// env vars like GOWORK=off are always simple).
+func envMapToPrefix(env map[string]string) string {
+	if len(env) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, k+"="+env[k])
+	}
+	return strings.Join(parts, " ") + " "
 }
 
 // detectToolchain infers the primary toolchain from commands
