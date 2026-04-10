@@ -12,10 +12,12 @@ import (
 
 // PreWaveValidateResult combines E16 validation and E35 gap detection results.
 type PreWaveValidateResult struct {
-	Validation    protocol.FullValidateData `json:"validation"`
-	E35Gaps       E35GapsResult             `json:"e35_gaps"`
-	TestCascade   TestCascadeCheckResult    `json:"test_cascade"`
-	WaveStructure WaveStructureCheckResult  `json:"wave_structure"` // Step 4
+	Validation               protocol.FullValidateData       `json:"validation"`
+	E35Gaps                  E35GapsResult                   `json:"e35_gaps"`
+	TestCascade              TestCascadeCheckResult          `json:"test_cascade"`
+	WaveStructure            WaveStructureCheckResult        `json:"wave_structure"`             // Step 4
+	BriefOwnershipDivergence BriefOwnershipDivergenceResult  `json:"brief_ownership_divergence"` // Step 5
+	StaleConstraints         StaleConstraintsResult          `json:"stale_constraints"`          // Step 6
 }
 
 // E35GapsResult holds the result of E35 same-package caller detection.
@@ -34,6 +36,19 @@ type TestCascadeCheckResult struct {
 type WaveStructureCheckResult struct {
 	Passed   bool                             `json:"passed"`
 	Problems []protocol.WaveStructureProblem `json:"problems"`
+}
+
+// BriefOwnershipDivergenceResult holds warnings from the brief/ownership divergence check.
+type BriefOwnershipDivergenceResult struct {
+	Passed   bool                                `json:"passed"`
+	Warnings []protocol.BriefOwnershipDivergence `json:"warnings"`
+}
+
+// StaleConstraintsResult holds the result of the stale-constraint lint check.
+type StaleConstraintsResult struct {
+	// Passed is always true — this check emits warnings only, never errors.
+	Passed   bool                              `json:"passed"`
+	Warnings []protocol.StaleConstraintWarning `json:"warnings"`
 }
 
 func newPreWaveValidateCmd() *cobra.Command {
@@ -117,6 +132,20 @@ Agent C added a parameter but the unowned call sites still had the old signature
 				}
 			}
 
+			// Step 5: Run brief/ownership divergence check.
+			briefDivergences := protocol.DetectBriefOwnershipDivergence(manifest)
+			briefOwnershipResult := BriefOwnershipDivergenceResult{
+				Passed:   true, // warnings only; never fails pre-wave-validate
+				Warnings: briefDivergences,
+			}
+
+			// Step 6: Run stale constraint lint check
+			staleWarnings := protocol.DetectStaleConstraints(manifest)
+			staleConstraintsResult := StaleConstraintsResult{
+				Passed:   true, // always passes — warnings only
+				Warnings: staleWarnings,
+			}
+
 			// Combine results
 			output := PreWaveValidateResult{
 				Validation: validateRes.GetData(),
@@ -124,8 +153,10 @@ Agent C added a parameter but the unowned call sites still had the old signature
 					Passed: len(e35Gaps) == 0,
 					Gaps:   e35Gaps,
 				},
-				TestCascade:   testCascadeResult,
-				WaveStructure: waveStructureResult, // Step 4
+				TestCascade:              testCascadeResult,
+				WaveStructure:            waveStructureResult,
+				BriefOwnershipDivergence: briefOwnershipResult,
+				StaleConstraints:         staleConstraintsResult,
 			}
 
 			// Step 5: JSON output
