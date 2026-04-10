@@ -127,6 +127,8 @@ func main() {
 		newSuggestWaveStructureCmd(),
 		newCheckTestCascadeCmd(),
 		newValidateBriefsCmd(),
+		newReconcileStateCmd(),
+		newAgentStatusCmd(),
 	)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
