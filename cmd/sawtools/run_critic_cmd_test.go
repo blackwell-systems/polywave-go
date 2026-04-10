@@ -439,3 +439,32 @@ func TestInferRepoRoot(t *testing.T) {
 		})
 	}
 }
+
+// TestRunCriticCmd_BackendAgentToolRequiresAbsolutePath verifies that
+// --backend agent-tool rejects relative IMPL paths before attempting
+// to build the critic prompt.
+func TestRunCriticCmd_BackendAgentToolRequiresAbsolutePath(t *testing.T) {
+	cmd := newRunCriticCmd()
+	cmd.SetArgs([]string{"relative/path/IMPL-foo.yaml", "--backend", "agent-tool"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for relative impl-path with --backend agent-tool")
+	}
+	if !strings.Contains(err.Error(), "absolute") {
+		t.Errorf("expected 'absolute' in error, got: %v", err)
+	}
+}
+
+// TestRunCriticCmd_BackendAgentToolNonExistentIMPL verifies that
+// --backend agent-tool rejects a non-existent IMPL path.
+func TestRunCriticCmd_BackendAgentToolNonExistentIMPL(t *testing.T) {
+	cmd := newRunCriticCmd()
+	cmd.SetArgs([]string{"/nonexistent/path/IMPL-missing.yaml", "--backend", "agent-tool"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected error for non-existent IMPL path with --backend agent-tool")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Errorf("expected 'does not exist' in error, got: %v", err)
+	}
+}
