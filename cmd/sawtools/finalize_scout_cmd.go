@@ -16,9 +16,10 @@ type FinalizeScoutResult struct {
 	Validation protocol.FullValidateData `json:"validation"`
 
 	// Step 2: Pre-wave validation (E35 + test cascade + wave structure)
-	E35Gaps       E35GapsResult            `json:"e35_gaps"`
-	TestCascade   TestCascadeCheckResult   `json:"test_cascade"`
-	WaveStructure WaveStructureCheckResult `json:"wave_structure"`
+	E35Gaps          E35GapsResult            `json:"e35_gaps"`
+	TestCascade      TestCascadeCheckResult   `json:"test_cascade"`
+	WaveStructure    WaveStructureCheckResult `json:"wave_structure"`
+	StaleConstraints StaleConstraintsResult   `json:"stale_constraints"`
 
 	// Step 3: Brief accuracy validation (sawtools validate-briefs)
 	BriefValidation *protocol.BriefValidationData `json:"brief_validation,omitempty"`
@@ -120,6 +121,13 @@ Example:
 					Passed:   len(problems) == 0,
 					Problems: problems,
 				}
+			}
+
+			// Stale constraint lint (warning-only, never blocks)
+			staleWarnings := protocol.DetectStaleConstraints(manifest)
+			res.StaleConstraints = StaleConstraintsResult{
+				Passed:   true,
+				Warnings: staleWarnings,
 			}
 
 			if !res.E35Gaps.Passed || !res.TestCascade.Passed || !res.WaveStructure.Passed {
