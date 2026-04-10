@@ -540,6 +540,17 @@ func Add(repoPath string, paths ...string) error {
 	return nil
 }
 
+// Rm stages the deletion of the given file paths via `git rm` in the repository
+// at repoPath. Returns an error if any path is not tracked or git fails.
+func Rm(repoPath string, paths ...string) error {
+	args := append([]string{"rm", "--"}, paths...)
+	_, err := Run(repoPath, args...)
+	if err != nil {
+		return fmt.Errorf("git rm failed: %w", err)
+	}
+	return nil
+}
+
 // AddForce stages paths using "git add -f", bypassing .gitignore rules.
 // Use this when staging files that are tracked but have been gitignored
 // (e.g. SAW state files where .gitignore was added after initial tracking).

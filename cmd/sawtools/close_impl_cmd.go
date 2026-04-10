@@ -175,6 +175,33 @@ Examples:
 				}
 			}
 
+			// Step 7: Stage deletion of original path, add archived file + CONTEXT.md, commit.
+			commitSHA := ""
+			// Stage deletion of original IMPL path (it was moved by os.Rename; git sees it deleted).
+			if rmErr := git.Rm(projectRoot, manifestPath); rmErr != nil {
+				fmt.Fprintf(os.Stderr, "close-impl: warning: git rm %s failed: %v\n", manifestPath, rmErr)
+			} else {
+				// Stage the new archived file.
+				if addErr := git.Add(projectRoot, archivedPath); addErr != nil {
+					fmt.Fprintf(os.Stderr, "close-impl: warning: git add %s failed: %v\n", archivedPath, addErr)
+				}
+				// Stage CONTEXT.md if it was updated.
+				if !contextFailed && contextData != nil && contextData.ContextPath != "" {
+					if addErr := git.Add(projectRoot, contextData.ContextPath); addErr != nil {
+						fmt.Fprintf(os.Stderr, "close-impl: warning: git add %s failed: %v\n", contextData.ContextPath, addErr)
+					}
+				}
+				// Commit.
+				commitMsg := fmt.Sprintf("chore: close-impl %s [SAW:complete]", manifest.FeatureSlug)
+				var commitErr error
+				commitSHA, commitErr = git.Commit(projectRoot, commitMsg)
+				if commitErr != nil {
+					fmt.Fprintf(os.Stderr, "close-impl: warning: commit failed: %v\n", commitErr)
+				} else {
+					fmt.Fprintf(os.Stderr, "close-impl: committed %s\n", commitSHA)
+				}
+			}
+
 			out, _ := json.Marshal(map[string]interface{}{
 				"marked":            true,
 				"date":              date,
@@ -184,6 +211,7 @@ Examples:
 				"worktrees_cleaned": cleanedCount,
 				"state_cleaned":     stateCleanedCount,
 				"branch_restored":   branchRestored,
+				"committed":         commitSHA,
 			})
 			fmt.Println(string(out))
 			return nil
