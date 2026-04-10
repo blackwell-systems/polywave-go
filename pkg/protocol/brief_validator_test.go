@@ -1,6 +1,8 @@
 package protocol
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -700,6 +702,77 @@ waves:
 	for _, issue := range agentD.Issues {
 		if issue.Check == "wave_reference_invalid" && issue.Severity == "error" {
 			t.Errorf("unexpected wave_reference_invalid error for correct reference: %+v", issue)
+		}
+	}
+}
+
+// TestValidateBriefs_CrossRepoResolution verifies that when file_ownership entries
+// have a repo: field, briefResolveFilePath looks up the repo name in configRepos
+// (loaded from saw.config.json) to get the absolute path, not treating the name
+// as a relative path prefix.
+func TestValidateBriefs_CrossRepoResolution(t *testing.T) {
+	// Create a temp workspace with two repos.
+	workspace := t.TempDir()
+	repoA := filepath.Join(workspace, "repo-a") // the IMPL lives here (saw.config.json)
+	repoB := filepath.Join(workspace, "repo-b") // the file lives here
+	for _, d := range []string{repoA, filepath.Join(repoA, "docs"), repoB} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Write saw.config.json in repoA mapping "repo-b" -> absolute path of repoB.
+	sawConfig := fmt.Sprintf(`{"repos":[{"name":"repo-b","path":%q}]}`, repoB)
+	if err := os.WriteFile(filepath.Join(repoA, "saw.config.json"), []byte(sawConfig), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a real Go source file in repoB that contains a known symbol.
+	goContent := "package bar\n\nfunc CrossRepoFunc() {}\n"
+	if err := os.WriteFile(filepath.Join(repoB, "bar.go"), []byte(goContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write IMPL doc in repoA referencing a file in repo-b.
+	implContent := fmt.Sprintf(`title: Cross-Repo Test
+feature_slug: cross-repo-test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+  - file: bar.go
+    agent: A
+    wave: 1
+    action: modify
+    repo: repo-b
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: "Implement CrossRepoFunc in bar.go"
+        files:
+          - bar.go
+`)
+	implPath := filepath.Join(repoA, "docs", "IMPL-cross-repo.yaml")
+	if err := os.WriteFile(implPath, []byte(implContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	result, err := ValidateBriefs(ctx, implPath)
+	if err != nil {
+		t.Fatalf("ValidateBriefs returned error: %v", err)
+	}
+
+	// Agent A's file (repo-b/bar.go) should resolve correctly via saw.config.json.
+	// CrossRepoFunc exists so no symbol_missing error expected.
+	agentA, ok := result.AgentResults["A"]
+	if !ok {
+		t.Fatal("expected result for agent A")
+	}
+	for _, issue := range agentA.Issues {
+		if issue.Check == "symbol_missing" && issue.Symbol == "CrossRepoFunc" {
+			t.Errorf("unexpected symbol_missing for CrossRepoFunc — cross-repo path resolution failed: file resolved to %q instead of absolute path", issue.File)
 		}
 	}
 }

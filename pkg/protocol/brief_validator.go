@@ -3,8 +3,11 @@ package protocol
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -74,12 +77,16 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 		repoRoot = manifest.Repositories[0]
 	}
 
+	// Build repo name -> absolute path lookup from saw.config.json.
+	// Walk up from the IMPL doc location to find saw.config.json.
+	configRepos := loadSAWConfigRepos(filepath.Dir(implPath))
+
 	// Build a set of files owned by each agent for quick lookup.
 	// Also track action:new files so we can skip existence checks.
 	agentFiles := make(map[string][]string)     // agentID -> []filePath
 	agentNewFiles := make(map[string]map[string]bool) // agentID -> set of new-action files
 	for _, fo := range manifest.FileOwnership {
-		filePath := briefResolveFilePath(fo, repoRoot)
+		filePath := briefResolveFilePath(fo, repoRoot, configRepos)
 		agentFiles[fo.Agent] = append(agentFiles[fo.Agent], filePath)
 		if fo.Action == "new" {
 			if agentNewFiles[fo.Agent] == nil {
@@ -288,12 +295,56 @@ func extractWaveAgentRefs(taskText string) []waveAgentRef {
 	return refs
 }
 
-// briefResolveFilePath builds the absolute file path from a FileOwnership entry,
-// using the repo root when available.
-func briefResolveFilePath(fo FileOwnership, defaultRepoRoot string) string {
+// sawConfigReposJSON is a minimal struct for unmarshalling only the repos field
+// from saw.config.json — avoids importing pkg/config which imports pkg/protocol.
+type sawConfigReposJSON struct {
+	Repos []struct {
+		Name string `json:"name"`
+		Path string `json:"path"`
+	} `json:"repos"`
+}
+
+// loadSAWConfigRepos walks up from startDir looking for saw.config.json and returns
+// a map of repo name -> absolute path. Returns an empty map if not found or on error.
+func loadSAWConfigRepos(startDir string) map[string]string {
+	repos := make(map[string]string)
+	dir := startDir
+	for {
+		candidate := filepath.Join(dir, "saw.config.json")
+		data, err := os.ReadFile(candidate)
+		if err == nil {
+			var cfg sawConfigReposJSON
+			if jsonErr := json.Unmarshal(data, &cfg); jsonErr == nil {
+				for _, r := range cfg.Repos {
+					if r.Name != "" && r.Path != "" {
+						repos[r.Name] = r.Path
+					}
+				}
+			}
+			return repos
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			// Reached filesystem root without finding the file.
+			break
+		}
+		dir = parent
+	}
+	return repos
+}
+
+// briefResolveFilePath builds the absolute file path from a FileOwnership entry.
+// If fo.Repo is set, it is looked up in configRepos to get the absolute path.
+// Falls back to defaultRepoRoot if the repo name is not found in configRepos.
+func briefResolveFilePath(fo FileOwnership, defaultRepoRoot string, configRepos map[string]string) string {
 	repoRoot := defaultRepoRoot
 	if fo.Repo != "" {
-		repoRoot = fo.Repo
+		if p, ok := configRepos[fo.Repo]; ok {
+			repoRoot = p
+		} else {
+			// repo name not found in config; leave as defaultRepoRoot (fallback)
+			// This handles tests and single-repo cases where configRepos is empty.
+		}
 	}
 	if repoRoot != "" && !strings.HasPrefix(fo.File, "/") {
 		return repoRoot + "/" + fo.File
