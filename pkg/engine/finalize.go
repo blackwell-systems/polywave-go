@@ -425,7 +425,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 			for repoKey, repoPath := range repos {
 				stateDir := protocol.SAWStateDir(repoPath)
 				cache := gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
-				gateRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, cache, opts.Logger)
+				gateRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.IMPLPath, cache, opts.Logger)
 				if !gateRes.IsSuccess() {
 					return fatalf("engine.FinalizeWave: run-pre-merge-gates failed in %s: %v", repoKey, gateRes.Errors)
 				}
@@ -473,7 +473,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 							if retryFixed {
 								// Gate was fixed by the retry agent; re-run gates to confirm.
 								cache = gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
-								rerunRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, cache, opts.Logger)
+								rerunRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.IMPLPath, cache, opts.Logger)
 								if rerunRes.IsSuccess() {
 									rerunResults := rerunRes.GetData().Gates
 									res.GateResults[repoKey] = rerunResults
@@ -650,7 +650,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 
 	// Step 5.5: RunPostMergeGates (E21) — per repo
 	for repoKey, repoPath := range repos {
-		postGateRes := protocol.RunPostMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.Logger)
+		postGateRes := protocol.RunPostMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.IMPLPath, opts.Logger)
 		if !postGateRes.IsSuccess() {
 			return fatalf("engine.FinalizeWave: run-post-merge-gates failed in %s: %v", repoKey, postGateRes.Errors)
 		}

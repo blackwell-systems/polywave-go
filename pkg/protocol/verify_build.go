@@ -56,14 +56,31 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 	// explicitly scope out integration-only packages. test_command is the fallback.
 	testCmd := manifest.TestCommand
 	lintCmd := manifest.LintCommand
+	testGateRepo := ""
+	lintGateRepo := ""
 	if manifest.QualityGates != nil {
 		for _, gate := range manifest.QualityGates.Gates {
 			if gate.Type == "test" && gate.Command != "" && testCmd == manifest.TestCommand {
 				testCmd = gate.Command
+				testGateRepo = gate.Repo
 			}
 			if gate.Type == "lint" && gate.Command != "" && lintCmd == manifest.LintCommand {
 				lintCmd = gate.Command
+				lintGateRepo = gate.Repo
 			}
+		}
+	}
+	configRepos := loadSAWConfigRepos(filepath.Dir(manifestPath))
+	testDir := repoDir
+	if testGateRepo != "" {
+		if p, ok := configRepos[testGateRepo]; ok {
+			testDir = p
+		}
+	}
+	lintDir := repoDir
+	if lintGateRepo != "" {
+		if p, ok := configRepos[lintGateRepo]; ok {
+			lintDir = p
 		}
 	}
 
@@ -73,8 +90,8 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 	}
 
 	// Run test command if present and applicable to this repo
-	if isRealCommand(testCmd) && commandApplies(testCmd, repoDir) {
-		testPassed, testOutput := runCommand(ctx, testCmd, repoDir)
+	if isRealCommand(testCmd) && commandApplies(testCmd, testDir) {
+		testPassed, testOutput := runCommand(ctx, testCmd, testDir)
 		data.TestPassed = testPassed
 		data.TestOutput = testOutput
 	} else {
@@ -83,8 +100,8 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 	}
 
 	// Run lint command if present and applicable to this repo
-	if isRealCommand(lintCmd) && commandApplies(lintCmd, repoDir) {
-		lintPassed, lintOutput := runCommand(ctx, lintCmd, repoDir)
+	if isRealCommand(lintCmd) && commandApplies(lintCmd, lintDir) {
+		lintPassed, lintOutput := runCommand(ctx, lintCmd, lintDir)
 		data.LintPassed = lintPassed
 		data.LintOutput = lintOutput
 	} else {

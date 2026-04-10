@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -338,6 +339,31 @@ func runFormatGate(ctx context.Context, gate QualityGate, repoDir string, cache 
 	return result
 }
 
+// resolveGateRepoDir returns the directory to run a gate command in.
+// When gate.Repo is empty, returns (defaultRepoDir, "").
+// When gate.Repo is set and found in configRepos, returns (path, "").
+// When gate.Repo is set but not found in configRepos, returns ("", errorMessage).
+func resolveGateRepoDir(gate QualityGate, defaultRepoDir string, configRepos map[string]string) (string, string) {
+	if gate.Repo == "" {
+		return defaultRepoDir, ""
+	}
+	if p, ok := configRepos[gate.Repo]; ok {
+		return p, ""
+	}
+	return "", fmt.Sprintf("gate repo %q not found in saw.config.json (known repos: %v)",
+		gate.Repo, sortedMapKeys(configRepos))
+}
+
+// sortedMapKeys returns the keys of a string map in sorted order.
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 // runGates executes quality gates for a specific wave from the manifest.
 // It runs each gate command and collects results.
 // The repoDir parameter is the working directory for command execution.
@@ -348,24 +374,41 @@ func runFormatGate(ctx context.Context, gate QualityGate, repoDir string, cache 
 //
 // Returns a successful Result with empty Gates slice if manifest has no QualityGates or Gates is empty.
 // Gate failures are recorded in GateResult.Passed; the caller decides how to handle them.
-func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, logger *slog.Logger) result.Result[GatesData] {
+func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, manifestPath string, logger *slog.Logger) result.Result[GatesData] {
 	_ = loggerFrom(logger) // Reserved for future logging
 	// Return empty results if no quality gates defined
 	if manifest.QualityGates == nil || len(manifest.QualityGates.Gates) == 0 {
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 
-	// Derive the repo name from the directory path for per-repo gate filtering.
-	repoName := filepath.Base(repoDir)
+	var configRepos map[string]string
+	if manifestPath != "" {
+		configRepos = loadSAWConfigRepos(filepath.Dir(manifestPath))
+	} else {
+		configRepos = make(map[string]string)
+	}
 
 	// Skip source-code gates when the wave only touches documentation files.
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
 	var gates []GateResult
 	for _, gate := range manifest.QualityGates.Gates {
-		// Skip gates scoped to a different repo.
-		if gate.Repo != "" && gate.Repo != repoName {
-			continue
+		// Resolve the directory to run this gate in.
+		// When manifestPath is empty, skip config lookup and run all gates in repoDir.
+		runDir := repoDir
+		if manifestPath != "" {
+			var dirErr string
+			runDir, dirErr = resolveGateRepoDir(gate, repoDir, configRepos)
+			if dirErr != "" {
+				gates = append(gates, GateResult{
+					Type:     gate.Type,
+					Command:  gate.Command,
+					Required: gate.Required,
+					Passed:   false,
+					Stderr:   dirErr,
+				})
+				continue
+			}
 		}
 
 		// Auto-skip build/test/lint gates for docs-only waves.
@@ -381,11 +424,11 @@ func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoD
 			continue
 		}
 
-		// Skip gates whose build system is absent in repoDir (e.g. go gates in a
+		// Skip gates whose build system is absent in runDir (e.g. go gates in a
 		// docs-only repo that has no go.mod). Skipped gates count as passed so they
 		// never block execution in repos that simply don't use that toolchain.
 		if bs := gateBuildSystem(gate); bs != "" {
-			if !detectBuildSystems(repoDir)[bs] {
+			if !detectBuildSystems(runDir)[bs] {
 				gates = append(gates, GateResult{
 					Type:       gate.Type,
 					Command:    gate.Command,
@@ -400,7 +443,7 @@ func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoD
 
 		// Format gates use the dedicated runner for auto-detection + fix mode.
 		if gate.Type == "format" {
-			gates = append(gates, runFormatGate(ctx, gate, repoDir, nil, logger))
+			gates = append(gates, runFormatGate(ctx, gate, runDir, nil, logger))
 			continue
 		}
 
@@ -412,7 +455,7 @@ func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoD
 
 		// Create command and set working directory
 		cmd := exec.CommandContext(ctx, "sh", "-c", gate.Command)
-		cmd.Dir = repoDir
+		cmd.Dir = runDir
 
 		// Capture stdout and stderr
 		var stdout, stderr bytes.Buffer
@@ -482,7 +525,7 @@ func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
 // This is the preferred public entry point for pre-merge gate execution at finalize-wave step 3.
 // It delegates to RunGatesWithCache with a filtered manifest; cache param may be nil.
 // Signature mirrors RunGatesWithCache exactly.
-func RunPreMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
+func RunPreMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, manifestPath string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
 	_ = loggerFrom(logger) // Reserved for future logging
 	filtered := filterGatesByTiming(manifest, "pre-merge")
 	if len(filtered) == 0 {
@@ -494,7 +537,7 @@ func RunPreMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber in
 		Level: manifest.QualityGates.Level,
 		Gates: filtered,
 	}
-	return RunGatesWithCache(ctx, &tmp, waveNumber, repoDir, cache, logger)
+	return RunGatesWithCache(ctx, &tmp, waveNumber, repoDir, manifestPath, cache, logger)
 }
 
 // RunPostMergeGates executes only gates with timing="post-merge".
@@ -503,7 +546,7 @@ func RunPreMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber in
 // Runs without cache (post-merge state is always fresh, so caching is intentionally omitted).
 // This is the public entry point for post-merge gate execution; it delegates to the
 // internal runGates function.
-func RunPostMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, logger *slog.Logger) result.Result[GatesData] {
+func RunPostMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, manifestPath string, logger *slog.Logger) result.Result[GatesData] {
 	_ = loggerFrom(logger) // Reserved for future logging
 	filtered := filterGatesByTiming(manifest, "post-merge")
 	if len(filtered) == 0 {
@@ -514,7 +557,7 @@ func RunPostMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber i
 		Level: manifest.QualityGates.Level,
 		Gates: filtered,
 	}
-	return runGates(ctx, &tmp, waveNumber, repoDir, logger)
+	return runGates(ctx, &tmp, waveNumber, repoDir, manifestPath, logger)
 }
 
 // RunGatesWithCache executes quality gates with optional result caching.
@@ -523,11 +566,11 @@ func RunPostMergeGates(ctx context.Context, manifest *IMPLManifest, waveNumber i
 // Gates are grouped by phase (PRE → VALIDATION → POST) and executed in order.
 // Within each phase, gates can be grouped by parallel_group for concurrent execution.
 // Prefer RunPreMergeGates over calling this directly for pre-merge gate execution.
-func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
+func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoDir string, manifestPath string, cache *gatecache.Cache, logger *slog.Logger) result.Result[GatesData] {
 	_ = loggerFrom(logger) // Reserved for future logging
 
 	if cache == nil {
-		return runGates(ctx, manifest, waveNumber, repoDir, logger)
+		return runGates(ctx, manifest, waveNumber, repoDir, manifestPath, logger)
 	}
 
 	// Return empty results if no quality gates defined
@@ -535,10 +578,16 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 		return result.NewSuccess(GatesData{Gates: []GateResult{}})
 	}
 
-	repoName := filepath.Base(repoDir)
+	var configRepos map[string]string
+	if manifestPath != "" {
+		configRepos = loadSAWConfigRepos(filepath.Dir(manifestPath))
+	} else {
+		configRepos = make(map[string]string)
+	}
+
 	docsOnly := isDocsOnlyWave(manifest, waveNumber)
 
-	// Filter gates by repo + docs-only logic
+	// Filter gates by docs-only logic (repo routing now handled per-gate below)
 	var filteredGates []QualityGate
 	for _, gate := range manifest.QualityGates.Gates {
 		// Validate gate before execution (BLOCKER 2 fix)
@@ -546,18 +595,6 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 			return result.NewFailure[GatesData]([]result.SAWError{
 				result.NewFatal(result.CodeGateValidationFailed, fmt.Sprintf("invalid gate %s: %s", gate.Type, vr.Errors[0].Message)),
 			})
-		}
-
-		// Skip gates scoped to a different repo
-		if gate.Repo != "" && gate.Repo != repoName {
-			continue
-		}
-
-		// Auto-skip build/test/lint gates for docs-only waves
-		if docsOnly && isSourceGateType(gate.Type) {
-			// Add skipped result to maintain output consistency
-			filteredGates = append(filteredGates, gate)
-			continue
 		}
 
 		filteredGates = append(filteredGates, gate)
@@ -601,13 +638,53 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 
 			if len(activeGates) > 0 {
 				if group.parallel {
-					// Execute concurrently
-					results := executeGatesConcurrently(ctx, activeGates, repoDir, cache, logger)
-					groupResults = append(groupResults, results...)
+					// Resolve all directories before launching goroutines.
+					// When manifestPath is empty, all gates run in repoDir.
+					resolvedDirs := make([]string, len(activeGates))
+					dirErrors := make([]string, len(activeGates))
+					for i, g := range activeGates {
+						if manifestPath != "" {
+							resolvedDirs[i], dirErrors[i] = resolveGateRepoDir(g, repoDir, configRepos)
+						} else {
+							resolvedDirs[i] = repoDir
+						}
+					}
+
+					var wg sync.WaitGroup
+					parallelResults := make([]GateResult, len(activeGates))
+					for i, gate := range activeGates {
+						wg.Add(1)
+						go func(idx int, g QualityGate) {
+							defer wg.Done()
+							if dirErrors[idx] != "" {
+								parallelResults[idx] = GateResult{
+									Type: g.Type, Command: g.Command,
+									Required: g.Required, Passed: false, Stderr: dirErrors[idx],
+								}
+								return
+							}
+							parallelResults[idx] = executeSingleGate(ctx, g, resolvedDirs[idx], cache, logger)
+						}(i, gate)
+					}
+					wg.Wait()
+					groupResults = append(groupResults, parallelResults...)
 				} else {
-					// Execute sequentially
+					// Execute sequentially.
+					// When manifestPath is empty, all gates run in repoDir.
 					for _, gate := range activeGates {
-						gateResult := executeSingleGate(ctx, gate, repoDir, cache, logger)
+						runDir := repoDir
+						if manifestPath != "" {
+							var dirErr string
+							runDir, dirErr = resolveGateRepoDir(gate, repoDir, configRepos)
+							if dirErr != "" {
+								groupResults = append(groupResults, GateResult{
+									Type: gate.Type, Command: gate.Command,
+									Required: gate.Required, Passed: false, Stderr: dirErr,
+								})
+								continue
+							}
+						}
+						gateResult := executeSingleGate(ctx, gate, runDir, cache, logger)
 						groupResults = append(groupResults, gateResult)
 					}
 				}
