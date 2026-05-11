@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/solver"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/solver"
 	"gopkg.in/yaml.v3"
 )
 
@@ -21,15 +21,15 @@ type waveMismatch struct {
 // ValidateWithSolver runs solver-based validation on the manifest, then
 // appends the results of the standard Validate() checks. Solver errors
 // use SOLVER_* code prefixes to distinguish them from invariant errors.
-func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateWithSolver(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Convert manifest to solver nodes and run the solver.
 	nodes := manifestToNodes(m)
 	solveResult := solver.Solve(nodes)
 
 	if !solveResult.Valid {
-		// Map solver errors to SAWErrors by inspecting the message.
+		// Map solver errors to PolywaveErrors by inspecting the message.
 		for _, errStr := range solveResult.Errors {
 			code := "SOLVER_ERROR"
 			lower := strings.ToLower(errStr)
@@ -38,7 +38,7 @@ func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
 			} else if strings.Contains(lower, "missing") || strings.Contains(lower, "unknown") || strings.Contains(lower, "does not exist") {
 				code = "SOLVER_MISSING_DEP"
 			}
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     code,
 				Message:  errStr,
 				Severity: "error",
@@ -54,7 +54,7 @@ func ValidateWithSolver(m *IMPLManifest) []result.SAWError {
 	// Solver succeeded — compare assignments.
 	mismatches := compareAssignments(m, solveResult)
 	for _, mm := range mismatches {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "SOLVER_WAVE_MISMATCH",
 			Message:  fmt.Sprintf("agent %s is in wave %d but solver computed wave %d", mm.agentID, mm.manifestWave, mm.solverWave),
 			Severity: "error",
@@ -252,13 +252,13 @@ func compareAssignments(m *IMPLManifest, solveResult solver.SolveResult) []waveM
 	return mismatches
 }
 
-// checkCriticalPath returns a warning SAWError if the manifest declares more waves
+// checkCriticalPath returns a warning PolywaveError if the manifest declares more waves
 // than the dependency graph's critical path requires. This indicates the scout wrote
 // an over-sequenced wave structure (e.g., 3 waves for a graph whose longest chain is 2).
 // Returns nil if:
 //   - the graph has cycles (CriticalPath returns nil — cycle errors are reported elsewhere)
 //   - len(m.Waves) <= len(critical path) (manifest is optimal or under-waved relative to solver)
-func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.SAWError {
+func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.PolywaveError {
 	cp := solver.CriticalPath(nodes)
 	if cp == nil {
 		// Cyclic graph — cycle errors are already reported by the solver.
@@ -268,7 +268,7 @@ func checkCriticalPath(m *IMPLManifest, nodes []solver.DepNode) *result.SAWError
 	if len(m.Waves) <= minWaves {
 		return nil
 	}
-	return &result.SAWError{
+	return &result.PolywaveError{
 		Code:     "SOLVER_OVER_SEQUENCED",
 		Message:  fmt.Sprintf("manifest has %d waves but critical path requires only %d; consider collapsing waves", len(m.Waves), minWaves),
 		Severity: "warning",

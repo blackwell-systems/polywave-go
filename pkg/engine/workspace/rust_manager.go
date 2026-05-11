@@ -12,7 +12,7 @@ import (
 // RustWorkspaceManager implements WorkspaceManager for Rust repos.
 // Detect: Cargo.toml at repoRoot containing [workspace] section.
 // Setup: surgically appends worktree paths to the members array in Cargo.toml.
-// Backup: Cargo.toml backed up to .saw-state/wave{N}/Cargo.toml.backup.
+// Backup: Cargo.toml backed up to .polywave-state/wave{N}/Cargo.toml.backup.
 type RustWorkspaceManager struct{}
 
 // Language returns the canonical name for this manager.

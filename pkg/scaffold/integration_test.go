@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // TestCLI_PreAgentMode_DetectsSharedTypes tests end-to-end pre-agent detection
@@ -64,7 +64,7 @@ func GenerateReport(config ReportConfig) error`,
 	}
 
 	// Run sawtools detect-scaffolds --stage pre-agent
-	cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
+	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, string(output))
@@ -199,7 +199,7 @@ type Logger interface {
 	}
 
 	// Run sawtools detect-scaffolds --stage post-agent
-	cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "post-agent")
+	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "post-agent")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("Command failed: %v\nOutput: %s", err, string(output))
@@ -282,7 +282,7 @@ func TestCLI_InvalidStage(t *testing.T) {
 	}
 
 	// Run with invalid stage
-	cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "invalid")
+	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "invalid")
 	output, err := cmd.CombinedOutput()
 
 	// Should fail
@@ -321,7 +321,7 @@ func TestCLI_MissingStageFlag(t *testing.T) {
 	}
 
 	// Run without --stage flag
-	cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath)
+	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath)
 	output, err := cmd.CombinedOutput()
 
 	// Should fail
@@ -346,7 +346,7 @@ func TestCLI_ManifestNotFound(t *testing.T) {
 	// Use non-existent path
 	manifestPath := "/tmp/nonexistent-impl-doc-12345.yaml"
 
-	cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
+	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
 	output, err := cmd.CombinedOutput()
 
 	// Should fail
@@ -386,7 +386,7 @@ func TestCLI_EmptyManifest(t *testing.T) {
 
 	// Test pre-agent mode
 	t.Run("PreAgent", func(t *testing.T) {
-		cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
+		cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("Command failed: %v\nOutput: %s", err, string(output))
@@ -418,7 +418,7 @@ func TestCLI_EmptyManifest(t *testing.T) {
 
 	// Test post-agent mode
 	t.Run("PostAgent", func(t *testing.T) {
-		cmd := exec.Command("sawtools", "detect-scaffolds", manifestPath, "--stage", "post-agent")
+		cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "post-agent")
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			t.Fatalf("Command failed: %v\nOutput: %s", err, string(output))

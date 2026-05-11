@@ -3,7 +3,7 @@ package interview
 import (
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // InterviewPhase is the current section of the requirements being explored.

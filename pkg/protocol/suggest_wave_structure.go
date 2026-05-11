@@ -9,7 +9,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // WaveStructureProblem describes an E21A-inducing IMPL pattern.
@@ -34,7 +34,7 @@ type WaveStructureProblem struct {
 // Returns Result[[]WaveStructureProblem].
 func SuggestWaveStructure(ctx context.Context, m *IMPLManifest, repoDir string) result.Result[[]WaveStructureProblem] {
 	if m == nil {
-		return result.NewFailure[[]WaveStructureProblem]([]result.SAWError{
+		return result.NewFailure[[]WaveStructureProblem]([]result.PolywaveError{
 			result.NewFatal("W001_MANIFEST_NIL", "manifest is nil"),
 		})
 	}

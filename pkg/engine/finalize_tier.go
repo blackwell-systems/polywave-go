@@ -8,9 +8,9 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FinalizeTierOpts configures the thick finalize-tier orchestrator.
@@ -29,7 +29,7 @@ type FinalizeTierResult struct {
 	MergeResults   map[string]*protocol.MergeAgentsData `json:"merge_results"`
 	TierGateResult *protocol.TierGateData               `json:"tier_gate_result,omitempty"`
 	StateAdvanced  bool                                 `json:"state_advanced"`
-	Errors         []result.SAWError                    `json:"errors,omitempty"`
+	Errors         []result.PolywaveError                    `json:"errors,omitempty"`
 }
 
 // FinalizeTierEngine is the thick orchestrator for finalize-tier.
@@ -54,7 +54,7 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) result.Resul
 
 	manifest, err := protocol.ParseProgramManifest(opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[FinalizeTierResult]([]result.SAWError{
+		return result.NewFailure[FinalizeTierResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf("finalize-tier: parse manifest: %v", err)),
 		})
 	}
@@ -68,7 +68,7 @@ func FinalizeTierEngine(ctx context.Context, opts FinalizeTierOpts) result.Resul
 		}
 	}
 	if targetTier == nil {
-		return result.NewFailure[FinalizeTierResult]([]result.SAWError{
+		return result.NewFailure[FinalizeTierResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf("finalize-tier: tier %d not found in manifest", opts.TierNumber)),
 		})
 	}

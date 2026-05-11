@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"github.com/invopop/jsonschema"
 )
 
@@ -65,14 +65,14 @@ func GenerateManifestSchema() (map[string]any, error) {
 // This is an additive validation path that complements existing ValidateSchema()
 // checks. Error codes use the "JS01_" prefix.
 //
-// Returns a (possibly empty) slice of SAWErrors.
-func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+// Returns a (possibly empty) slice of PolywaveErrors.
+func ValidateManifestJSON(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Marshal to JSON for schema-based field inspection.
 	data, err := json.Marshal(m)
 	if err != nil {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01RequiredField,
 			Message:  fmt.Sprintf("failed to marshal manifest to JSON: %v", err),
 			Severity: "error",
@@ -83,7 +83,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 	// Decode into a generic map for inspection.
 	var raw map[string]any
 	if err := json.Unmarshal(data, &raw); err != nil {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01RequiredField,
 			Message:  fmt.Sprintf("failed to decode manifest JSON: %v", err),
 			Severity: "error",
@@ -101,7 +101,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 	for _, field := range requiredStringFields {
 		val, exists := raw[field]
 		if !exists || val == nil {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("required field %q is missing", field),
 				Severity: "error",
@@ -111,7 +111,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 		}
 		str, ok := val.(string)
 		if !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("field %q must be a string, got %T", field, val),
 				Severity: "error",
@@ -120,7 +120,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		if strings.TrimSpace(str) == "" {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("required field %q must not be empty", field),
 				Severity: "error",
@@ -138,7 +138,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 	for _, field := range requiredArrayFields {
 		val, exists := raw[field]
 		if !exists || val == nil {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("required field %q is missing", field),
 				Severity: "error",
@@ -147,7 +147,7 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		if _, ok := val.([]any); !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("field %q must be an array, got %T", field, val),
 				Severity: "error",
@@ -200,13 +200,13 @@ func ValidateManifestJSON(m *IMPLManifest) []result.SAWError {
 
 // validateJSEnum checks that a field (if present and non-empty) is one of the allowed enum values.
 // If optional=true, absent or empty string values are skipped.
-func validateJSEnum(raw map[string]any, field string, allowed []string, optional bool) []result.SAWError {
-	var errs []result.SAWError
+func validateJSEnum(raw map[string]any, field string, allowed []string, optional bool) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	val, exists := raw[field]
 	if !exists || val == nil {
 		if !optional {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("required field %q is missing", field),
 				Severity: "error",
@@ -218,7 +218,7 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 
 	str, ok := val.(string)
 	if !ok {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01InvalidType,
 			Message:  fmt.Sprintf("field %q must be a string, got %T", field, val),
 			Severity: "error",
@@ -234,7 +234,7 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 
 	// Empty string for required enum fields is a missing value.
 	if str == "" && !optional {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01RequiredField,
 			Message:  fmt.Sprintf("required field %q must not be empty", field),
 			Severity: "error",
@@ -249,7 +249,7 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 	}
 
 	if !allowedSet[str] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01InvalidEnum,
 			Message:  fmt.Sprintf("field %q has invalid value %q — must be one of: %s", field, str, strings.Join(allowed, ", ")),
 			Severity: "error",
@@ -261,8 +261,8 @@ func validateJSEnum(raw map[string]any, field string, allowed []string, optional
 }
 
 // validateJSWaves validates the structure of each wave and agent within the waves array.
-func validateJSWaves(raw map[string]any) []result.SAWError {
-	var errs []result.SAWError
+func validateJSWaves(raw map[string]any) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	wavesVal, ok := raw["waves"]
 	if !ok || wavesVal == nil {
@@ -277,7 +277,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 	for i, waveVal := range waves {
 		wave, ok := waveVal.(map[string]any)
 		if !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("waves[%d] must be an object", i),
 				Severity: "error",
@@ -291,7 +291,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 			switch n := numVal.(type) {
 			case float64:
 				if n <= 0 {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     JS01RequiredField,
 						Message:  fmt.Sprintf("waves[%d].number must be > 0, got %v", i, n),
 						Severity: "error",
@@ -299,7 +299,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 					})
 				}
 			default:
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     JS01InvalidType,
 					Message:  fmt.Sprintf("waves[%d].number must be a number, got %T", i, numVal),
 					Severity: "error",
@@ -311,7 +311,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 		// waves[i].agents must be a non-empty array
 		agentsVal, agentsExist := wave["agents"]
 		if !agentsExist || agentsVal == nil {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("waves[%d].agents is required", i),
 				Severity: "error",
@@ -322,7 +322,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 
 		agents, ok := agentsVal.([]any)
 		if !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("waves[%d].agents must be an array, got %T", i, agentsVal),
 				Severity: "error",
@@ -335,7 +335,7 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 		for j, agentVal := range agents {
 			agent, ok := agentVal.(map[string]any)
 			if !ok {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     JS01InvalidType,
 					Message:  fmt.Sprintf("waves[%d].agents[%d] must be an object", i, j),
 					Severity: "error",
@@ -358,8 +358,8 @@ func validateJSWaves(raw map[string]any) []result.SAWError {
 }
 
 // validateJSFileOwnership validates the structure of each file_ownership entry.
-func validateJSFileOwnership(raw map[string]any) []result.SAWError {
-	var errs []result.SAWError
+func validateJSFileOwnership(raw map[string]any) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	foVal, ok := raw["file_ownership"]
 	if !ok || foVal == nil {
@@ -374,7 +374,7 @@ func validateJSFileOwnership(raw map[string]any) []result.SAWError {
 	for i, entryVal := range foArr {
 		entry, ok := entryVal.(map[string]any)
 		if !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("file_ownership[%d] must be an object", i),
 				Severity: "error",
@@ -392,7 +392,7 @@ func validateJSFileOwnership(raw map[string]any) []result.SAWError {
 			switch w := waveVal.(type) {
 			case float64:
 				if w <= 0 {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     JS01RequiredField,
 						Message:  fmt.Sprintf("%s.wave must be > 0, got %v", prefix, w),
 						Severity: "error",
@@ -400,7 +400,7 @@ func validateJSFileOwnership(raw map[string]any) []result.SAWError {
 					})
 				}
 			default:
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     JS01InvalidType,
 					Message:  fmt.Sprintf("%s.wave must be a number, got %T", prefix, waveVal),
 					Severity: "error",
@@ -414,8 +414,8 @@ func validateJSFileOwnership(raw map[string]any) []result.SAWError {
 }
 
 // validateJSQualityGates validates the quality_gates object if present.
-func validateJSQualityGates(raw map[string]any) []result.SAWError {
-	var errs []result.SAWError
+func validateJSQualityGates(raw map[string]any) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	qgVal, exists := raw["quality_gates"]
 	if !exists || qgVal == nil {
@@ -424,7 +424,7 @@ func validateJSQualityGates(raw map[string]any) []result.SAWError {
 
 	qg, ok := qgVal.(map[string]any)
 	if !ok {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01InvalidType,
 			Message:  fmt.Sprintf("quality_gates must be an object, got %T", qgVal),
 			Severity: "error",
@@ -441,7 +441,7 @@ func validateJSQualityGates(raw map[string]any) []result.SAWError {
 
 	gates, ok := gatesVal.([]any)
 	if !ok {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01InvalidType,
 			Message:  fmt.Sprintf("quality_gates.gates must be an array, got %T", gatesVal),
 			Severity: "error",
@@ -454,7 +454,7 @@ func validateJSQualityGates(raw map[string]any) []result.SAWError {
 	for i, gateVal := range gates {
 		gate, ok := gateVal.(map[string]any)
 		if !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01InvalidType,
 				Message:  fmt.Sprintf("quality_gates.gates[%d] must be an object", i),
 				Severity: "error",
@@ -480,15 +480,15 @@ func validateJSQualityGates(raw map[string]any) []result.SAWError {
 
 // validateJSStringField checks that a named string field within an object map
 // is present (if required) and is a non-empty string.
-func validateJSStringField(obj map[string]any, prefix, field string, required bool) []result.SAWError {
-	var errs []result.SAWError
+func validateJSStringField(obj map[string]any, prefix, field string, required bool) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	fullField := fmt.Sprintf("%s.%s", prefix, field)
 	val, exists := obj[field]
 
 	if !exists || val == nil {
 		if required {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     JS01RequiredField,
 				Message:  fmt.Sprintf("%s is required", fullField),
 				Severity: "error",
@@ -500,7 +500,7 @@ func validateJSStringField(obj map[string]any, prefix, field string, required bo
 
 	str, ok := val.(string)
 	if !ok {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01InvalidType,
 			Message:  fmt.Sprintf("%s must be a string, got %T", fullField, val),
 			Severity: "error",
@@ -510,7 +510,7 @@ func validateJSStringField(obj map[string]any, prefix, field string, required bo
 	}
 
 	if required && strings.TrimSpace(str) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     JS01RequiredField,
 			Message:  fmt.Sprintf("%s must not be empty", fullField),
 			Severity: "error",

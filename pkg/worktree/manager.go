@@ -11,9 +11,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RemoveData holds the result payload for a successful Remove operation.
@@ -85,28 +85,28 @@ func (m *Manager) Create(wave int, agent string) result.Result[CreateData] {
 	wtDir := filepath.Dir(wtPath)
 
 	if err := os.MkdirAll(wtDir, 0o755); err != nil {
-		return result.NewFailure[CreateData]([]result.SAWError{
+		return result.NewFailure[CreateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeCreateFailed,
 				fmt.Sprintf("worktree: failed to create worktree base directory %q: %v", wtDir, err)).WithCause(err),
 		})
 	}
 
 	if _, err := os.Stat(wtPath); err == nil {
-		return result.NewFailure[CreateData]([]result.SAWError{
+		return result.NewFailure[CreateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeCreateFailed,
 				fmt.Sprintf("worktree: worktree path %q already exists; remove it or use a different wave/agent combination before retrying", wtPath)),
 		})
 	}
 
 	if git.BranchExists(m.repoPath, branch) {
-		return result.NewFailure[CreateData]([]result.SAWError{
+		return result.NewFailure[CreateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeBranchExists,
 				fmt.Sprintf("worktree: branch %q already exists; remove it before retrying", branch)),
 		})
 	}
 
 	if err := git.WorktreeAdd(m.repoPath, wtPath, branch); err != nil {
-		return result.NewFailure[CreateData]([]result.SAWError{
+		return result.NewFailure[CreateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeCreateFailed,
 				fmt.Sprintf("worktree: create worktree for wave %d agent %s: %v", wave, agent, err)).WithCause(err),
 		})
@@ -129,13 +129,13 @@ func (m *Manager) Create(wave int, agent string) result.Result[CreateData] {
 func (m *Manager) Remove(path string) result.Result[RemoveData] {
 	branch, ok := m.active[path]
 	if !ok {
-		return result.NewFailure[RemoveData]([]result.SAWError{
+		return result.NewFailure[RemoveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeRemoveFailed, fmt.Sprintf("worktree: worktree %q is not tracked", path)),
 		})
 	}
 
 	if err := git.WorktreeRemove(m.repoPath, path); err != nil {
-		return result.NewFailure[RemoveData]([]result.SAWError{
+		return result.NewFailure[RemoveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeRemoveFailed, fmt.Sprintf("worktree: remove worktree %q: %v", path, err)).WithCause(err),
 		})
 	}
@@ -162,7 +162,7 @@ func (m *Manager) CleanupAll() result.Result[CleanupData] {
 	}
 
 	var removedPaths []string
-	var failedErrs []result.SAWError
+	var failedErrs []result.PolywaveError
 
 	for _, path := range paths {
 		r := m.Remove(path)

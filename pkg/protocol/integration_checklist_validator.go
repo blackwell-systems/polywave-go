@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // handlerPatterns lists path patterns that indicate new API handlers or UI components
@@ -45,7 +45,7 @@ func matchesHandlerPattern(file string) bool {
 //
 // If repoPath is non-empty, each matched file is verified to exist on disk before
 // triggering the warning (avoids false positives from typos in the IMPL doc).
-func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []result.SAWError {
+func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []result.PolywaveError {
 	var matched []string
 
 	for _, fo := range m.FileOwnership {
@@ -75,7 +75,7 @@ func ValidateIntegrationChecklist(m *IMPLManifest, repoPath string) []result.SAW
 		return nil
 	}
 
-	return []result.SAWError{
+	return []result.PolywaveError{
 		{
 			Code:     result.CodeMissingChecklist,
 			Message:  "new handlers/components detected but post_merge_checklist is empty — integration steps may be needed",

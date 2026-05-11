@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 )
 
 // createTestRepo sets up a temporary git repository for testing.
@@ -150,8 +150,8 @@ waves:
 	}
 
 	// Create branches with commits
-	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-A", 2)
-	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-B", 1)
+	createBranchWithCommits(t, repoDir, "polywave/test-feature/wave1-agent-A", 2)
+	createBranchWithCommits(t, repoDir, "polywave/test-feature/wave1-agent-B", 1)
 
 	// Verify commits
 	res := VerifyCommits(context.Background(), manifestPath, 1, repoDir)
@@ -173,8 +173,8 @@ waves:
 	if agentA.Agent != "A" {
 		t.Errorf("expected agent A, got %s", agentA.Agent)
 	}
-	if agentA.Branch != "saw/test-feature/wave1-agent-A" {
-		t.Errorf("expected branch saw/test-feature/wave1-agent-A, got %s", agentA.Branch)
+	if agentA.Branch != "polywave/test-feature/wave1-agent-A" {
+		t.Errorf("expected branch polywave/test-feature/wave1-agent-A, got %s", agentA.Branch)
 	}
 	if agentA.CommitCount != 2 {
 		t.Errorf("expected 2 commits for agent A, got %d", agentA.CommitCount)
@@ -188,8 +188,8 @@ waves:
 	if agentB.Agent != "B" {
 		t.Errorf("expected agent B, got %s", agentB.Agent)
 	}
-	if agentB.Branch != "saw/test-feature/wave1-agent-B" {
-		t.Errorf("expected branch saw/test-feature/wave1-agent-B, got %s", agentB.Branch)
+	if agentB.Branch != "polywave/test-feature/wave1-agent-B" {
+		t.Errorf("expected branch polywave/test-feature/wave1-agent-B, got %s", agentB.Branch)
 	}
 	if agentB.CommitCount != 1 {
 		t.Errorf("expected 1 commit for agent B, got %d", agentB.CommitCount)
@@ -239,10 +239,10 @@ waves:
 	}
 
 	// Create only one branch with commits
-	createBranchWithCommits(t, repoDir, "saw/test-feature/wave1-agent-A", 1)
+	createBranchWithCommits(t, repoDir, "polywave/test-feature/wave1-agent-A", 1)
 
 	// Create the other branch but with no commits
-	_, err := git.Run(repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-B")
+	_, err := git.Run(repoDir, "checkout", "-b", "polywave/test-feature/wave1-agent-B")
 	if err != nil {
 		t.Fatalf("failed to create branch wave1-agent-B: %v", err)
 	}

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DebugJournalOpts holds options for the DebugJournal engine function.
@@ -86,18 +86,18 @@ func DebugJournal(opts DebugJournalOpts) result.Result[DebugJournalResult] {
 	// Resolve repo root to absolute path.
 	absRepoRoot, err := filepath.Abs(opts.RepoPath)
 	if err != nil {
-		return result.NewFailure[DebugJournalResult]([]result.SAWError{
+		return result.NewFailure[DebugJournalResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportWriteFailed,
 				"failed to resolve repo root: "+err.Error()).WithCause(err),
 		})
 	}
 
-	journalPath := filepath.Join(absRepoRoot, ".saw-state", opts.AgentPath, "index.jsonl")
+	journalPath := filepath.Join(absRepoRoot, ".polywave-state", opts.AgentPath, "index.jsonl")
 
 	if _, err := os.Stat(journalPath); os.IsNotExist(err) {
-		return result.NewFailure[DebugJournalResult]([]result.SAWError{
+		return result.NewFailure[DebugJournalResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportNoEntries,
-				fmt.Sprintf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'sawtools list-impls' to see available IMPL docs, then check .saw-state/ for agent journals.", opts.AgentPath, journalPath)),
+				fmt.Sprintf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'sawtools list-impls' to see available IMPL docs, then check .polywave-state/ for agent journals.", opts.AgentPath, journalPath)),
 		})
 	}
 
@@ -145,7 +145,7 @@ func DebugJournal(opts DebugJournalOpts) result.Result[DebugJournalResult] {
 func LoadJournalEntries(journalPath string) result.Result[[]journal.ToolEntry] {
 	entries, err := loadJournalEntries(journalPath)
 	if err != nil {
-		return result.NewFailure[[]journal.ToolEntry]([]result.SAWError{
+		return result.NewFailure[[]journal.ToolEntry]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportWriteFailed,
 				"failed to load journal: "+err.Error()).WithCause(err),
 		})
@@ -261,7 +261,7 @@ func buildJournalSummary(agentPath string, all []journal.ToolEntry, display []jo
 func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath string, force bool) result.Result[ExportData] {
 	if !force {
 		if _, err := os.Stat(exportPath); err == nil {
-			return result.NewFailure[ExportData]([]result.SAWError{
+			return result.NewFailure[ExportData]([]result.PolywaveError{
 				result.NewFatal(result.CodeExportFileExists,
 					fmt.Sprintf("export file already exists: %s (use --force to overwrite)", exportPath)).
 					WithContext("export_path", exportPath),
@@ -270,7 +270,7 @@ func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath strin
 	}
 
 	if len(entries) == 0 {
-		return result.NewFailure[ExportData]([]result.SAWError{
+		return result.NewFailure[ExportData]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportNoEntries,
 				"no entries to export"),
 		})
@@ -279,7 +279,7 @@ func exportHTMLTimeline(entries []journal.ToolEntry, agentPath, exportPath strin
 	htmlContent := generateTimelineHTML(entries, agentPath)
 
 	if err := os.WriteFile(exportPath, []byte(htmlContent), 0644); err != nil {
-		return result.NewFailure[ExportData]([]result.SAWError{
+		return result.NewFailure[ExportData]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportWriteFailed,
 				fmt.Sprintf("failed to write HTML file: %v", err)).
 				WithContext("export_path", exportPath),

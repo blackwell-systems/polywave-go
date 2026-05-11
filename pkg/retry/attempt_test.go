@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+	"github.com/blackwell-systems/polywave-go/pkg/retry"
 )
 
 // minimalManifestYAML creates a minimal valid IMPL manifest YAML with a

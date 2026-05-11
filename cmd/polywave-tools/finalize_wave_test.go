@@ -1,0 +1,635 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"strings"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/blackwell-systems/polywave-go/pkg/collision"
+	"github.com/blackwell-systems/polywave-go/pkg/engine"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"gopkg.in/yaml.v3"
+)
+
+func TestFinalizeWaveResult_CollisionReportsField(t *testing.T) {
+	// Verify that engine.FinalizeWaveResult has the CollisionReports field
+	result := &engine.FinalizeWaveResult{
+		Wave:             1,
+		CrossRepo:        false,
+		Success:          false,
+		VerifyCommits:    make(map[string]*protocol.VerifyCommitsData),
+		CollisionReports: make(map[string]*collision.CollisionReport),
+		GateResults:      make(map[string][]protocol.GateResult),
+		MergeResult:      make(map[string]*protocol.MergeAgentsData),
+	}
+
+	if result.CollisionReports == nil {
+		t.Error("engine.FinalizeWaveResult.CollisionReports should be initialized")
+	}
+}
+
+func TestFinalizeWaveResult_CollisionReportIntegration(t *testing.T) {
+	// Verify that CollisionReport can be properly added to engine.FinalizeWaveResult
+	result := &engine.FinalizeWaveResult{
+		Wave:             1,
+		CollisionReports: make(map[string]*collision.CollisionReport),
+	}
+
+	// Simulate adding a collision report for a repo
+	report := &collision.CollisionReport{
+		Valid: false,
+		Collisions: []collision.TypeCollision{
+			{
+				TypeName:   "Handler",
+				Package:    "pkg/service",
+				Agents:     []string{"A", "B"},
+				Resolution: "Keep A, remove from B",
+			},
+		},
+	}
+
+	result.CollisionReports["main-repo"] = report
+
+	if result.CollisionReports["main-repo"] == nil {
+		t.Error("CollisionReport should be stored in engine.FinalizeWaveResult")
+	}
+
+	if result.CollisionReports["main-repo"].Valid {
+		t.Error("CollisionReport.Valid should be false when collisions exist")
+	}
+
+	if len(result.CollisionReports["main-repo"].Collisions) != 1 {
+		t.Errorf("Expected 1 collision, got %d", len(result.CollisionReports["main-repo"].Collisions))
+	}
+}
+
+// TestFinalizeWave_SoloWaveSkipsVerifyCommits verifies that when a wave has no
+// worktree directories on disk, WorktreesAbsent returns true and the finalize-wave
+// bypass path populates a synthetic MergeResult without calling VerifyCommits.
+//
+// This simulates the solo-wave scenario (single developer working directly on main)
+// where no worktrees were created, so VerifyCommits and MergeAgents must be skipped.
+func TestFinalizeWave_SoloWaveSkipsVerifyCommits(t *testing.T) {
+	// Build a manifest with one agent and a feature slug.
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+	}
+
+	// Use a temp directory as repoDir — no worktree directories will exist inside it.
+	tmpDir := t.TempDir()
+
+	// WorktreesAbsent should return true since no worktree dir was created.
+	if !protocol.WorktreesAbsent(manifest, 1, tmpDir) {
+		t.Error("WorktreesAbsent() = false, want true when no worktree dirs exist (solo wave)")
+	}
+
+	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
+	mergeResult := make(map[string]*protocol.MergeAgentsData)
+	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1}
+
+	// Confirm the synthetic result is set correctly (no VerifyCommits needed).
+	if mergeResult["."].Wave != 1 {
+		t.Errorf("MergeResult.Wave = %d, want 1", mergeResult["."].Wave)
+	}
+}
+
+// TestFinalizeWave_AllBranchesAbsentSkipsMerge verifies that when all agent branches
+// are absent from git (wave already merged and cleaned up), AllBranchesAbsent returns
+// true and the finalize-wave bypass path populates a synthetic MergeResult without
+// calling MergeAgents.
+//
+// This tests the idempotent re-run path: if finalize-wave is called again after a
+// successful run (branches already cleaned up), it should proceed to verify-build
+// rather than failing on missing branches.
+func TestFinalizeWave_AllBranchesAbsentSkipsMerge(t *testing.T) {
+	// Build a manifest with one agent and a feature slug.
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+	}
+
+	// Use a temp directory that is a git repo but has no agent branches.
+	// We create a minimal git repo so BranchExists calls don't error.
+	tmpDir := t.TempDir()
+	if err := initBareGitRepo(t, tmpDir); err != nil {
+		t.Skipf("skipping: could not init git repo: %v", err)
+	}
+
+	// AllBranchesAbsent should return true since no agent branches exist.
+	if !protocol.AllBranchesAbsent(manifest, 1, tmpDir) {
+		t.Error("AllBranchesAbsent() = false, want true when no agent branches exist")
+	}
+
+	// Simulate the bypass: populate a synthetic MergeResult as finalize-wave would.
+	mergeResult := make(map[string]*protocol.MergeAgentsData)
+	mergeResult["."] = &protocol.MergeAgentsData{Wave: 1}
+
+	if mergeResult["."].Wave != 1 {
+		t.Errorf("MergeResult.Wave = %d, want 1 for all-branches-absent bypass", mergeResult["."].Wave)
+	}
+}
+
+// TestFinalizeWave_NormalPathUnchanged is a regression guard verifying that when
+// a worktree directory DOES exist, WorktreesAbsent returns false — so the normal
+// path (including VerifyCommits) would be taken, not the solo-wave bypass.
+func TestFinalizeWave_NormalPathUnchanged(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+	}
+
+	tmpDir := t.TempDir()
+
+	// Create the worktree directory for agent A so at least one worktree is present.
+	worktreeDir := protocol.WorktreeDir(tmpDir, manifest.FeatureSlug, 1, "A")
+	if err := os.MkdirAll(worktreeDir, 0755); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// WorktreesAbsent must return false — the normal path (VerifyCommits) should run.
+	if protocol.WorktreesAbsent(manifest, 1, tmpDir) {
+		t.Error("WorktreesAbsent() = true, want false when at least one worktree dir exists (normal path)")
+	}
+}
+
+// TestFinalizeWave_E7BlocksOnPartialStatus verifies that an agent with
+// status "partial" in its completion report causes finalize-wave to block
+// (step 1.1 E7 check). This is a unit test of the PredictConflictsFromReports
+// helper and the E7 logic that reads completion report statuses.
+func TestFinalizeWave_E7BlocksOnPartialStatus(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {Status: "complete"},
+			"B": {Status: "partial"},
+		},
+	}
+
+	// Verify the E7 check fires: any partial/blocked agent should be detected.
+	for _, agent := range manifest.Waves[0].Agents {
+		if report, ok := manifest.CompletionReports[agent.ID]; ok {
+			if report.Status == "partial" || report.Status == "blocked" {
+				// This is the condition finalize-wave checks in step 1.1.
+				return // Test passes: we found the partial agent.
+			}
+		}
+	}
+	t.Error("E7 check: expected to find agent B with status=partial, but did not")
+}
+
+// TestFinalizeWave_E7BlocksOnBlockedStatus verifies that an agent with
+// status "blocked" triggers the E7 check.
+func TestFinalizeWave_E7BlocksOnBlockedStatus(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {Status: "blocked"},
+			"B": {Status: "complete"},
+		},
+	}
+
+	for _, agent := range manifest.Waves[0].Agents {
+		if report, ok := manifest.CompletionReports[agent.ID]; ok {
+			if report.Status == "partial" || report.Status == "blocked" {
+				return // Test passes: blocked agent detected.
+			}
+		}
+	}
+	t.Error("E7 check: expected to find agent A with status=blocked, but did not")
+}
+
+// TestFinalizeWave_E7AllCompleteAllowed verifies that when all agents report
+// "complete", the E7 check passes without blocking.
+func TestFinalizeWave_E7AllCompleteAllowed(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {Status: "complete"},
+			"B": {Status: "complete"},
+		},
+	}
+
+	for _, agent := range manifest.Waves[0].Agents {
+		if report, ok := manifest.CompletionReports[agent.ID]; ok {
+			if report.Status == "partial" || report.Status == "blocked" {
+				t.Errorf("E7 check should not block on complete agents, but flagged agent %s with status %q",
+					agent.ID, report.Status)
+			}
+		}
+	}
+}
+
+// TestFinalizeWave_E11BlocksOnFileConflict verifies that when two agents
+// report modifying the same file, E11 conflict prediction detects it.
+func TestFinalizeWave_E11BlocksOnFileConflict(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/shared/shared.go"},
+			},
+			"B": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/shared/shared.go"},
+			},
+		},
+	}
+
+	conflictRes := protocol.PredictConflictsFromReports(context.Background(), manifest, 1)
+	if conflictRes.IsSuccess() {
+		t.Error("E11 check: expected conflict result when two agents share a file, got success")
+	}
+}
+
+// TestFinalizeWave_E11NoConflict verifies that when agents have disjoint
+// file sets, E11 conflict prediction passes.
+func TestFinalizeWave_E11NoConflict(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}, {ID: "B"}},
+			},
+		},
+		CompletionReports: map[string]protocol.CompletionReport{
+			"A": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/foo/foo.go"},
+			},
+			"B": {
+				Status:       "complete",
+				FilesChanged: []string{"pkg/bar/bar.go"},
+			},
+		},
+	}
+
+	if res := protocol.PredictConflictsFromReports(context.Background(), manifest, 1); !res.IsSuccess() {
+		t.Errorf("E11 check: expected success for disjoint files, got code: %s errors: %v", res.Code, res.Errors)
+	}
+}
+
+// TestFinalizeWave_MergeTargetFlag verifies that the --merge-target flag is
+// registered on the finalize-wave command and parses correctly.
+func TestFinalizeWave_MergeTargetFlag(t *testing.T) {
+	cmd := newFinalizeWaveCmd()
+
+	// Verify the flag exists
+	flag := cmd.Flags().Lookup("merge-target")
+	if flag == nil {
+		t.Fatal("expected --merge-target flag to be registered on finalize-wave command")
+	}
+
+	// Verify default value is empty
+	if flag.DefValue != "" {
+		t.Errorf("expected --merge-target default to be empty, got %q", flag.DefValue)
+	}
+
+	// Verify flag can be set
+	if err := cmd.Flags().Set("merge-target", "impl/my-feature"); err != nil {
+		t.Errorf("failed to set --merge-target flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetString("merge-target")
+	if err != nil {
+		t.Fatalf("failed to get --merge-target value: %v", err)
+	}
+	if val != "impl/my-feature" {
+		t.Errorf("expected --merge-target=impl/my-feature, got %q", val)
+	}
+}
+
+// TestPrepareWave_MergeTargetFlag verifies that the --merge-target flag is
+// registered on the prepare-wave command and parses correctly.
+func TestPrepareWave_MergeTargetFlag(t *testing.T) {
+	cmd := newPrepareWaveCmd()
+
+	// Verify the flag exists
+	flag := cmd.Flags().Lookup("merge-target")
+	if flag == nil {
+		t.Fatal("expected --merge-target flag to be registered on prepare-wave command")
+	}
+
+	// Verify default value is empty
+	if flag.DefValue != "" {
+		t.Errorf("expected --merge-target default to be empty, got %q", flag.DefValue)
+	}
+
+	// Verify flag can be set
+	if err := cmd.Flags().Set("merge-target", "impl/another-feature"); err != nil {
+		t.Errorf("failed to set --merge-target flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetString("merge-target")
+	if err != nil {
+		t.Fatalf("failed to get --merge-target value: %v", err)
+	}
+	if val != "impl/another-feature" {
+		t.Errorf("expected --merge-target=impl/another-feature, got %q", val)
+	}
+}
+
+// initBareGitRepo initialises a minimal git repository in dir so that git
+// branch operations work in tests that call AllBranchesAbsent.
+func initBareGitRepo(t *testing.T, dir string) error {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "-C", dir, "init"},
+		{"git", "-C", dir, "config", "user.email", "test@test.com"},
+		{"git", "-C", dir, "config", "user.name", "Test"},
+		{"git", "-C", dir, "commit", "--allow-empty", "-m", "init"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			return fmt.Errorf("git init step %v failed: %w\n%s", args, err, out)
+		}
+	}
+	return nil
+}
+
+// TestFinalizeWaveResult_IntegrationActionRequiredField verifies that
+// engine.FinalizeWaveResult serializes the integration_action_required and
+// wiring_gaps fields correctly, and that they are zero-valued when clean.
+func TestFinalizeWaveResult_IntegrationActionRequiredField(t *testing.T) {
+	// Zero-valued case: wiring is clean
+	r := &engine.FinalizeWaveResult{
+		Wave:    1,
+		Success: true,
+	}
+	if r.IntegrationActionRequired {
+		t.Error("IntegrationActionRequired should be false when wiring is clean")
+	}
+	if r.WiringGaps != nil {
+		t.Errorf("WiringGaps should be nil when clean, got %v", r.WiringGaps)
+	}
+
+	// JSON serialization: false/nil should not emit wiring_gaps
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"integration_action_required":false`) {
+		t.Errorf("expected integration_action_required:false in JSON, got: %s", s)
+	}
+	if strings.Contains(s, `"wiring_gaps"`) {
+		t.Errorf("wiring_gaps should be omitted when nil, got: %s", s)
+	}
+}
+
+// TestFinalizeWave_SkipMergeFlag verifies that the --skip-merge flag is
+// registered on the finalize-wave command and parses correctly.
+func TestFinalizeWave_SkipMergeFlag(t *testing.T) {
+	cmd := newFinalizeWaveCmd()
+
+	flag := cmd.Flags().Lookup("skip-merge")
+	if flag == nil {
+		t.Fatal("expected --skip-merge flag to be registered on finalize-wave command")
+	}
+
+	if flag.DefValue != "false" {
+		t.Errorf("expected --skip-merge default to be false, got %q", flag.DefValue)
+	}
+
+	if err := cmd.Flags().Set("skip-merge", "true"); err != nil {
+		t.Errorf("failed to set --skip-merge flag: %v", err)
+	}
+
+	val, err := cmd.Flags().GetBool("skip-merge")
+	if err != nil {
+		t.Fatalf("failed to get --skip-merge value: %v", err)
+	}
+	if !val {
+		t.Error("expected --skip-merge=true after setting flag")
+	}
+}
+
+// TestFinalizeWaveResult_WiringGapsPopulated verifies that when wiring gaps
+// exist, IntegrationActionRequired is true and WiringGaps is serialized correctly.
+func TestFinalizeWaveResult_WiringGapsPopulated(t *testing.T) {
+	r := &engine.FinalizeWaveResult{
+		Wave:                     1,
+		IntegrationActionRequired: true,
+		WiringGaps: []string{
+			"MyFunc not called in cmd/main.go",
+			"Setup not called in cmd/server.go",
+		},
+	}
+
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"integration_action_required":true`) {
+		t.Errorf("expected integration_action_required:true in JSON, got: %s", s)
+	}
+	if !strings.Contains(s, `"wiring_gaps"`) {
+		t.Errorf("expected wiring_gaps in JSON, got: %s", s)
+	}
+	if !strings.Contains(s, "MyFunc not called in cmd/main.go") {
+		t.Errorf("expected gap text in wiring_gaps, got: %s", s)
+	}
+}
+
+// TestFinalizeWave_BuildPassedField verifies that engine.FinalizeWaveResult
+// includes the BuildPassed field (present in engine, previously absent in CLI).
+func TestFinalizeWave_BuildPassedField(t *testing.T) {
+	r := &engine.FinalizeWaveResult{
+		Wave:        1,
+		BuildPassed: true,
+		Success:     true,
+	}
+	if !r.BuildPassed {
+		t.Error("BuildPassed should be true when set")
+	}
+
+	out, err := json.Marshal(r)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `"build_passed":true`) {
+		t.Errorf("expected build_passed:true in JSON, got: %s", s)
+	}
+}
+
+// writeFinalizeTestIMPL writes a minimal IMPL manifest YAML with the given
+// file_ownership entries to a temp file and returns the file path.
+func writeFinalizeTestIMPL(t *testing.T, dir string, ownerships []protocol.FileOwnership) string {
+	t.Helper()
+	m := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{
+				Number: 1,
+				Agents: []protocol.Agent{{ID: "A"}},
+			},
+		},
+		FileOwnership: ownerships,
+	}
+	data, err := yaml.Marshal(m)
+	if err != nil {
+		t.Fatalf("failed to marshal IMPL manifest: %v", err)
+	}
+	path := filepath.Join(dir, "IMPL-test.yaml")
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
+	}
+	return path
+}
+
+// writePolywaveConfig writes a polywave.config.json with the given repos to dir.
+func writePolywaveConfig(t *testing.T, dir string, repos []map[string]string) {
+	t.Helper()
+	data, err := json.Marshal(map[string]interface{}{"repos": repos})
+	if err != nil {
+		t.Fatalf("failed to marshal polywave.config.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), data, 0644); err != nil {
+		t.Fatalf("failed to write polywave.config.json: %v", err)
+	}
+}
+
+// TestAutoDetectRepoDir_CrossRepo verifies that autoDetectRepoDir returns
+// detected=true and the resolved path when the IMPL has cross-repo entries
+// and polywave.config.json has a matching repo entry.
+func TestAutoDetectRepoDir_CrossRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write minimal IMPL with cross-repo file_ownership.
+	implPath := writeFinalizeTestIMPL(t, tmpDir, []protocol.FileOwnership{
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
+	})
+
+	// Write polywave.config.json with matching repo entry.
+	writePolywaveConfig(t, tmpDir, []map[string]string{
+		{"name": "polywave-go", "path": "/tmp/fake-repo"},
+	})
+
+	path, detected, repoName, err := autoDetectRepoDir(implPath, 1)
+	if err != nil {
+		t.Fatalf("autoDetectRepoDir returned unexpected error: %v", err)
+	}
+	if !detected {
+		t.Error("expected detected=true for cross-repo IMPL with matching config")
+	}
+	if repoName != "polywave-go" {
+		t.Errorf("expected repoName=polywave-go, got %q", repoName)
+	}
+	// The resolved path should be the absolute form of /tmp/fake-repo.
+	wantPath, _ := filepath.Abs("/tmp/fake-repo")
+	if path != wantPath {
+		t.Errorf("expected path=%q, got %q", wantPath, path)
+	}
+}
+
+// TestAutoDetectRepoDir_SingleRepo verifies that autoDetectRepoDir returns
+// detected=false when the IMPL has no Repo fields in file_ownership.
+func TestAutoDetectRepoDir_SingleRepo(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Write IMPL with no Repo fields.
+	implPath := writeFinalizeTestIMPL(t, tmpDir, []protocol.FileOwnership{
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1},
+	})
+
+	// Write polywave.config.json (doesn't matter for this case).
+	writePolywaveConfig(t, tmpDir, []map[string]string{
+		{"name": "some-repo", "path": "/tmp/some-repo"},
+	})
+
+	_, detected, _, err := autoDetectRepoDir(implPath, 1)
+	if err != nil {
+		t.Fatalf("autoDetectRepoDir returned unexpected error: %v", err)
+	}
+	if detected {
+		t.Error("expected detected=false for single-repo IMPL (no Repo fields)")
+	}
+}
+
+// TestCrossRepoOwnsFiles_Match verifies that crossRepoOwnsFiles returns true
+// when the repoDir base name matches a Repo field in file_ownership.
+func TestCrossRepoOwnsFiles_Match(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
+		},
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
+		},
+	}
+
+	// repoDir whose base name matches "polywave-go".
+	repoDir := "/Users/dev/polywave-go"
+	if !crossRepoOwnsFiles(manifest, 1, repoDir) {
+		t.Error("expected crossRepoOwnsFiles=true when repoDir base name matches Repo field")
+	}
+}
+
+// TestCrossRepoOwnsFiles_NoMatch verifies that crossRepoOwnsFiles returns
+// false when the repoDir base name does not match any Repo field.
+func TestCrossRepoOwnsFiles_NoMatch(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FeatureSlug: "test-feature",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A"}}},
+		},
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
+		},
+	}
+
+	// repoDir whose base name does NOT match "polywave-go".
+	repoDir := "/Users/dev/wrong-repo"
+	if crossRepoOwnsFiles(manifest, 1, repoDir) {
+		t.Error("expected crossRepoOwnsFiles=false when repoDir base name does not match Repo field")
+	}
+}

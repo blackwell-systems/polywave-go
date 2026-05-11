@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 )
 
 // extractStringInput retrieves a string value from an input map by key.

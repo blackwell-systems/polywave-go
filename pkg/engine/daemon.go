@@ -5,17 +5,17 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/autonomy"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/queue"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DaemonOpts configures the daemon run loop.
 type DaemonOpts struct {
 	RepoPath       string
 	AutonomyConfig autonomy.Config
-	SAWRepoPath    string        // for Scout agent
+	PolywaveRepoPath    string        // for Scout agent
 	ChatModel      string        // default model
 	PollInterval   time.Duration // how often to check queue (default: 30s)
 	OnEvent        func(Event)
@@ -271,7 +271,7 @@ func daemonProcessItem(
 	scoutOpts := RunScoutOpts{
 		Feature:     title,
 		RepoPath:    opts.RepoPath,
-		SAWRepoPath: opts.SAWRepoPath,
+		PolywaveRepoPath: opts.PolywaveRepoPath,
 		IMPLOutPath: implPath,
 		ScoutModel:  opts.ChatModel,
 	}

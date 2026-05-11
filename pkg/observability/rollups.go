@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TrendResult holds time-series data for a metric over a time range.
@@ -27,7 +27,7 @@ type TrendBucket struct {
 func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "cost"))
 	if err != nil {
-		return result.NewFailure[RollupResult]([]result.SAWError{
+		return result.NewFailure[RollupResult]([]result.PolywaveError{
 			result.NewFatal("O002_OBS_QUERY_FAILED", "query cost events: "+err.Error()).WithCause(err),
 		})
 	}
@@ -68,7 +68,7 @@ func ComputeCostRollup(ctx context.Context, store Store, req RollupRequest) resu
 func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "agent_performance"))
 	if err != nil {
-		return result.NewFailure[RollupResult]([]result.SAWError{
+		return result.NewFailure[RollupResult]([]result.PolywaveError{
 			result.NewFatal("O002_OBS_QUERY_FAILED", "query performance events: "+err.Error()).WithCause(err),
 		})
 	}
@@ -124,7 +124,7 @@ func ComputeSuccessRateRollup(ctx context.Context, store Store, req RollupReques
 func ComputeRetryRollup(ctx context.Context, store Store, req RollupRequest) result.Result[RollupResult] {
 	events, err := store.QueryEvents(ctx, rollupFilters(req, "agent_performance"))
 	if err != nil {
-		return result.NewFailure[RollupResult]([]result.SAWError{
+		return result.NewFailure[RollupResult]([]result.PolywaveError{
 			result.NewFatal("O002_OBS_QUERY_FAILED", "query performance events: "+err.Error()).WithCause(err),
 		})
 	}
@@ -193,7 +193,7 @@ func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[Tren
 	case "success_rate", "retry_count":
 		eventType = "agent_performance"
 	default:
-		return result.NewFailure[TrendResult]([]result.SAWError{
+		return result.NewFailure[TrendResult]([]result.PolywaveError{
 			result.NewFatal("O002_OBS_QUERY_FAILED", "unsupported metric: "+metric),
 		})
 	}
@@ -205,7 +205,7 @@ func ComputeTrend(ctx context.Context, opts ComputeTrendOpts) result.Result[Tren
 		Limit:      0,
 	})
 	if err != nil {
-		return result.NewFailure[TrendResult]([]result.SAWError{
+		return result.NewFailure[TrendResult]([]result.PolywaveError{
 			result.NewFatal("O002_OBS_QUERY_FAILED", "query events for trend: "+err.Error()).WithCause(err),
 		})
 	}

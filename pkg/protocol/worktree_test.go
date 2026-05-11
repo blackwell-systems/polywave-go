@@ -109,13 +109,13 @@ func TestCreateWorktrees_HappyPath(t *testing.T) {
 		}
 
 		// Check path format (slug-scoped)
-		expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-"+agentID)
+		expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "polywave", "test-feature", "wave1-agent-"+agentID)
 		if info.Path != expectedPath {
 			t.Errorf("worktree %d: expected path %s, got %s", i, expectedPath, info.Path)
 		}
 
 		// Check branch name (slug-scoped)
-		expectedBranch := "saw/test-feature/wave1-agent-" + agentID
+		expectedBranch := "polywave/test-feature/wave1-agent-" + agentID
 		if info.Branch != expectedBranch {
 			t.Errorf("worktree %d: expected branch %s, got %s", i, expectedBranch, info.Branch)
 		}
@@ -198,7 +198,7 @@ func TestCreateWorktrees_GitFailure(t *testing.T) {
 	manifestPath := createTestManifest(t, repoDir, 1, agentIDs)
 
 	// Create the worktree directory manually to cause a conflict
-	conflictPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-A")
+	conflictPath := filepath.Join(repoDir, ".claude", "worktrees", "polywave", "test-feature", "wave1-agent-A")
 	if err := os.MkdirAll(conflictPath, 0755); err != nil {
 		t.Fatalf("failed to create conflict directory: %v", err)
 	}
@@ -295,11 +295,11 @@ func TestCreateWorktrees_InstallsHooks(t *testing.T) {
 	}
 
 	// Verify hook was generated from embedded template (not copied from test hook)
-	if !strings.Contains(string(content), "SAW_ALLOW_MAIN_COMMIT") {
-		t.Error("hook missing SAW_ALLOW_MAIN_COMMIT marker")
+	if !strings.Contains(string(content), "POLYWAVE_ALLOW_MAIN_COMMIT") {
+		t.Error("hook missing POLYWAVE_ALLOW_MAIN_COMMIT marker")
 	}
-	if !strings.Contains(string(content), "SAW pre-commit guard") {
-		t.Error("hook missing 'SAW pre-commit guard' comment")
+	if !strings.Contains(string(content), "Polywave pre-commit guard") {
+		t.Error("hook missing 'Polywave pre-commit guard' comment")
 	}
 
 	// Verify hook is executable
@@ -351,7 +351,7 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 		t.Fatalf("hook not found at %s: %v", worktreeHookPath, err)
 	}
 	// Verify hook has SAW isolation markers
-	if !strings.Contains(string(hookContent), "SAW_ALLOW_MAIN_COMMIT") {
-		t.Error("hook missing SAW_ALLOW_MAIN_COMMIT marker")
+	if !strings.Contains(string(hookContent), "POLYWAVE_ALLOW_MAIN_COMMIT") {
+		t.Error("hook missing POLYWAVE_ALLOW_MAIN_COMMIT marker")
 	}
 }

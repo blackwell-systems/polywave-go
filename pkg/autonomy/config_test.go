@@ -34,7 +34,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 			"max_queue_depth": 20
 		}
 	}`
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -59,7 +59,7 @@ func TestLoadConfig_ValidFile(t *testing.T) {
 
 func TestLoadConfig_InvalidJSON(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte("{not valid json"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte("{not valid json"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -78,7 +78,7 @@ func TestLoadConfig_InvalidJSON(t *testing.T) {
 func TestLoadConfig_MissingAutonomySection(t *testing.T) {
 	dir := t.TempDir()
 	content := `{"other_section": {"foo": "bar"}}`
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -99,7 +99,7 @@ func TestLoadConfig_MissingAutonomySection(t *testing.T) {
 func TestLoadConfig_InvalidLevel(t *testing.T) {
 	dir := t.TempDir()
 	content := `{"autonomy": {"level": "turbo"}}`
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte(content), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte(content), 0644); err != nil {
 		t.Fatal(err)
 	}
 

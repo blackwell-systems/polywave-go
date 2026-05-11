@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // WaitForCompletion polls the IMPL manifest at implDocPath every pollInterval until
@@ -38,7 +38,7 @@ func WaitForCompletionResult(ctx context.Context, implDocPath, agentID string, t
 		// Load the YAML manifest
 		manifest, err := protocol.Load(ctx, implDocPath)
 		if err != nil {
-			return result.NewFailure[*protocol.CompletionReport]([]result.SAWError{
+			return result.NewFailure[*protocol.CompletionReport]([]result.PolywaveError{
 				result.NewFatal("AGENT_COMPLETION_LOAD_FAILED",
 					fmt.Sprintf("WaitForCompletion agent %s: failed to load manifest: %v", agentID, err)),
 			})
@@ -52,7 +52,7 @@ func WaitForCompletionResult(ctx context.Context, implDocPath, agentID string, t
 		// Report not found yet — check whether we have time to retry.
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return result.NewFailure[*protocol.CompletionReport]([]result.SAWError{
+			return result.NewFailure[*protocol.CompletionReport]([]result.PolywaveError{
 				result.NewFatal("AGENT_COMPLETION_TIMEOUT",
 					fmt.Sprintf("WaitForCompletion agent %s: timed out after %s waiting for completion report in %q", agentID, timeout, implDocPath)),
 			})
@@ -67,7 +67,7 @@ func WaitForCompletionResult(ctx context.Context, implDocPath, agentID string, t
 		select {
 		case <-time.After(sleep):
 		case <-ctx.Done():
-			return result.NewFailure[*protocol.CompletionReport]([]result.SAWError{
+			return result.NewFailure[*protocol.CompletionReport]([]result.PolywaveError{
 				result.NewFatal("AGENT_COMPLETION_CANCELLED",
 					fmt.Sprintf("WaitForCompletion agent %s: context cancelled while waiting for completion report", agentID)),
 			})

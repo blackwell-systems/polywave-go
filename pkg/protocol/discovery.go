@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // IMPLSummary represents a lightweight summary of an IMPL document.
@@ -68,7 +68,7 @@ func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Re
 	for _, scanDir := range dirs {
 		// Check for cancellation before scanning each directory
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
+			return result.NewFailure[*ListIMPLsData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "context cancelled during directory scan", Severity: "fatal"},
 			})
 		}
@@ -98,7 +98,7 @@ func ListIMPLs(ctx context.Context, dir string, opts ...ListIMPLsOpts) result.Re
 	for _, path := range allMatches {
 		// Check for cancellation before processing each file
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[*ListIMPLsData]([]result.SAWError{
+			return result.NewFailure[*ListIMPLsData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "context cancelled during manifest processing", Severity: "fatal"},
 			})
 		}
@@ -153,7 +153,7 @@ type ArchiveData struct {
 // Returns the new path if successful.
 func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[ArchiveData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
 		})
 	}
@@ -169,7 +169,7 @@ func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[Archive
 	// Ensure complete directory exists
 	completeDir := filepath.Join(dir, "complete")
 	if err := os.MkdirAll(completeDir, 0755); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: "ARCHIVE_MKDIR_FAILED", Message: err.Error(), Severity: "fatal"},
 		})
 	}
@@ -177,7 +177,7 @@ func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[Archive
 	// Move file
 	destPath := filepath.Join(completeDir, filename)
 	if err := os.Rename(manifestPath, destPath); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: "ARCHIVE_RENAME_FAILED", Message: err.Error(), Severity: "fatal"},
 		})
 	}
@@ -189,7 +189,7 @@ func ArchiveIMPL(ctx context.Context, manifestPath string) result.Result[Archive
 // Returns the new path. Idempotent — returns the existing path if already archived.
 func ArchiveProgram(ctx context.Context, manifestPath string) result.Result[ArchiveData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
 		})
 	}
@@ -204,14 +204,14 @@ func ArchiveProgram(ctx context.Context, manifestPath string) result.Result[Arch
 	// Archive to docs/PROGRAM/complete/
 	completeDir := filepath.Join(dir, "complete")
 	if err := os.MkdirAll(completeDir, 0755); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: "ARCHIVE_MKDIR_FAILED", Message: err.Error(), Severity: "fatal"},
 		})
 	}
 
 	destPath := filepath.Join(completeDir, filename)
 	if err := os.Rename(manifestPath, destPath); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{
 			{Code: "ARCHIVE_RENAME_FAILED", Message: err.Error(), Severity: "fatal"},
 		})
 	}

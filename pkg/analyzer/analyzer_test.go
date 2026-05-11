@@ -17,7 +17,7 @@ func TestParseFile_ValidGo(t *testing.T) {
 
 import (
 	"fmt"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 func main() {
@@ -79,7 +79,7 @@ func TestExtractImports_LocalOnly(t *testing.T) {
 	}
 
 	// Create go.mod
-	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+	goModContent := `module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 `
@@ -94,7 +94,7 @@ go 1.25.0
 import (
 	"fmt"
 	"net/http"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 func main() {}
@@ -131,7 +131,7 @@ func TestExtractImports_NoImports(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	// Create go.mod
-	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+	goModContent := `module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 `
@@ -243,8 +243,8 @@ func TestResolveImportPath_Success(t *testing.T) {
 		t.Fatalf("failed to create pkg dir: %v", err)
 	}
 
-	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
-	importPath := "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	modulePath := "github.com/blackwell-systems/polywave-go"
+	importPath := "github.com/blackwell-systems/polywave-go/pkg/protocol"
 
 	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
 	if !res.IsSuccess() {
@@ -260,8 +260,8 @@ func TestResolveImportPath_Success(t *testing.T) {
 
 func TestResolveImportPath_NonExistentDir(t *testing.T) {
 	tmpDir := t.TempDir()
-	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
-	importPath := "github.com/blackwell-systems/scout-and-wave-go/pkg/nonexistent"
+	modulePath := "github.com/blackwell-systems/polywave-go"
+	importPath := "github.com/blackwell-systems/polywave-go/pkg/nonexistent"
 
 	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
 	if res.IsSuccess() {
@@ -279,7 +279,7 @@ func TestResolveImportPath_NonExistentDir(t *testing.T) {
 
 func TestResolveImportPath_WrongModule(t *testing.T) {
 	tmpDir := t.TempDir()
-	modulePath := "github.com/blackwell-systems/scout-and-wave-go"
+	modulePath := "github.com/blackwell-systems/polywave-go"
 	importPath := "github.com/other/repo/pkg/foo"
 
 	res := ResolveImportPath(context.Background(), importPath, tmpDir, modulePath)
@@ -299,7 +299,7 @@ func TestResolveImportPath_WrongModule(t *testing.T) {
 func TestGetModulePath(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+	goModContent := `module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 
@@ -316,7 +316,7 @@ require (
 		t.Fatalf("getModulePath() error = %v", err)
 	}
 
-	expected := "github.com/blackwell-systems/scout-and-wave-go"
+	expected := "github.com/blackwell-systems/polywave-go"
 	if modulePath != expected {
 		t.Errorf("getModulePath() = %q, want %q", modulePath, expected)
 	}
@@ -374,7 +374,7 @@ import (
 func TestExtractImports_CgoImport(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+	goModContent := `module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 `
@@ -440,7 +440,7 @@ func TestExtractImports_CancelledContext(t *testing.T) {
 		t.Fatalf("failed to create pkg dir: %v", err)
 	}
 
-	goModContent := `module github.com/blackwell-systems/scout-and-wave-go
+	goModContent := `module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 `

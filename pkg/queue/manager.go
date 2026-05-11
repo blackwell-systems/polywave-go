@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,7 +71,7 @@ func slugFromTitle(title string) string {
 // Returns a Result containing the slug and file path on success.
 func (m *Manager) Add(item Item) result.Result[AddData] {
 	if item.Slug == "" && item.Title == "" {
-		return result.NewFailure[AddData]([]result.SAWError{
+		return result.NewFailure[AddData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueAddFailed, "queue item must have a title or slug"),
 		})
 	}
@@ -84,7 +84,7 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 
 	dir := m.queueDir()
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return result.NewFailure[AddData]([]result.SAWError{
+		return result.NewFailure[AddData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueAddFailed, fmt.Sprintf("create queue dir: %s", err.Error())).WithCause(err),
 		})
 	}
@@ -95,13 +95,13 @@ func (m *Manager) Add(item Item) result.Result[AddData] {
 	path := filepath.Join(dir, filename)
 
 	if _, err := os.Stat(path); err == nil {
-		return result.NewFailure[AddData]([]result.SAWError{
+		return result.NewFailure[AddData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueAddFailed, fmt.Sprintf("queue item already exists: %s", path)),
 		})
 	}
 
 	if err := protocol.SaveYAML(path, &item); err != nil {
-		return result.NewFailure[AddData]([]result.SAWError{
+		return result.NewFailure[AddData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueAddFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -121,7 +121,7 @@ func (m *Manager) List() result.Result[ListData] {
 		if os.IsNotExist(err) {
 			return result.NewSuccess(ListData{Items: []Item{}, Count: 0})
 		}
-		return result.NewFailure[ListData]([]result.SAWError{
+		return result.NewFailure[ListData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueListFailed, fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
 		})
 	}
@@ -138,7 +138,7 @@ func (m *Manager) List() result.Result[ListData] {
 		path := filepath.Join(dir, name)
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return result.NewFailure[ListData]([]result.SAWError{
+			return result.NewFailure[ListData]([]result.PolywaveError{
 				result.NewFatal(result.CodeQueueListFailed, err.Error()).WithCause(err),
 			})
 		}
@@ -166,7 +166,7 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 	// Check queue items for complete status
 	listResult := m.List()
 	if listResult.IsFatal() {
-		return result.NewFailure[map[string]bool]([]result.SAWError{
+		return result.NewFailure[map[string]bool]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueCompletedScanFailed, listResult.Errors[0].Message),
 		})
 	}
@@ -185,11 +185,11 @@ func (m *Manager) completedSlugs() result.Result[map[string]bool] {
 		if os.IsNotExist(err) {
 			return result.NewSuccess(completed)
 		}
-		return result.NewFailure[map[string]bool]([]result.SAWError{
+		return result.NewFailure[map[string]bool]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueCompletedScanFailed, fmt.Sprintf("read complete dir: %s", err.Error())).WithCause(err),
 		})
 	}
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 	for _, e := range entries {
 		if e.IsDir() {
 			continue
@@ -263,7 +263,7 @@ func (m *Manager) Next() result.Result[Item] {
 		}
 	}
 
-	return result.NewFailure[Item]([]result.SAWError{
+	return result.NewFailure[Item]([]result.PolywaveError{
 		result.NewFatal(result.CodeQueueEmpty, "no eligible items in queue"),
 	})
 }
@@ -278,7 +278,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 		"blocked":     true,
 	}
 	if !validStatuses[status] {
-		return result.NewFailure[UpdateStatusData]([]result.SAWError{
+		return result.NewFailure[UpdateStatusData]([]result.PolywaveError{
 			result.NewError(result.CodeQueueStatusUpdateFailed,
 				fmt.Sprintf("invalid status %q: must be one of queued, in_progress, complete, blocked", status)),
 		})
@@ -287,7 +287,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 	dir := m.queueDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return result.NewFailure[UpdateStatusData]([]result.SAWError{
+		return result.NewFailure[UpdateStatusData]([]result.PolywaveError{
 			result.NewFatal(result.CodeQueueStatusUpdateFailed, fmt.Sprintf("read dir: %s", err.Error())).WithCause(err),
 		})
 	}
@@ -303,14 +303,14 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 		path := filepath.Join(dir, name)
 		item, err := protocol.LoadYAML[Item](path)
 		if err != nil {
-			return result.NewFailure[UpdateStatusData]([]result.SAWError{
+			return result.NewFailure[UpdateStatusData]([]result.PolywaveError{
 				result.NewFatal(result.CodeQueueStatusUpdateFailed, err.Error()).WithCause(err),
 			})
 		}
 		if item.Slug == slug {
 			item.Status = status
 			if err := protocol.SaveYAML(path, &item); err != nil {
-				return result.NewFailure[UpdateStatusData]([]result.SAWError{
+				return result.NewFailure[UpdateStatusData]([]result.PolywaveError{
 					result.NewFatal(result.CodeQueueStatusUpdateFailed, err.Error()).WithCause(err),
 				})
 			}
@@ -321,7 +321,7 @@ func (m *Manager) UpdateStatus(slug string, status string) result.Result[UpdateS
 		}
 	}
 
-	return result.NewFailure[UpdateStatusData]([]result.SAWError{
+	return result.NewFailure[UpdateStatusData]([]result.PolywaveError{
 		result.NewFatal(result.CodeQueueStatusUpdateFailed, fmt.Sprintf("slug %q not found in queue", slug)),
 	})
 }

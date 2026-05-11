@@ -4,7 +4,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // PrioritizeAgents analyzes the dependency graph and agent file counts
@@ -18,7 +18,7 @@ import (
 // with fewer files launches first (lower implementation risk).
 func PrioritizeAgents(manifest *protocol.IMPLManifest, waveNum int) []string {
 	// Check for prioritization disable flag (set by --no-prioritize CLI flag)
-	if os.Getenv("SAW_NO_PRIORITIZE") == "1" {
+	if os.Getenv("POLYWAVE_NO_PRIORITIZE") == "1" {
 		// Return agents in declaration order (no prioritization)
 		var targetWave *protocol.Wave
 		for i := range manifest.Waves {

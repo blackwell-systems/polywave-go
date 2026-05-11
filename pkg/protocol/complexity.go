@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
@@ -22,9 +22,9 @@ const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
 //
 // Warnings (advisory):
 //   - W001_AGENT_SCOPE_LARGE: agent owns >8 files or creates >5 new files.
-func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWError {
+func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.PolywaveError {
 	_ = ctx
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 
 	// V047: Reject trivial single-agent, single-file IMPLs declared SUITABLE.
 	// The suitability gate is LLM-driven; this catch ensures small-scope work
@@ -38,7 +38,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWErro
 			totalAgents += len(wave.Agents)
 		}
 		if totalAgents == 1 && len(m.FileOwnership) == 1 {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeTrivialScope,
 				Message:  "IMPL has 1 agent owning 1 file — SAW adds no parallelization value at this scope; make the change directly instead",
 				Severity: "error",
@@ -61,7 +61,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWErro
 	// Warn for any agent with total files > 8
 	for agentID, count := range totalFiles {
 		if count > 8 {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeAgentScopeLarge,
 				Message:  fmt.Sprintf("agent %s owns %d files (threshold: 8) — consider splitting into two agents", agentID, count),
 				Severity: "warning",
@@ -73,7 +73,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWErro
 	// Warn for any agent with new files > 5
 	for agentID, newCount := range newFiles {
 		if newCount > 5 {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeAgentScopeLarge,
 				Message:  fmt.Sprintf("agent %s creates %d new files (threshold: 5) — consider splitting into two agents", agentID, newCount),
 				Severity: "warning",
@@ -89,7 +89,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.SAWErro
 // lines. Only action=modify files are counted (action=new files do not yet exist).
 // Returns blocking errors for agents over budget.
 // If repoPath is empty, all checks are skipped (allows offline validation).
-func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, maxLOC int) []result.SAWError {
+func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, maxLOC int) []result.PolywaveError {
 	_ = ctx
 	if repoPath == "" {
 		return nil
@@ -128,7 +128,7 @@ func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, 
 		perFileLOC[fo.Agent] = append(perFileLOC[fo.Agent], fileEntry{fo.File, lines})
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	for agentID, loc := range totalLOC {
 		if loc > maxLOC {
 			entries := perFileLOC[agentID]
@@ -140,7 +140,7 @@ func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, 
 			for _, e := range entries {
 				sb.WriteString(fmt.Sprintf("\n  %s: %d lines", e.file, e.lines))
 			}
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     codeAgentLOCBudget,
 				Message:  sb.String(),
 				Severity: "error",

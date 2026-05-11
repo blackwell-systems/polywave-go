@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TierAdvanceResult is returned by AdvanceTierAutomatically.
@@ -63,7 +63,7 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	// Step 1: Run tier gate
 	gateRes := protocol.RunTierGate(context.Background(), manifest, completedTier, repoPath)
 	if gateRes.IsFatal() {
-		return result.NewFailure[TierAdvanceResult]([]result.SAWError{
+		return result.NewFailure[TierAdvanceResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeTierGateFailed,
 				fmt.Sprintf("AdvanceTierAutomatically: run tier gate: %s", gateRes.Errors[0].Message)).
 				WithContext("tier", fmt.Sprintf("%d", completedTier)),
@@ -89,7 +89,7 @@ func AdvanceTierAutomatically(manifest *protocol.PROGRAMManifest, completedTier 
 	// Step 4: Auto mode — freeze contracts
 	freezeRes := protocol.FreezeContracts(manifest, completedTier, repoPath)
 	if freezeRes.IsFatal() {
-		return result.NewFailure[TierAdvanceResult]([]result.SAWError{
+		return result.NewFailure[TierAdvanceResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFreezeError,
 				fmt.Sprintf("AdvanceTierAutomatically: freeze contracts: %s", freezeRes.Errors[0].Message)).
 				WithContext("tier", fmt.Sprintf("%d", completedTier)),
@@ -193,7 +193,7 @@ func ReplanProgram(opts ReplanProgramOpts) result.Result[ReplanResult] {
 	// Step 1: Read existing PROGRAM manifest
 	manifestData, err := os.ReadFile(opts.ProgramManifestPath)
 	if err != nil {
-		return result.NewFailure[ReplanResult]([]result.SAWError{
+		return result.NewFailure[ReplanResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("ReplanProgram: read manifest: %s", err)).
 				WithContext("manifest_path", opts.ProgramManifestPath),
@@ -217,13 +217,13 @@ func ReplanProgram(opts ReplanProgramOpts) result.Result[ReplanResult] {
 	if plannerRes.IsFatal() {
 		msg := "ReplanProgram: planner agent failed"
 		if len(plannerRes.Errors) > 0 {
-			// Propagate the structured SAWError code upward rather than wrapping
-			return result.NewFailure[ReplanResult]([]result.SAWError{
+			// Propagate the structured PolywaveError code upward rather than wrapping
+			return result.NewFailure[ReplanResult]([]result.PolywaveError{
 				result.NewFatal(plannerRes.Errors[0].Code,
 					fmt.Sprintf("ReplanProgram: planner agent: %s", plannerRes.Errors[0].Message)),
 			})
 		}
-		return result.NewFailure[ReplanResult]([]result.SAWError{
+		return result.NewFailure[ReplanResult]([]result.PolywaveError{
 			result.NewFatal(result.CodePlannerFailed, msg),
 		})
 	}
@@ -238,7 +238,7 @@ func ReplanProgram(opts ReplanProgramOpts) result.Result[ReplanResult] {
 	if parseErr != nil {
 		data.Errors = append(data.Errors, parseErr.Error())
 		// Validation failure is a partial success: replan ran but manifest is invalid.
-		return result.NewPartial(data, []result.SAWError{
+		return result.NewPartial(data, []result.PolywaveError{
 			result.NewError(result.CodeIMPLParseFailed,
 				fmt.Sprintf("ReplanProgram: revised manifest parse failed: %s", parseErr)).
 				WithContext("manifest_path", opts.ProgramManifestPath),

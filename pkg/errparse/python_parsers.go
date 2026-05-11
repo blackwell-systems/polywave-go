@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -52,7 +52,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 
 	pr := &ParseResult{
 		Tool:   "pytest",
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    combinedStr,
 	}
 
@@ -114,7 +114,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			// Extract file from the test node id (before ::)
 			file := extractPytestFile(testID)
 
-			se := result.SAWError{
+			se := result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "error",
@@ -148,7 +148,7 @@ func (p *PytestParser) Parse(stdout, stderr string) *ParseResult {
 			}
 
 			file := m[1]
-			se := result.SAWError{
+			se := result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "error",
@@ -207,7 +207,7 @@ func (m *MypyParser) Parse(stdout, stderr string) *ParseResult {
 
 	pr := &ParseResult{
 		Tool:   "mypy",
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    combinedStr,
 	}
 
@@ -229,7 +229,7 @@ func (m *MypyParser) Parse(stdout, stderr string) *ParseResult {
 			severity = "info"
 		}
 
-		se := result.SAWError{
+		se := result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
@@ -275,7 +275,7 @@ func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
 
 	pr := &ParseResult{
 		Tool:   "ruff",
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    combinedStr,
 	}
 
@@ -309,7 +309,7 @@ func (r *RuffParser) Parse(stdout, stderr string) *ParseResult {
 			severity = "error"
 		}
 
-		se := result.SAWError{
+		se := result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,

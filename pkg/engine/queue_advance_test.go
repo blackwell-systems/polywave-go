@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
+	"github.com/blackwell-systems/polywave-go/pkg/autonomy"
+	"github.com/blackwell-systems/polywave-go/pkg/queue"
 )
 
 // seedQueue is a helper that adds queue items to a temp repo dir and returns

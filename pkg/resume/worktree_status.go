@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // DirtyWorktree describes a SAW agent worktree and whether it has uncommitted changes.
@@ -37,7 +37,7 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 	// Build the required slug prefix for branch filtering.
 	slugPrefix := ""
 	if manifest != nil && manifest.FeatureSlug != "" {
-		slugPrefix = "saw/" + manifest.FeatureSlug + "/"
+		slugPrefix = "polywave/" + manifest.FeatureSlug + "/"
 	}
 
 	// Collect locked worktree paths using any path as the repo anchor.
@@ -69,10 +69,10 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 			continue
 		}
 
-		// Slug filtering: if a slug is configured and the branch has a saw/ prefix,
-		// it must match the expected slug. Legacy branches without "saw/" pass through
+		// Slug filtering: if a slug is configured and the branch has a polywave/ prefix,
+		// it must match the expected slug. Legacy branches without "polywave/" pass through
 		// for backward compatibility.
-		if slugPrefix != "" && strings.Contains(branch, "saw/") {
+		if slugPrefix != "" && strings.Contains(branch, "polywave/") {
 			if !strings.HasPrefix(branch, slugPrefix) {
 				continue
 			}

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // mockStore implements Store for testing query functions.

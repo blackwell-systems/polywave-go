@@ -7,7 +7,7 @@ type RunScaffoldOpts struct {
 	Ctx         context.Context
 	ImplPath    string
 	RepoPath    string
-	SAWRepoPath string
+	PolywaveRepoPath string
 	Model       string
 	OnEvent     func(Event)
 }

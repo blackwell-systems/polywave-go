@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // TestFinalizeWave_VerifyCommitsFatal verifies C4: VerifyCommits failure prevents merge.
@@ -34,24 +34,24 @@ waves:
   - number: 1
     agents:
       - id: A
-        branch: saw/test-verify-commits-fatal/wave1-agent-A
+        branch: polywave/test-verify-commits-fatal/wave1-agent-A
         files:
           - pkg/foo/foo.go
       - id: B
-        branch: saw/test-verify-commits-fatal/wave1-agent-B
+        branch: polywave/test-verify-commits-fatal/wave1-agent-B
         files:
           - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc1234567890
-    branch: saw/test-verify-commits-fatal/wave1-agent-A
+    branch: polywave/test-verify-commits-fatal/wave1-agent-A
     files_changed:
       - pkg/foo/foo.go
   B:
     status: complete
     commit: def1234567890
-    branch: saw/test-verify-commits-fatal/wave1-agent-B
+    branch: polywave/test-verify-commits-fatal/wave1-agent-B
     files_changed:
       - pkg/bar/bar.go
 `
@@ -104,24 +104,24 @@ waves:
   - number: 1
     agents:
       - id: A
-        branch: saw/test-merge-result-nil/wave1-agent-A
+        branch: polywave/test-merge-result-nil/wave1-agent-A
         files:
           - pkg/foo/foo.go
       - id: B
-        branch: saw/test-merge-result-nil/wave1-agent-B
+        branch: polywave/test-merge-result-nil/wave1-agent-B
         files:
           - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc1234567890
-    branch: saw/test-merge-result-nil/wave1-agent-A
+    branch: polywave/test-merge-result-nil/wave1-agent-A
     files_changed:
       - pkg/foo/foo.go
   B:
     status: complete
     commit: def1234567890
-    branch: saw/test-merge-result-nil/wave1-agent-B
+    branch: polywave/test-merge-result-nil/wave1-agent-B
     files_changed:
       - pkg/bar/bar.go
 `
@@ -810,7 +810,7 @@ func TestFinalizeWave_WorktreesGoneBranchesRemain(t *testing.T) {
 	}
 
 	// Create agent branch (so AllBranchesAbsent returns false)
-	if _, err := git.Run(repoRoot, "branch", "saw/test-wt-gone/wave1-agent-A"); err != nil {
+	if _, err := git.Run(repoRoot, "branch", "polywave/test-wt-gone/wave1-agent-A"); err != nil {
 		t.Fatalf("git branch: %v", err)
 	}
 
@@ -828,14 +828,14 @@ waves:
   - number: 1
     agents:
       - id: A
-        branch: saw/test-wt-gone/wave1-agent-A
+        branch: polywave/test-wt-gone/wave1-agent-A
         files:
           - pkg/foo.go
 completion_reports:
   A:
     status: complete
     commit: deadbeef
-    branch: saw/test-wt-gone/wave1-agent-A
+    branch: polywave/test-wt-gone/wave1-agent-A
     files_changed:
       - pkg/foo.go
 `

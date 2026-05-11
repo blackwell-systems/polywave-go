@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // worktreeBranchRegex validates branch names in both legacy and slug-scoped formats:
@@ -33,8 +33,8 @@ var verificationRegex = regexp.MustCompile(`\b(PASS|FAIL)\b`)
 // Returns:
 //   - E5_INVALID_WORKTREE_NAME for branch violations
 //   - E5_INVALID_WORKTREE_PATH for worktree path violations
-func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateWorktreeNames(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build map of agent -> wave number and wave -> agent count
 	agentWave := make(map[string]int)
@@ -63,7 +63,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 		if strings.TrimSpace(report.Branch) != "" && !isSolo {
 			matches := worktreeBranchRegex.FindStringSubmatch(report.Branch)
 			if matches == nil {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidWorktreeName,
 					Severity: "error",
 					Message:  fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
@@ -78,7 +78,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 				// Validate wave number matches
 				expectedWave := fmt.Sprintf("%d", waveNum)
 				if branchWave != expectedWave {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     result.CodeInvalidWorktreeName,
 						Severity: "error",
 						Message:  fmt.Sprintf("agent %s (wave %d) branch %q has wrong wave number (expected wave%s-agent-%s)", agentID, waveNum, report.Branch, expectedWave, agentID),
@@ -89,7 +89,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 
 				// Validate agent ID matches
 				if branchAgent != agentID {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     result.CodeInvalidWorktreeName,
 						Severity: "error",
 						Message:  fmt.Sprintf("agent %s branch %q has wrong agent ID (expected wave%s-agent-%s)", agentID, report.Branch, expectedWave, agentID),
@@ -118,7 +118,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 			}
 
 			if !found {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidWorktreeName,
 					Severity: "error",
 					Message:  fmt.Sprintf("agent %s worktree path %q does not contain expected segment %q", agentID, report.Worktree, expectedSegment),
@@ -141,8 +141,8 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.SAWError {
 //
 // Returns:
 //   - E10_INVALID_VERIFICATION for format violations
-func ValidateVerificationField(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateVerificationField(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build agent -> wave lookup for context
 	agentWave := make(map[string]int)
@@ -160,7 +160,7 @@ func ValidateVerificationField(m *IMPLManifest) []result.SAWError {
 
 		// Validate format
 		if !verificationRegex.MatchString(report.Verification) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidVerification,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s verification field %q does not match format 'PASS' or 'FAIL (details)'", agentID, report.Verification),

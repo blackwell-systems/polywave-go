@@ -3,7 +3,7 @@ package retry
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // GenerateRetryIMPL creates a minimal single-wave, single-agent IMPL manifest

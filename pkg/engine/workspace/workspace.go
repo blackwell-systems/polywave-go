@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // WorkspaceManager manages workspace configuration files for a specific language
@@ -29,7 +29,7 @@ type StepResult struct {
 	Detail string
 }
 
-// BackupDir returns the .saw-state/wave{N}/ directory for backup files.
+// BackupDir returns the .polywave-state/wave{N}/ directory for backup files.
 func BackupDir(repoRoot string, waveNum int) string {
-	return filepath.Join(protocol.SAWStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))
+	return filepath.Join(protocol.PolywaveStateDir(repoRoot), fmt.Sprintf("wave%d", waveNum))
 }

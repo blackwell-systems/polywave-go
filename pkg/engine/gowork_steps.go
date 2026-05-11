@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/engine/workspace"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // StepGoWorkSetup creates or updates go.work at repoRoot to include all worktree

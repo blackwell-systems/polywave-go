@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RunWaveTransactionOpts configures the atomic wave execution wrapper.
@@ -59,7 +59,7 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 	// context.Background() intentional: rollback must complete regardless of caller cancellation.
 	manifest, err := protocol.Load(context.Background(), implPath)
 	if err != nil {
-		return result.NewFailure[RestoreData]([]result.SAWError{
+		return result.NewFailure[RestoreData]([]result.PolywaveError{
 			result.NewFatal(result.CodeRestoreLoadFailed,
 				fmt.Sprintf("engine.RunWaveTransaction: load for rollback: %v", err)).
 				WithContext("impl_path", implPath),
@@ -76,7 +76,7 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 		if len(saveRes.Errors) > 0 {
 			saveErrMsg = saveRes.Errors[0].Message
 		}
-		return result.NewFailure[RestoreData]([]result.SAWError{
+		return result.NewFailure[RestoreData]([]result.PolywaveError{
 			result.NewFatal(result.CodeRestoreSaveFailed,
 				fmt.Sprintf("engine.RunWaveTransaction: save rollback: %s", saveErrMsg)).
 				WithContext("impl_path", implPath),
@@ -91,13 +91,13 @@ func restoreSnapshot(implPath string, snap *implSnapshot) result.Result[RestoreD
 // Returns result.Result[FinalizeWaveResult].
 func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result.Result[FinalizeWaveResult] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed,
 				"engine.RunWaveTransaction: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed,
 				"engine.RunWaveTransaction: RepoPath is required"),
 		})
@@ -106,7 +106,7 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 	// Snapshot current IMPL doc state before executing the pipeline.
 	snap, err := captureSnapshot(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed,
 				fmt.Sprintf("engine.RunWaveTransaction: %v", err)),
 		})
@@ -141,17 +141,17 @@ func RunWaveTransaction(ctx context.Context, opts RunWaveTransactionOpts) result
 			msg := fmt.Sprintf("engine.RunWaveTransaction: rollback failed (%s) after: %v", rbErrMsg, finalizeErrMsg)
 			// Double failure: both FinalizeWave and rollback failed. State may be
 			// corrupted. Return FATAL unconditionally — partial data cannot be trusted.
-			return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+			return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeFinalizeWaveFailed, msg),
 			})
 		}
 		msg := fmt.Sprintf("engine.RunWaveTransaction: %v", finalizeErrMsg)
 		if finalizeRes.Data != nil {
-			return result.NewPartial(*finalizeRes.Data, []result.SAWError{
+			return result.NewPartial(*finalizeRes.Data, []result.PolywaveError{
 				result.NewError(result.CodeFinalizeWaveFailed, msg),
 			})
 		}
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, msg),
 		})
 	}

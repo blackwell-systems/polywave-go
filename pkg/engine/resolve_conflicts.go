@@ -7,13 +7,13 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	openaibackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ResolveData holds data returned by ResolveConflicts.
@@ -34,13 +34,13 @@ type ResolveFileData struct {
 // Returns fatal result on first file that cannot be resolved (partial failure aborts).
 func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Result[ResolveData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveInvalidOpts,
 				"engine.ResolveConflicts: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveInvalidOpts,
 				"engine.ResolveConflicts: RepoPath is required"),
 		})
@@ -49,7 +49,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	// Load IMPL manifest for agent context
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveLoadFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to load IMPL manifest: %v", err)).
 				WithContext("impl_path", opts.IMPLPath),
@@ -59,7 +59,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	// Get list of conflicted files
 	conflictedFiles, err := git.ConflictedFiles(opts.RepoPath)
 	if err != nil {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveGitFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to get conflicted files: %v", err)).
 				WithContext("repo_path", opts.RepoPath),
@@ -67,7 +67,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	}
 
 	if len(conflictedFiles) == 0 {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveNoConflicts,
 				"engine.ResolveConflicts: no conflicted files found"),
 		})
@@ -76,7 +76,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 	// Select backend for conflict resolution
 	b, err := selectConflictResolutionBackend(opts.ChatModel)
 	if err != nil {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveBackendFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to select backend: %v", err)),
 		})
@@ -91,7 +91,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 
 		fileRes := resolveConflictedFile(ctx, file, manifest, opts, b)
 		if fileRes.IsFatal() {
-			return result.NewFailure[ResolveData]([]result.SAWError{
+			return result.NewFailure[ResolveData]([]result.PolywaveError{
 				result.NewFatal(result.CodeResolveFileFailed,
 					fmt.Sprintf("engine.ResolveConflicts: failed to resolve %s: %s", file, fileRes.Errors[0].Message)).
 					WithContext("file", file),
@@ -107,7 +107,7 @@ func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) result.Res
 
 	// Commit the merge
 	if _, err := git.Run(opts.RepoPath, "commit", "--no-edit"); err != nil {
-		return result.NewFailure[ResolveData]([]result.SAWError{
+		return result.NewFailure[ResolveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveCommitFailed,
 				fmt.Sprintf("engine.ResolveConflicts: failed to commit merge: %v", err)).
 				WithContext("repo_path", opts.RepoPath),
@@ -126,7 +126,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 	filePath := filepath.Join(opts.RepoPath, file)
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return result.NewFailure[ResolveFileData]([]result.SAWError{
+		return result.NewFailure[ResolveFileData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveFileReadFailed,
 				fmt.Sprintf("failed to read conflicted file: %v", err)).
 				WithContext("file", file),
@@ -147,7 +147,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 		}
 	})
 	if err != nil {
-		return result.NewFailure[ResolveFileData]([]result.SAWError{
+		return result.NewFailure[ResolveFileData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveBackendCallFailed,
 				fmt.Sprintf("backend call failed: %v", err)).
 				WithContext("file", file),
@@ -156,7 +156,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 
 	// Write resolved content back to file
 	if err := os.WriteFile(filePath, []byte(resolvedContent), 0644); err != nil {
-		return result.NewFailure[ResolveFileData]([]result.SAWError{
+		return result.NewFailure[ResolveFileData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveFileWriteFailed,
 				fmt.Sprintf("failed to write resolved file: %v", err)).
 				WithContext("file", file),
@@ -165,7 +165,7 @@ func resolveConflictedFile(ctx context.Context, file string, manifest *protocol.
 
 	// Stage the resolved file
 	if _, err := git.Run(opts.RepoPath, "add", file); err != nil {
-		return result.NewFailure[ResolveFileData]([]result.SAWError{
+		return result.NewFailure[ResolveFileData]([]result.PolywaveError{
 			result.NewFatal(result.CodeResolveGitAddFailed,
 				fmt.Sprintf("git add failed: %v", err)).
 				WithContext("file", file),
@@ -282,7 +282,7 @@ func selectConflictResolutionBackend(chatModel string) (backend.Backend, error) 
 	// Parse model string to determine provider
 	model := chatModel
 	if model == "" {
-		model = os.Getenv("SAW_CONFLICT_MODEL")
+		model = os.Getenv("POLYWAVE_CONFLICT_MODEL")
 	}
 	if model == "" {
 		model = defaultModel

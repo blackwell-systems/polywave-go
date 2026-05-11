@@ -6,7 +6,7 @@ import (
 )
 
 // InjectWiringInstructions formats wiring obligations for an agent into markdown
-// for injection into .saw-agent-brief.md (E35 Layer 3C).
+// for injection into .polywave-agent-brief.md (E35 Layer 3C).
 //
 // It filters wiring declarations by both agentID and waveNum to ensure agents
 // only see obligations relevant to their current wave.

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -75,7 +75,7 @@ func ToOutput(g *DepGraph) *Output {
 func FormatYAML(o *Output) result.Result[[]byte] {
 	data, err := yaml.Marshal(o)
 	if err != nil {
-		return result.NewFailure[[]byte]([]result.SAWError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
+		return result.NewFailure[[]byte]([]result.PolywaveError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
 	}
 	return result.NewSuccess(data)
 }
@@ -84,7 +84,7 @@ func FormatYAML(o *Output) result.Result[[]byte] {
 func FormatJSON(o *Output) result.Result[[]byte] {
 	data, err := json.MarshalIndent(o, "", "  ")
 	if err != nil {
-		return result.NewFailure[[]byte]([]result.SAWError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
+		return result.NewFailure[[]byte]([]result.PolywaveError{result.NewFatal(result.CodeAnalyzeParseFailed, err.Error())})
 	}
 	return result.NewSuccess(data)
 }

@@ -1,6 +1,6 @@
 package protocol
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+import "github.com/blackwell-systems/polywave-go/pkg/result"
 
 // PROGRAMManifest is the structured representation of a SAW PROGRAM document.
 // It coordinates multiple IMPL docs into tiered execution.

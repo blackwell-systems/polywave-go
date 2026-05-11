@@ -185,13 +185,13 @@ func TestIsSAWOwnedPath(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "gate-cache under .saw-state is SAW-owned",
-			path: " M .saw-state/gate-cache.json",
+			name: "gate-cache under .polywave-state is SAW-owned",
+			path: " M .polywave-state/gate-cache.json",
 			want: true,
 		},
 		{
-			name: "nested file under .saw-state is SAW-owned",
-			path: " M .saw-state/active-impl",
+			name: "nested file under .polywave-state is SAW-owned",
+			path: " M .polywave-state/active-impl",
 			want: true,
 		},
 		{
@@ -215,8 +215,8 @@ func TestIsSAWOwnedPath(t *testing.T) {
 			want: true,
 		},
 		{
-			name: "windows path separator .saw-state is SAW-owned",
-			path: " M .saw-state\\gate-cache.json",
+			name: "windows path separator .polywave-state is SAW-owned",
+			path: " M .polywave-state\\gate-cache.json",
 			want: true,
 		},
 	}
@@ -269,9 +269,9 @@ func TestPrepareWave_CommitState_UserCodeDirty(t *testing.T) {
 		t.Errorf("expected cmd/sawtools/main.go to be classified as user code, not SAW-owned")
 	}
 
-	sawPath := " M .saw-state/gate-cache.json"
+	sawPath := " M .polywave-state/gate-cache.json"
 	if !isSAWOwnedPath(sawPath, "/repo/docs/IMPL/IMPL-foo.yaml", "/repo") {
-		t.Errorf("expected .saw-state/gate-cache.json to be classified as SAW-owned")
+		t.Errorf("expected .polywave-state/gate-cache.json to be classified as SAW-owned")
 	}
 }
 

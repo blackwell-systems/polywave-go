@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ArchiveData holds the result data from a successful Archive operation.
@@ -66,7 +66,7 @@ type ArchiveMetadata struct {
 // Archive compresses the journal directory to .tar.gz in archive subdirectory
 func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	// Parse wave and agent from journal directory path
-	// Expected format: .saw-state/wave{N}/agent-{ID}
+	// Expected format: .polywave-state/wave{N}/agent-{ID}
 	parts := strings.Split(filepath.Clean(o.JournalDir), string(filepath.Separator))
 	var wave int
 	var agent string
@@ -81,7 +81,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	}
 
 	if wave == 0 || agent == "" {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("cannot parse wave/agent from journal dir: %s", o.JournalDir),
 			Severity: "fatal",
@@ -89,9 +89,9 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	}
 
 	// Create archive directory if needed
-	archiveDir := protocol.SAWStateArchiveDir(o.ProjectRoot)
+	archiveDir := protocol.PolywaveStateArchiveDir(o.ProjectRoot)
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating archive directory: %v", err),
 			Severity: "fatal",
@@ -105,7 +105,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 
 	// Check if archive already exists
 	if _, err := os.Stat(archivePath); err == nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("archive already exists: %s", archivePath),
 			Severity: "fatal",
@@ -115,7 +115,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	// Calculate original size and count entries
 	originalSize, entryCount, err := calculateJournalStats(o.JournalDir)
 	if err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("calculating journal stats: %v", err),
 			Severity: "fatal",
@@ -124,7 +124,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 
 	// Create tar.gz archive
 	if r := createTarGz(o.JournalDir, archivePath); r.IsFatal() {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating archive: %s", r.Errors[0].Message),
 			Severity: "fatal",
@@ -134,7 +134,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	// Get compressed size
 	stat, err := os.Stat(archivePath)
 	if err != nil {
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("stat archive: %v", err),
 			Severity: "fatal",
@@ -161,7 +161,7 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 	if r := writeMetadataAtomic(metadataPath, metadata); r.IsFatal() {
 		// Clean up archive on metadata failure
 		os.Remove(archivePath)
-		return result.NewFailure[ArchiveData]([]result.SAWError{{
+		return result.NewFailure[ArchiveData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("writing metadata: %s", r.Errors[0].Message),
 			Severity: "fatal",
@@ -183,12 +183,12 @@ func (o *JournalObserver) Archive() result.Result[ArchiveData] {
 
 // CleanupExpired deletes archives older than retention period
 func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupData] {
-	archiveDir := protocol.SAWStateArchiveDir(repoPath)
+	archiveDir := protocol.PolywaveStateArchiveDir(repoPath)
 
 	// Read all archives
 	listRes := ListArchives(repoPath)
 	if listRes.IsFatal() {
-		return result.NewFailure[CleanupData]([]result.SAWError{{
+		return result.NewFailure[CleanupData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCleanupFailed,
 			Message:  fmt.Sprintf("listing archives: %s", listRes.Errors[0].Message),
 			Severity: "fatal",
@@ -211,14 +211,14 @@ func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupDat
 			metadataPath := filepath.Join(archiveDir, metadataName)
 
 			if err := os.Remove(archivePath); err != nil && !os.IsNotExist(err) {
-				return result.NewFailure[CleanupData]([]result.SAWError{{
+				return result.NewFailure[CleanupData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveCleanupFailed,
 					Message:  fmt.Sprintf("removing archive %s: %v", archivePath, err),
 					Severity: "fatal",
 				}})
 			}
 			if err := os.Remove(metadataPath); err != nil && !os.IsNotExist(err) {
-				return result.NewFailure[CleanupData]([]result.SAWError{{
+				return result.NewFailure[CleanupData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveCleanupFailed,
 					Message:  fmt.Sprintf("removing metadata %s: %v", metadataPath, err),
 					Severity: "fatal",
@@ -233,7 +233,7 @@ func CleanupExpired(repoPath string, retentionDays int) result.Result[CleanupDat
 
 // ListArchives returns metadata for all archived journals, sorted by archived_at
 func ListArchives(repoPath string) result.Result[[]ArchiveMetadata] {
-	archiveDir := protocol.SAWStateArchiveDir(repoPath)
+	archiveDir := protocol.PolywaveStateArchiveDir(repoPath)
 
 	// Check if archive directory exists
 	if _, err := os.Stat(archiveDir); os.IsNotExist(err) {
@@ -243,7 +243,7 @@ func ListArchives(repoPath string) result.Result[[]ArchiveMetadata] {
 	// Read directory
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
-		return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+		return result.NewFailure[[]ArchiveMetadata]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveListFailed,
 			Message:  fmt.Sprintf("reading archive directory: %v", err),
 			Severity: "fatal",
@@ -260,7 +260,7 @@ func ListArchives(repoPath string) result.Result[[]ArchiveMetadata] {
 		metadataPath := filepath.Join(archiveDir, entry.Name())
 		data, err := os.ReadFile(metadataPath)
 		if err != nil {
-			return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+			return result.NewFailure[[]ArchiveMetadata]([]result.PolywaveError{{
 				Code:     result.CodeJournalArchiveListFailed,
 				Message:  fmt.Sprintf("reading metadata %s: %v", entry.Name(), err),
 				Severity: "fatal",
@@ -269,7 +269,7 @@ func ListArchives(repoPath string) result.Result[[]ArchiveMetadata] {
 
 		var metadata ArchiveMetadata
 		if err := json.Unmarshal(data, &metadata); err != nil {
-			return result.NewFailure[[]ArchiveMetadata]([]result.SAWError{{
+			return result.NewFailure[[]ArchiveMetadata]([]result.PolywaveError{{
 				Code:     result.CodeJournalArchiveListFailed,
 				Message:  fmt.Sprintf("parsing metadata %s: %v", entry.Name(), err),
 				Severity: "fatal",
@@ -292,7 +292,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 	// Open archive file
 	archiveFile, err := os.Open(archivePath)
 	if err != nil {
-		return result.NewFailure[ExtractData]([]result.SAWError{{
+		return result.NewFailure[ExtractData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveExtractFailed,
 			Message:  fmt.Sprintf("opening archive: %v", err),
 			Severity: "fatal",
@@ -303,7 +303,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 	// Create gzip reader
 	gzipReader, err := gzip.NewReader(archiveFile)
 	if err != nil {
-		return result.NewFailure[ExtractData]([]result.SAWError{{
+		return result.NewFailure[ExtractData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveExtractFailed,
 			Message:  fmt.Sprintf("creating gzip reader: %v", err),
 			Severity: "fatal",
@@ -322,7 +322,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			break
 		}
 		if err != nil {
-			return result.NewFailure[ExtractData]([]result.SAWError{{
+			return result.NewFailure[ExtractData]([]result.PolywaveError{{
 				Code:     result.CodeJournalArchiveExtractFailed,
 				Message:  fmt.Sprintf("reading tar header: %v", err),
 				Severity: "fatal",
@@ -334,7 +334,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 
 		// Ensure target is within destPath (security)
 		if !strings.HasPrefix(filepath.Clean(target), filepath.Clean(destPath)) {
-			return result.NewFailure[ExtractData]([]result.SAWError{{
+			return result.NewFailure[ExtractData]([]result.PolywaveError{{
 				Code:     result.CodeJournalArchiveExtractFailed,
 				Message:  fmt.Sprintf("invalid file path in archive: %s", header.Name),
 				Severity: "fatal",
@@ -345,7 +345,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 		case tar.TypeDir:
 			// Create directory
 			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
-				return result.NewFailure[ExtractData]([]result.SAWError{{
+				return result.NewFailure[ExtractData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating directory %s: %v", target, err),
 					Severity: "fatal",
@@ -355,7 +355,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 		case tar.TypeReg:
 			// Create parent directories
 			if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
-				return result.NewFailure[ExtractData]([]result.SAWError{{
+				return result.NewFailure[ExtractData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating parent directory for %s: %v", target, err),
 					Severity: "fatal",
@@ -365,7 +365,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			// Create file
 			outFile, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
 			if err != nil {
-				return result.NewFailure[ExtractData]([]result.SAWError{{
+				return result.NewFailure[ExtractData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("creating file %s: %v", target, err),
 					Severity: "fatal",
@@ -375,7 +375,7 @@ func Extract(archivePath, destPath string) result.Result[ExtractData] {
 			// Copy content
 			if _, err := io.Copy(outFile, tarReader); err != nil {
 				outFile.Close()
-				return result.NewFailure[ExtractData]([]result.SAWError{{
+				return result.NewFailure[ExtractData]([]result.PolywaveError{{
 					Code:     result.CodeJournalArchiveExtractFailed,
 					Message:  fmt.Sprintf("writing file %s: %v", target, err),
 					Severity: "fatal",
@@ -398,7 +398,7 @@ func createTarGz(sourceDir, targetPath string) result.Result[createTarData] {
 	// Create target file
 	outFile, err := os.Create(targetPath)
 	if err != nil {
-		return result.NewFailure[createTarData]([]result.SAWError{{
+		return result.NewFailure[createTarData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  fmt.Sprintf("creating output file: %v", err),
 			Severity: "fatal",
@@ -464,7 +464,7 @@ func createTarGz(sourceDir, targetPath string) result.Result[createTarData] {
 		return nil
 	})
 	if walkErr != nil {
-		return result.NewFailure[createTarData]([]result.SAWError{{
+		return result.NewFailure[createTarData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveCreateFailed,
 			Message:  walkErr.Error(),
 			Severity: "fatal",
@@ -513,7 +513,7 @@ func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[wr
 	// Marshal metadata
 	data, err := json.MarshalIndent(metadata, "", "  ")
 	if err != nil {
-		return result.NewFailure[writeMetaData]([]result.SAWError{{
+		return result.NewFailure[writeMetaData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("marshaling metadata: %v", err),
 			Severity: "fatal",
@@ -523,7 +523,7 @@ func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[wr
 	// Write to temp file
 	tmpPath := path + ".tmp"
 	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
-		return result.NewFailure[writeMetaData]([]result.SAWError{{
+		return result.NewFailure[writeMetaData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("writing temp file: %v", err),
 			Severity: "fatal",
@@ -533,7 +533,7 @@ func writeMetadataAtomic(path string, metadata ArchiveMetadata) result.Result[wr
 	// Rename atomically
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
-		return result.NewFailure[writeMetaData]([]result.SAWError{{
+		return result.NewFailure[writeMetaData]([]result.PolywaveError{{
 			Code:     result.CodeJournalArchiveMetaFailed,
 			Message:  fmt.Sprintf("renaming temp file: %v", err),
 			Severity: "fatal",

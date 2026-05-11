@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -55,7 +55,7 @@ func ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) result.
 	}
 
 	if !data.Valid {
-		return result.NewPartial(data, []result.SAWError{{
+		return result.NewPartial(data, []result.PolywaveError{{
 			Code: result.CodeWiringGap, Message: data.Summary, Severity: "error",
 		}})
 	}
@@ -215,7 +215,7 @@ type AppendWiringData struct {
 func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData) result.Result[AppendWiringData] {
 	raw, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to read manifest: %v", err)),
 		})
 	}
@@ -225,20 +225,20 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	// (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to parse YAML: %v", err)),
 		})
 	}
 
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: unexpected YAML structure"),
 		})
 	}
 
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: root is not a mapping"),
 		})
 	}
@@ -246,13 +246,13 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	// Marshal the result to a YAML node
 	resultBytes, err := yaml.Marshal(data)
 	if err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to marshal result: %v", err)),
 		})
 	}
 	var resultNode yaml.Node
 	if err := yaml.Unmarshal(resultBytes, &resultNode); err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to unmarshal result node: %v", err)),
 		})
 	}
@@ -275,7 +275,7 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	}
 
 	if reportsValue.Kind != yaml.MappingNode {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", "AppendWiringReport: wiring_validation_reports is not a mapping"),
 		})
 	}
@@ -297,12 +297,12 @@ func AppendWiringReport(manifestPath, waveKey string, data *WiringValidationData
 	// Write back
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to marshal output: %v", err)),
 		})
 	}
 	if err := os.WriteFile(manifestPath, out, 0644); err != nil {
-		return result.NewFailure[AppendWiringData]([]result.SAWError{
+		return result.NewFailure[AppendWiringData]([]result.PolywaveError{
 			result.NewFatal("WIRING_APPEND_FAILED", fmt.Sprintf("AppendWiringReport: failed to write file: %v", err)),
 		})
 	}

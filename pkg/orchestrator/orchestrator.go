@@ -20,19 +20,19 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
-	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	"github.com/blackwell-systems/polywave-go/pkg/retry"
+	bedrockbackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	cliclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/cli"
+	openaibackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/worktree"
 )
 
 func init() {
@@ -68,7 +68,7 @@ func validateManifestInvariantsAdapter(manifest *protocol.IMPLManifest) result.R
 				}
 				key := repo + ":" + file
 				if prev, ok := seen[key]; ok {
-					return result.NewFailure[ValidateData]([]result.SAWError{
+					return result.NewFailure[ValidateData]([]result.PolywaveError{
 						result.NewFatal(result.CodeDisjointOwnership, fmt.Sprintf(
 							"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
 							wave.Number, file, prev, agent.ID,
@@ -128,7 +128,7 @@ const MaxTimeoutRetries = 1
 // mergeWaveFunc is replaced by merge.go via init().
 // Default failure: if merge.go never ran init(), callers get an actionable error.
 var mergeWaveFunc = func(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
-	return result.NewFailure[MergeData]([]result.SAWError{
+	return result.NewFailure[MergeData]([]result.PolywaveError{
 		result.NewFatal(result.CodeAgentLaunchFailed,
 			"orchestrator: mergeWaveFunc not injected; call SetMergeWaveFunc before merging"),
 	})
@@ -137,7 +137,7 @@ var mergeWaveFunc = func(ctx context.Context, o *Orchestrator, waveNum int) resu
 // runVerificationFunc is replaced by verification.go via init().
 // Default failure: if verification.go never ran init(), callers get an actionable error.
 var runVerificationFunc = func(ctx context.Context, o *Orchestrator, testCommand string) result.Result[VerificationData] {
-	return result.NewFailure[VerificationData]([]result.SAWError{
+	return result.NewFailure[VerificationData]([]result.PolywaveError{
 		result.NewFatal(result.CodeAgentLaunchFailed,
 			"orchestrator: runVerificationFunc not injected; call SetRunVerificationFunc before verifying"),
 	})
@@ -256,7 +256,7 @@ func validateModelName(model string) result.Result[ModelData] {
 		return result.NewSuccess(ModelData{Model: model}) // empty is allowed (falls back to defaults)
 	}
 	if len(model) > 200 {
-		return result.NewFailure[ModelData]([]result.SAWError{
+		return result.NewFailure[ModelData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInvalidFieldValue, "model name too long (max 200 chars)"),
 		})
 	}
@@ -266,7 +266,7 @@ func validateModelName(model string) result.Result[ModelData] {
 			!(ch >= 'A' && ch <= 'Z') &&
 			!(ch >= '0' && ch <= '9') &&
 			ch != '-' && ch != '.' && ch != ':' && ch != '_' && ch != '/' {
-			return result.NewFailure[ModelData]([]result.SAWError{
+			return result.NewFailure[ModelData]([]result.PolywaveError{
 				result.NewFatal(result.CodeInvalidFieldValue,
 					fmt.Sprintf("model name contains invalid character: %q", ch)),
 			})
@@ -418,7 +418,7 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 		}
 		return apiclient.New(apiKey, bcfg), nil
 	case "cli":
-		binaryPath := os.Getenv("SAW_CLI_BINARY")
+		binaryPath := os.Getenv("POLYWAVE_CLI_BINARY")
 		return cliclient.New(binaryPath, backend.Config{
 			Model:      bareModel,
 			MaxTokens:  cfg.MaxTokens,
@@ -449,7 +449,7 @@ var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
 func NewBackendFromModel(model string) result.Result[backend.Backend] {
 	b, err := newBackendFunc(BackendConfig{Model: model})
 	if err != nil {
-		return result.NewFailure[backend.Backend]([]result.SAWError{
+		return result.NewFailure[backend.Backend]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed,
 				fmt.Sprintf("orchestrator: NewBackendFromModel: %s", err)),
 		})
@@ -520,7 +520,7 @@ func New(ctx context.Context, repoPath string, implDocPath string) result.Result
 		var err error
 		doc, err = protocol.Load(ctx, implDocPath)
 		if err != nil {
-			return result.NewFailure[*Orchestrator]([]result.SAWError{
+			return result.NewFailure[*Orchestrator]([]result.PolywaveError{
 				result.NewFatal(result.CodeIMPLParseFailed,
 					fmt.Sprintf("orchestrator.New: %s", err)),
 			})
@@ -565,7 +565,7 @@ func (o *Orchestrator) RepoPath() string {
 func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) result.Result[TransitionData] {
 	from := o.state
 	if !isValidTransition(from, newState) {
-		return result.NewFailure[TransitionData]([]result.SAWError{
+		return result.NewFailure[TransitionData]([]result.PolywaveError{
 			result.NewFatal(result.CodeStateTransitionInvalid, fmt.Sprintf(
 				"orchestrator: invalid state transition from %s to %s",
 				from, newState,
@@ -584,7 +584,7 @@ func (o *Orchestrator) TransitionTo(newState protocol.ProtocolState) result.Resu
 // RunWave blocks until all agents complete (or one fails), then returns.
 func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[WaveData] {
 	if o.implDoc == nil {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunWave: no IMPL doc loaded"),
 		})
 	}
@@ -594,7 +594,7 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 		if len(res.Errors) > 0 {
 			msg = fmt.Sprintf("orchestrator.RunWave: invariant violation: %s", res.Errors[0].Message)
 		}
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInvariantViolation, msg),
 		})
 	}
@@ -607,7 +607,7 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 		}
 	}
 	if wave == nil && len(o.implDoc.Waves) > 0 {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf(
 				"orchestrator.RunWave: wave %d not found in IMPL doc", waveNum)),
 		})
@@ -629,13 +629,13 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 	slug := o.implSlug(ctx)
 	wm, wmErr := worktree.New(o.repoPath, slug)
 	if wmErr != nil {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
 		})
 	}
 	defaultBackend, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed,
 				fmt.Sprintf("orchestrator.RunWave: failed to create backend: %s", err.Error())),
 		})
@@ -678,7 +678,7 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 			}
 		}
 		if !found {
-			return result.NewFailure[WaveData]([]result.SAWError{
+			return result.NewFailure[WaveData]([]result.PolywaveError{
 				result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
 					"orchestrator.RunWave: prioritized agent %s not found in wave %d", agentID, waveNum)),
 			})
@@ -710,7 +710,7 @@ func (o *Orchestrator) RunWave(ctx context.Context, waveNum int) result.Result[W
 	}
 
 	if err := eg.Wait(); err != nil {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed, err.Error()),
 		})
 	}
@@ -1256,7 +1256,7 @@ func autoCommitWorktree(wtPath string, waveNum int, agentLetter string, baseSHA 
 // timeout reruns).
 func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter string, promptPrefix string) result.Result[AgentData] {
 	if o.implDoc == nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLNotFound, "orchestrator.RunAgent: no IMPL doc loaded"),
 		})
 	}
@@ -1269,7 +1269,7 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 		}
 	}
 	if wave == nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf(
 				"orchestrator.RunAgent: wave %d not found", waveNum)),
 		})
@@ -1283,7 +1283,7 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 		}
 	}
 	if protoAgent == nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
 				"orchestrator.RunAgent: agent %s not found in wave %d", agentLetter, waveNum)),
 		})
@@ -1300,13 +1300,13 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 	// Build worktree manager and backend.
 	wm, wmErr := worktree.New(o.repoPath, o.implSlug(ctx))
 	if wmErr != nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWorktreeCreateFailed, wmErr.Error()),
 		})
 	}
 	b, err := newBackendFunc(BackendConfig{Kind: "auto", Model: o.defaultModel})
 	if err != nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed,
 				fmt.Sprintf("orchestrator.RunAgent: create backend: %s", err.Error())),
 		})
@@ -1314,7 +1314,7 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 	if spec.Model != "" && spec.Model != o.defaultModel {
 		b, err = newBackendFunc(BackendConfig{Kind: "auto", Model: spec.Model})
 		if err != nil {
-			return result.NewFailure[AgentData]([]result.SAWError{
+			return result.NewFailure[AgentData]([]result.PolywaveError{
 				result.NewFatal(result.CodeAgentLaunchFailed, fmt.Sprintf(
 					"orchestrator.RunAgent: create backend for model %s: %s", spec.Model, err.Error())),
 			})
@@ -1323,7 +1323,7 @@ func (o *Orchestrator) RunAgent(ctx context.Context, waveNum int, agentLetter st
 	runner := newRunnerFunc(b, wm)
 
 	if launchErr := o.launchAgent(ctx, runner, wm, waveNum, spec); launchErr != nil {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentLaunchFailed, launchErr.Error()),
 		})
 	}
@@ -1385,7 +1385,7 @@ func (o *Orchestrator) UpdateIMPLStatus(ctx context.Context, waveNum int) result
 	// 5. Call protocol.UpdateIMPLStatus to tick checkboxes.
 	res := protocol.UpdateIMPLStatus(o.implDocPath, completedLetters)
 	if res.IsFatal() && len(res.Errors) > 0 {
-		return result.NewFailure[UpdateData]([]result.SAWError{
+		return result.NewFailure[UpdateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeStatusUpdateFailed, res.Errors[0].Message),
 		})
 	}

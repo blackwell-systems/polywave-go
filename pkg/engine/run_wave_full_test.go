@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // initTestRepoForRunWaveFull creates a test git repository with initial commit.
@@ -86,7 +86,7 @@ func createTestManifestForRunWaveFull(t *testing.T, repoDir string, waveNum int,
 func simulateAgentCommit(t *testing.T, repoDir, waveNum, agentID string) {
 	t.Helper()
 
-	worktreePath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave"+waveNum+"-agent-"+agentID)
+	worktreePath := filepath.Join(repoDir, ".claude", "worktrees", "polywave", "test-feature", "wave"+waveNum+"-agent-"+agentID)
 
 	// Write a file in the worktree
 	testFile := filepath.Join(worktreePath, "test-"+agentID+".txt")

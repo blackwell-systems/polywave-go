@@ -1,0 +1,43 @@
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/spf13/cobra"
+)
+
+func newMergeAgentsCmd() *cobra.Command {
+	var waveNum int
+
+	cmd := &cobra.Command{
+		Use:   "merge-agents <manifest-path>",
+		Short: "Merge all agent branches for a wave",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			manifestPath := args[0]
+			res := protocol.MergeAgents(protocol.MergeAgentsOpts{
+				Ctx:          ctx,
+				ManifestPath: manifestPath,
+				WaveNum:      waveNum,
+				RepoDir:      repoDir,
+			})
+			if !res.IsSuccess() {
+				return fmt.Errorf("merge-agents: %v", res.Errors)
+			}
+
+			result := res.GetData()
+			out, _ := json.MarshalIndent(result, "", "  ")
+			fmt.Println(string(out))
+
+			return nil
+		},
+	}
+
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "Wave number (required)")
+	cmd.MarkFlagRequired("wave")
+
+	return cmd
+}

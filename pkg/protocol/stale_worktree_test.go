@@ -11,13 +11,13 @@ func TestStaleExtractSlugFromBranches(t *testing.T) {
 		branch string
 		slug   string
 	}{
-		{"saw/my-feature/wave1-agent-A", "my-feature"},
-		{"saw/type-collision-detection/wave2-agent-B3", "type-collision-detection"},
-		{"saw/x/wave1-agent-A", "x"},
+		{"polywave/my-feature/wave1-agent-A", "my-feature"},
+		{"polywave/type-collision-detection/wave2-agent-B3", "type-collision-detection"},
+		{"polywave/x/wave1-agent-A", "x"},
 		{"wave1-agent-A", ""},           // legacy — no slug
 		{"main", ""},                    // not a SAW branch
 		{"saw/slug-only", ""},           // no wave suffix
-		{"refs/heads/saw/s/wave1-agent-A", ""}, // unexpected prefix
+		{"refs/heads/polywave/s/wave1-agent-A", ""}, // unexpected prefix
 	}
 
 	for _, tt := range tests {

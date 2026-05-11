@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FinalizeTierData is the data payload of finalizing a program tier.
@@ -38,7 +38,7 @@ type FinalizeTierData struct {
 func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) result.Result[FinalizeTierData] {
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
-		return result.NewFailure[FinalizeTierData]([]result.SAWError{
+		return result.NewFailure[FinalizeTierData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("protocol.FinalizeTier: parse failed: %v", err)),
 		})
@@ -53,7 +53,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) re
 		}
 	}
 	if targetTier == nil {
-		return result.NewFailure[FinalizeTierData]([]result.SAWError{
+		return result.NewFailure[FinalizeTierData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeStepFailed,
 				fmt.Sprintf("protocol.FinalizeTier: tier %d not found in program manifest", tierNumber)),
 		})
@@ -94,7 +94,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) re
 			}}
 			data.ImplMergeResults[implSlug] = mergeResult
 			data.Errors = append(data.Errors, fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr))
-			return result.NewFailure[FinalizeTierData]([]result.SAWError{{
+			return result.NewFailure[FinalizeTierData]([]result.PolywaveError{{
 				Code:     result.CodeMergeConflict,
 				Message:  fmt.Sprintf("merge failed for impl %s: %v", implSlug, mergeErr),
 				Severity: "fatal",
@@ -117,7 +117,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) re
 			errMsg = gateRes.Errors[0].Message
 		}
 		data.Errors = append(data.Errors, errMsg)
-		return result.NewFailure[FinalizeTierData]([]result.SAWError{{
+		return result.NewFailure[FinalizeTierData]([]result.PolywaveError{{
 			Code:     result.CodeTierGateFailed,
 			Message:  errMsg,
 			Severity: "fatal",
@@ -128,7 +128,7 @@ func FinalizeTier(programManifestPath string, tierNumber int, repoDir string) re
 
 	if !gateData.Passed {
 		data.Errors = append(data.Errors, fmt.Sprintf("tier gate failed for tier %d", tierNumber))
-		return result.NewFailure[FinalizeTierData]([]result.SAWError{{
+		return result.NewFailure[FinalizeTierData]([]result.PolywaveError{{
 			Code:     result.CodeTierGateFailed,
 			Message:  fmt.Sprintf("tier gate failed for tier %d", tierNumber),
 			Severity: "fatal",

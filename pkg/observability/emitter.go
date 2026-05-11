@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // EmitData holds the result data returned by a synchronous Emit operation.
@@ -58,7 +58,7 @@ func (e *Emitter) EmitSync(ctx context.Context, event Event) result.Result[EmitD
 		})
 	}
 	if err := e.store.RecordEvent(ctx, event); err != nil {
-		return result.NewFailure[EmitData]([]result.SAWError{
+		return result.NewFailure[EmitData]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsEmitFailed, err.Error()).WithCause(err),
 		})
 	}

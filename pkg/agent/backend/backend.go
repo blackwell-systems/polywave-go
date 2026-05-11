@@ -3,8 +3,8 @@ package backend
 import (
 	"context"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/dedup"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // Config carries backend-agnostic configuration.

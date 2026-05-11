@@ -11,20 +11,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/suitability"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	"github.com/blackwell-systems/polywave-go/pkg/analyzer"
+	"github.com/blackwell-systems/polywave-go/pkg/commands"
+	"github.com/blackwell-systems/polywave-go/pkg/hooks"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/observability"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/retry"
+	"github.com/blackwell-systems/polywave-go/pkg/suitability"
 	"gopkg.in/yaml.v3"
 )
 
@@ -43,17 +43,17 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // I6 enforcement: Post-execution validation checks that Scout only wrote to docs/IMPL/IMPL-*.yaml.
 func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) result.Result[ScoutData] {
 	if opts.Feature == "" {
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: Feature is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: RepoPath is required"),
 		})
 	}
 	if opts.IMPLOutPath == "" {
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutInvalidOpts, "engine.RunScout: IMPLOutPath is required"),
 		})
 	}
@@ -70,25 +70,25 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	}
 
 	// Resolve SAW repo path.
-	sawRepo := opts.SAWRepoPath
+	sawRepo := opts.PolywaveRepoPath
 	if sawRepo == "" {
-		sawRepo = os.Getenv("SAW_REPO")
+		sawRepo = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return result.NewFailure[ScoutData]([]result.SAWError{
+			return result.NewFailure[ScoutData]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+		sawRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
 	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
 	scoutMdRes := LoadTypePromptWithRefs(scoutMdPath)
 	if scoutMdRes.IsFatal() {
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("engine.RunScout: scout.md not found at %s", scoutMdPath)),
 		})
 	}
@@ -141,11 +141,11 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 
 	if execErr != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[ScoutData]([]result.SAWError{
+			return result.NewFailure[ScoutData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunScout: context cancelled", Severity: "fatal", Cause: execErr},
 			})
 		}
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: agent execution failed").WithCause(execErr),
 		})
 	}
@@ -157,14 +157,14 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 		if len(validateRes.Errors) > 0 {
 			msg = "engine.RunScout: " + validateRes.Errors[0].Message
 		}
-		return result.NewFailure[ScoutData]([]result.SAWError{
+		return result.NewFailure[ScoutData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutBoundaryViolation, msg),
 		})
 	}
 	if validateRes.IsPartial() {
 		data := validateRes.GetData()
 		if len(data.UnexpectedWrites) > 0 {
-			return result.NewFailure[ScoutData]([]result.SAWError{
+			return result.NewFailure[ScoutData]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutBoundaryViolation,
 					fmt.Sprintf("engine.RunScout: I6 VIOLATION: Scout wrote files outside permitted boundaries: %s",
 						strings.Join(data.UnexpectedWrites, ", "))),
@@ -187,33 +187,33 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 // Mirrors RunScout but reads agents/planner.md and writes docs/PROGRAM/PROGRAM-*.yaml.
 func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) result.Result[PlannerData] {
 	if opts.Description == "" {
-		return result.NewFailure[PlannerData]([]result.SAWError{
+		return result.NewFailure[PlannerData]([]result.PolywaveError{
 			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: Description is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[PlannerData]([]result.SAWError{
+		return result.NewFailure[PlannerData]([]result.PolywaveError{
 			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: RepoPath is required"),
 		})
 	}
 	if opts.ProgramOutPath == "" {
-		return result.NewFailure[PlannerData]([]result.SAWError{
+		return result.NewFailure[PlannerData]([]result.PolywaveError{
 			result.NewFatal(result.CodePlannerInvalidOpts, "engine.RunPlanner: ProgramOutPath is required"),
 		})
 	}
 
-	sawRepo := opts.SAWRepoPath
+	sawRepo := opts.PolywaveRepoPath
 	if sawRepo == "" {
-		sawRepo = os.Getenv("SAW_REPO")
+		sawRepo = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return result.NewFailure[PlannerData]([]result.SAWError{
+			return result.NewFailure[PlannerData]([]result.PolywaveError{
 				result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+		sawRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load planner.md prompt with fallback.
@@ -249,11 +249,11 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil)
 	if execErr != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[PlannerData]([]result.SAWError{
+			return result.NewFailure[PlannerData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunPlanner: context cancelled", Severity: "fatal", Cause: execErr},
 			})
 		}
-		return result.NewFailure[PlannerData]([]result.SAWError{
+		return result.NewFailure[PlannerData]([]result.PolywaveError{
 			result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: agent execution failed").WithCause(execErr),
 		})
 	}
@@ -387,12 +387,12 @@ func runScoutStructuredBedrock(ctx context.Context, opts RunScoutOpts, prompt st
 // or a fatal error occurs.
 func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) result.Result[StartWaveData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[StartWaveData]([]result.SAWError{
+		return result.NewFailure[StartWaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveInvalidOpts, "engine.StartWave: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[StartWaveData]([]result.SAWError{
+		return result.NewFailure[StartWaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveInvalidOpts, "engine.StartWave: RepoPath is required"),
 		})
 	}
@@ -407,7 +407,7 @@ func StartWave(ctx context.Context, opts RunWaveOpts, onEvent func(Event)) resul
 		if cause != nil {
 			sawErr = sawErr.WithCause(cause)
 		}
-		return result.NewFailure[StartWaveData]([]result.SAWError{sawErr})
+		return result.NewFailure[StartWaveData]([]result.PolywaveError{sawErr})
 	}
 
 	publish("run_started", RunStartedPayload{Slug: opts.Slug, IMPLPath: opts.IMPLPath})
@@ -549,7 +549,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	ctx := opts.Ctx
 	implPath := opts.ImplPath
 	repoPath := opts.RepoPath
-	sawRepoPath := opts.SAWRepoPath
+	sawRepoPath := opts.PolywaveRepoPath
 	model := opts.Model
 	onEvent := opts.OnEvent
 
@@ -560,7 +560,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	// Load YAML manifest to get scaffold files.
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return result.NewFailure[ScaffoldData]([]result.SAWError{
+		return result.NewFailure[ScaffoldData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: load manifest failed").WithCause(err),
 		})
 	}
@@ -591,11 +591,11 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	// Locate scaffold-agent.md prompt.
 	sawRepo := sawRepoPath
 	if sawRepo == "" {
-		sawRepo = os.Getenv("SAW_REPO")
+		sawRepo = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepo == "" {
 		home, _ := os.UserHomeDir()
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+		sawRepo = filepath.Join(home, "code", "polywave")
 	}
 	scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
 	scaffoldMdContent := "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
@@ -620,14 +620,14 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, repoPath, onChunk, nil); execErr != nil {
 		publish("scaffold_failed", ScaffoldFailedPayload{Error: execErr.Error()})
-		return result.NewFailure[ScaffoldData]([]result.SAWError{
+		return result.NewFailure[ScaffoldData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: scaffold agent failed").WithCause(execErr),
 		})
 	}
 
 	// E22: Scaffold build verification — compile to catch scaffold errors early.
 	if err := runScaffoldBuildVerification(repoPath, onEvent); err != nil {
-		return result.NewFailure[ScaffoldData]([]result.SAWError{
+		return result.NewFailure[ScaffoldData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScaffoldRunFailed, "engine.RunScaffold: build verification failed").WithCause(err),
 		})
 	}
@@ -648,7 +648,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 func LoadTypePromptWithRefs(promptPath string) result.Result[string] {
 	coreBytes, err := os.ReadFile(promptPath)
 	if err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutRunFailed, fmt.Sprintf("LoadTypePromptWithRefs: cannot read prompt file %s: %v", promptPath, err)),
 		})
 	}
@@ -806,7 +806,7 @@ func runScaffoldBuildVerificationWithDoc(ctx context.Context, repoPath string, d
 // The caller is responsible for calling MergeWave and RunVerification afterwards.
 func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent func(Event)) result.Result[WaveData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveInvalidOpts, "engine.RunSingleWave: IMPLPath is required"),
 		})
 	}
@@ -828,7 +828,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 	// uses the correct worktree for each agent.
 	wtRes := protocol.CreateWorktrees(ctx, opts.IMPLPath, waveNum, opts.RepoPath, nil)
 	if !wtRes.IsSuccess() {
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("engine.RunSingleWave: create worktrees: %v", wtRes.Errors)),
 		})
 	}
@@ -843,7 +843,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 
 	if runRes := orch.RunWave(ctx, waveNum); runRes.IsFatal() {
 		if ctx.Err() != nil {
-			return result.NewFailure[WaveData]([]result.SAWError{
+			return result.NewFailure[WaveData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunSingleWave: context cancelled", Severity: "fatal"},
 			})
 		}
@@ -851,7 +851,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 		if len(runRes.Errors) > 0 {
 			msg = runRes.Errors[0].Message
 		}
-		return result.NewFailure[WaveData]([]result.SAWError{
+		return result.NewFailure[WaveData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveFailed, msg),
 		})
 	}
@@ -863,7 +863,7 @@ func RunSingleWave(ctx context.Context, opts RunWaveOpts, waveNum int, onEvent f
 // non-empty it is prepended to the agent's task prompt before execution.
 func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLetter string, promptPrefix string, onEvent func(Event)) result.Result[AgentData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentRunInvalidOpts, "engine.RunSingleAgent: IMPLPath is required"),
 		})
 	}
@@ -914,7 +914,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 
 	if agentRes := orch.RunAgent(ctx, waveNum, agentLetter, promptPrefix); agentRes.IsFatal() {
 		if ctx.Err() != nil {
-			return result.NewFailure[AgentData]([]result.SAWError{
+			return result.NewFailure[AgentData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunSingleAgent: context cancelled", Severity: "fatal"},
 			})
 		}
@@ -922,7 +922,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 		if len(agentRes.Errors) > 0 {
 			msg = agentRes.Errors[0].Message
 		}
-		return result.NewFailure[AgentData]([]result.SAWError{
+		return result.NewFailure[AgentData]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentRunFailed, msg),
 		})
 	}
@@ -933,7 +933,7 @@ func RunSingleAgent(ctx context.Context, opts RunWaveOpts, waveNum int, agentLet
 // After successful merge, archives journals for all agents in the wave.
 func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMergeWaveInvalidOpts, "engine.MergeWave: IMPLPath is required"),
 		})
 	}
@@ -949,13 +949,13 @@ func MergeWave(ctx context.Context, opts RunMergeOpts) result.Result[MergeData] 
 		if len(mergeRes.Errors) > 0 {
 			msg = mergeRes.Errors[0].Message
 		}
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMergeWaveFailed, fmt.Sprintf("engine.MergeWave: %s", msg)),
 		})
 	}
 
 	// Archive journals for all agents in this wave (non-fatal)
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 	doc := orch.IMPLDoc()
 	if doc != nil {
 		for _, wave := range doc.Waves {
@@ -998,7 +998,7 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 	orch := orchRes.GetData()
 	if verRes := orch.RunVerification(ctx, testCmd); verRes.IsFatal() {
 		if ctx.Err() != nil {
-			return result.NewFailure[VerificationData]([]result.SAWError{
+			return result.NewFailure[VerificationData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunVerification: context cancelled", Severity: "fatal"},
 			})
 		}
@@ -1006,7 +1006,7 @@ func RunVerification(ctx context.Context, opts RunVerificationOpts) result.Resul
 		if len(verRes.Errors) > 0 {
 			msg = verRes.Errors[0].Message
 		}
-		return result.NewFailure[VerificationData]([]result.SAWError{
+		return result.NewFailure[VerificationData]([]result.PolywaveError{
 			result.NewFatal(result.CodeEngineVerificationFailed, msg),
 		})
 	}
@@ -1022,7 +1022,7 @@ func UpdateIMPLStatus(implDocPath string, completedLetters []string) result.Resu
 		if len(res.Errors) > 0 {
 			msg = res.Errors[0].Message
 		}
-		return result.NewFailure[UpdateData]([]result.SAWError{
+		return result.NewFailure[UpdateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeUpdateStatusFailed, msg),
 		})
 	}

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TestValidateI1DisjointOwnership_Valid tests that disjoint ownership passes validation.
@@ -1329,8 +1329,8 @@ func TestFeatureSlugKebabValidation(t *testing.T) {
 	}
 }
 
-// TestSAWError_WithContext tests the WithContext helper method.
-func TestSAWError_WithContext(t *testing.T) {
+// TestPolywaveError_WithContext tests the WithContext helper method.
+func TestPolywaveError_WithContext(t *testing.T) {
 	ve := result.NewError("TEST_CODE", "test message")
 	ve.Field = "test_field"
 
@@ -1361,9 +1361,9 @@ func TestSAWError_WithContext(t *testing.T) {
 	}
 }
 
-// TestSAWError_JSONOmitEmpty tests that zero-valued context fields are omitted from JSON.
-func TestSAWError_JSONOmitEmpty(t *testing.T) {
-	ve := result.SAWError{
+// TestPolywaveError_JSONOmitEmpty tests that zero-valued context fields are omitted from JSON.
+func TestPolywaveError_JSONOmitEmpty(t *testing.T) {
+	ve := result.PolywaveError{
 		Code:     "TEST",
 		Message:  "msg",
 		Severity: "error",

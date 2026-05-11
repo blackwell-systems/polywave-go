@@ -4,7 +4,7 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // validReactionActions is the set of allowed action values for a ReactionEntry.
@@ -18,11 +18,11 @@ var validReactionActions = map[string]bool{
 // ValidateReactions validates the reactions block in an IMPL manifest.
 // Called by ValidateSchema. Returns V-series errors for invalid action values
 // or negative max_attempts. Returns nil if reactions is absent.
-func ValidateReactions(m *IMPLManifest) []result.SAWError {
+func ValidateReactions(m *IMPLManifest) []result.PolywaveError {
 	if m.Reactions == nil {
 		return nil
 	}
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	entries := map[string]*ReactionEntry{
 		"transient":    m.Reactions.Transient,
 		"timeout":      m.Reactions.Timeout,
@@ -35,14 +35,14 @@ func ValidateReactions(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		if entry.Action == "" {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeRequiredFieldsMissing,
 				Message:  fmt.Sprintf("reactions.%s.action is required", name),
 				Severity: "error",
 				Field:    fmt.Sprintf("reactions.%s.action", name),
 			})
 		} else if !validReactionActions[entry.Action] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("reactions.%s.action %q is not valid; must be one of: retry, send-fix-prompt, pause, auto-scout", name, entry.Action),
 				Severity: "error",
@@ -50,7 +50,7 @@ func ValidateReactions(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if entry.MaxAttempts < 0 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeRequiredFieldsMissing,
 				Message:  fmt.Sprintf("reactions.%s.max_attempts must be >= 0, got %d", name, entry.MaxAttempts),
 				Severity: "error",

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SaveLogData holds the result data for a successful SaveMergeLog call.
@@ -69,9 +69,9 @@ func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) result.Result
 	logPath := getMergeLogPath(manifestPath, waveNum)
 	logDir := filepath.Dir(logPath)
 
-	// Create .saw-state/wave{N}/ directory if needed
+	// Create .polywave-state/wave{N}/ directory if needed
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		return result.NewFailure[SaveLogData]([]result.SAWError{
+		return result.NewFailure[SaveLogData]([]result.PolywaveError{
 			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to create merge log directory: %v", err)),
 		})
 	}
@@ -79,14 +79,14 @@ func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) result.Result
 	// Pretty-print JSON with 2-space indent for readability
 	data, err := json.MarshalIndent(log, "", "  ")
 	if err != nil {
-		return result.NewFailure[SaveLogData]([]result.SAWError{
+		return result.NewFailure[SaveLogData]([]result.PolywaveError{
 			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to marshal merge log: %v", err)),
 		})
 	}
 
 	// Overwrite existing file (not append)
 	if err := os.WriteFile(logPath, data, 0644); err != nil {
-		return result.NewFailure[SaveLogData]([]result.SAWError{
+		return result.NewFailure[SaveLogData]([]result.PolywaveError{
 			result.NewFatal("LOG_SAVE_FAILED", fmt.Sprintf("failed to write merge log: %v", err)),
 		})
 	}
@@ -99,12 +99,12 @@ func SaveMergeLog(manifestPath string, waveNum int, log *MergeLog) result.Result
 // or a FATAL result with error code "ENTRY_ADD_FAILED" on validation failure.
 func (ml *MergeLog) AddMergeEntry(agent string, mergeSHA string) result.Result[AddEntryData] {
 	if agent == "" {
-		return result.NewFailure[AddEntryData]([]result.SAWError{
+		return result.NewFailure[AddEntryData]([]result.PolywaveError{
 			result.NewFatal("ENTRY_ADD_FAILED", "agent ID cannot be empty"),
 		})
 	}
 	if mergeSHA == "" {
-		return result.NewFailure[AddEntryData]([]result.SAWError{
+		return result.NewFailure[AddEntryData]([]result.PolywaveError{
 			result.NewFatal("ENTRY_ADD_FAILED", "merge SHA cannot be empty"),
 		})
 	}
@@ -147,7 +147,7 @@ func (ml *MergeLog) GetMergeSHA(agent string) string {
 func getMergeLogPath(manifestPath string, waveNum int) string {
 	manifestDir := filepath.Dir(manifestPath)
 	slug := extractSlugFromPath(manifestPath)
-	return filepath.Join(manifestDir, ".saw-state", slug, fmt.Sprintf("wave%d", waveNum), "merge-log.json")
+	return filepath.Join(manifestDir, ".polywave-state", slug, fmt.Sprintf("wave%d", waveNum), "merge-log.json")
 }
 
 // extractSlugFromPath extracts the IMPL slug from a manifest filename.

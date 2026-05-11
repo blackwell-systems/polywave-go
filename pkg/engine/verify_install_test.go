@@ -74,8 +74,8 @@ func TestRunVerifyInstall_GitVersion(t *testing.T) {
 
 func TestRunVerifyInstall_SawtoolsBinary(t *testing.T) {
 	check := checkSawtoolsBinary()
-	if check.Name != "sawtools_binary" {
-		t.Errorf("expected name sawtools_binary, got %q", check.Name)
+	if check.Name != "polywave_tools_binary" {
+		t.Errorf("expected name polywave_tools_binary, got %q", check.Name)
 	}
 	// Should always pass since we are the running binary
 	if check.Status != "pass" {
@@ -123,7 +123,7 @@ func TestRunVerifyInstall_VerdictLogic(t *testing.T) {
 
 func TestRunVerifyInstall_RepoPathUsed(t *testing.T) {
 	// Test that an explicit RepoPath is used for config lookup
-	// Use a temp dir with no saw.config.json — config check should warn
+	// Use a temp dir with no polywave.config.json — config check should warn
 	result := RunVerifyInstall(VerifyInstallOpts{RepoPath: t.TempDir()})
 
 	var configCheck InstallCheck
@@ -138,7 +138,7 @@ func TestRunVerifyInstall_RepoPathUsed(t *testing.T) {
 		t.Fatal("config_file check not found in result")
 	}
 
-	// Should be warn since the temp dir has no saw.config.json
+	// Should be warn since the temp dir has no polywave.config.json
 	if configCheck.Status != "warn" && configCheck.Status != "pass" {
 		t.Errorf("expected warn or pass for config_file in empty dir, got %q", configCheck.Status)
 	}

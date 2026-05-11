@@ -11,7 +11,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SaveManifestData holds the result payload for a successful Save call.
@@ -122,19 +122,19 @@ func isYAMLDuplicateKeyError(err error) bool {
 // dependency — callers should use Save (not SaveYAML) for IMPLManifest.
 func Save(ctx context.Context, m *IMPLManifest, path string) result.Result[SaveManifestData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[SaveManifestData]([]result.SAWError{
+		return result.NewFailure[SaveManifestData]([]result.PolywaveError{
 			result.NewFatal(result.CodeManifestSaveFailed, err.Error()),
 		})
 	}
 	data, err := yaml.Marshal(m)
 	if err != nil {
-		return result.NewFailure[SaveManifestData]([]result.SAWError{
+		return result.NewFailure[SaveManifestData]([]result.PolywaveError{
 			result.NewFatal(result.CodeManifestSaveFailed, fmt.Sprintf("failed to marshal manifest to YAML: %v", err)),
 		})
 	}
 
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return result.NewFailure[SaveManifestData]([]result.SAWError{
+		return result.NewFailure[SaveManifestData]([]result.PolywaveError{
 			result.NewFatal(result.CodeManifestSaveFailed, fmt.Sprintf("failed to write manifest file: %v", err)),
 		})
 	}
@@ -170,7 +170,7 @@ func CurrentWave(m *IMPLManifest) *Wave {
 // Returns a Fatal result if the agent ID is not found in any wave or if the agent ID is empty.
 func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionReport) result.Result[SetReportData] {
 	if agentID == "" {
-		return result.NewFailure[SetReportData]([]result.SAWError{
+		return result.NewFailure[SetReportData]([]result.PolywaveError{
 			result.NewFatal(result.CodeReportSetFailed, "agent ID cannot be empty").WithContext("agent_id", agentID),
 		})
 	}
@@ -190,7 +190,7 @@ func SetCompletionReport(m *IMPLManifest, agentID string, report CompletionRepor
 	}
 
 	if !found {
-		return result.NewFailure[SetReportData]([]result.SAWError{
+		return result.NewFailure[SetReportData]([]result.PolywaveError{
 			result.NewFatal(result.CodeReportSetFailed, fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)).WithContext("agent_id", agentID),
 		})
 	}

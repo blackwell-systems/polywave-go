@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ExtractCommands is a convenience wrapper for web CLI delegation.
@@ -12,7 +12,7 @@ import (
 func ExtractCommands(ctx context.Context, repoRoot string) result.Result[ExtractData] {
 	e := New()
 	e.RegisterCIParser(&GithubActionsParser{})
-	e.RegisterBuildSystemParser(&SawConfigParser{})
+	e.RegisterBuildSystemParser(&PolywaveConfigParser{})
 	e.RegisterBuildSystemParser(&MakefileParser{})
 	e.RegisterBuildSystemParser(&PackageJSONParser{})
 	return e.Extract(ctx, repoRoot)

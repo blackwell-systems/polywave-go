@@ -9,8 +9,8 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/commands"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PopulateVerificationGates populates verification gate blocks for all agents
@@ -267,7 +267,7 @@ type ChecklistPopulationStats struct {
 // ValidateResult contains validation pass/fail status and error list.
 type ValidateResult struct {
 	Passed bool             `json:"passed"`
-	Errors []result.SAWError `json:"errors"`
+	Errors []result.PolywaveError `json:"errors"`
 }
 
 // GatePopulationStats contains statistics about verification gate population.
@@ -288,7 +288,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	// Step 1: Load manifest
 	manifest, err := Load(context.TODO(), implPath)
 	if err != nil {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load IMPL manifest: %v", err),
@@ -305,7 +305,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	}
 
 	if !data.Validation.Passed {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeManifestInvalid,
 				Message:  "initial validation failed",
@@ -341,9 +341,9 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	toolchains := make(map[string]string)
 
 	extractor := commands.New()
-	// Register default parsers (SawConfigParser at 200 takes precedence over CI at 100)
+	// Register default parsers (PolywaveConfigParser at 200 takes precedence over CI at 100)
 	extractor.RegisterCIParser(&commands.GithubActionsParser{})
-	extractor.RegisterBuildSystemParser(&commands.SawConfigParser{})
+	extractor.RegisterBuildSystemParser(&commands.PolywaveConfigParser{})
 	extractor.RegisterBuildSystemParser(&commands.MakefileParser{})
 	extractor.RegisterBuildSystemParser(&commands.PackageJSONParser{})
 
@@ -364,7 +364,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 
 	if len(commandSets) == 0 {
 		data.GatePopulation.H2DataAvailable = false
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeToolNotFound,
 				Message:  "H2 data unavailable - run extract-commands first: no valid toolchains found in any repo",
@@ -384,7 +384,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	// Step 4: Populate verification gates
 	updatedManifest, err := PopulateVerificationGates(context.TODO(), manifest, commandSets, repoMap)
 	if err != nil {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeFinalizeWaveFailed,
 				Message:  fmt.Sprintf("failed to populate verification gates: %v", err),
@@ -408,7 +408,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	// Step 4.5: Populate integration checklist (M5)
 	updatedManifest, err = PopulateIntegrationChecklist(updatedManifest)
 	if err != nil {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeFinalizeWaveFailed,
 				Message:  fmt.Sprintf("failed to populate integration checklist: %v", err),
@@ -439,7 +439,7 @@ func FinalizeIMPL(implPath, repoRoot string) result.Result[FinalizeIMPLData] {
 	}
 
 	if !data.FinalValidation.Passed {
-		return result.NewFailure[FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[FinalizeIMPLData]([]result.PolywaveError{
 			{
 				Code:     result.CodeManifestInvalid,
 				Message:  "final validation failed after gate population",

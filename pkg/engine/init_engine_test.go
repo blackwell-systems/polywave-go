@@ -9,18 +9,18 @@ import (
 
 func TestRunInit_AlreadyExists(t *testing.T) {
 	dir := t.TempDir()
-	// Create existing saw.config.json.
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte("{}"), 0644); err != nil {
+	// Create existing polywave.config.json.
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
 	res := RunInit(InitOpts{RepoDir: dir, Force: false})
 	if res.IsSuccess() {
-		t.Fatal("expected non-success when saw.config.json exists without Force")
+		t.Fatal("expected non-success when polywave.config.json exists without Force")
 	}
 	// AlreadyExists path returns PARTIAL with data
 	if res.IsFatal() {
-		t.Fatal("expected PARTIAL (not FATAL) when saw.config.json exists without Force")
+		t.Fatal("expected PARTIAL (not FATAL) when polywave.config.json exists without Force")
 	}
 	data := res.GetData()
 	if !data.AlreadyExists {
@@ -36,8 +36,8 @@ func TestRunInit_AlreadyExists(t *testing.T) {
 
 func TestRunInit_Force(t *testing.T) {
 	dir := t.TempDir()
-	// Create existing saw.config.json.
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), []byte("{}"), 0644); err != nil {
+	// Create existing polywave.config.json.
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), []byte("{}"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	// Add go.mod so detection works.
@@ -73,8 +73,8 @@ func TestRunInit_GoProject(t *testing.T) {
 	if data.ProjectName != filepath.Base(dir) {
 		t.Errorf("ProjectName = %q, want %q", data.ProjectName, filepath.Base(dir))
 	}
-	if data.ConfigPath != filepath.Join(dir, "saw.config.json") {
-		t.Errorf("ConfigPath = %q, want %q", data.ConfigPath, filepath.Join(dir, "saw.config.json"))
+	if data.ConfigPath != filepath.Join(dir, "polywave.config.json") {
+		t.Errorf("ConfigPath = %q, want %q", data.ConfigPath, filepath.Join(dir, "polywave.config.json"))
 	}
 
 	// Verify config file was created.

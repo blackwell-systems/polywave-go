@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PrepareTierOpts contains the options for PrepareTier, replacing positional
@@ -85,7 +85,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 
 	manifest, err := ParseProgramManifest(opts.ProgramManifestPath)
 	if err != nil {
-		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+		return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 			Code:     result.CodeParseError,
 			Message:  fmt.Sprintf("failed to parse program manifest: %v", err),
 			Severity: "fatal",
@@ -101,7 +101,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 		}
 	}
 	if targetTier == nil {
-		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+		return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 			Code:     result.CodeParseError,
 			Message:  fmt.Sprintf("tier %d not found in program manifest", opts.TierNumber),
 			Severity: "fatal",
@@ -115,7 +115,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 	// Step 3: Conflict check.
 	report, err := CheckIMPLConflicts(targetTier.Impls, opts.RepoDir)
 	if err != nil {
-		return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+		return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 			Code:     result.CodeParseError,
 			Message:  fmt.Sprintf("conflict check failed: %v", err),
 			Severity: "fatal",
@@ -135,7 +135,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 	for _, slug := range targetTier.Impls {
 		implPath, err := ResolveIMPLPath(opts.RepoDir, slug)
 		if err != nil {
-			return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+			return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 				Code:     result.CodeParseError,
 				Message:  fmt.Sprintf("cannot resolve IMPL %q: %v", slug, err),
 				Severity: "fatal",
@@ -144,7 +144,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 
 		m, err := Load(ctx, implPath)
 		if err != nil {
-			return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+			return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 				Code:     result.CodeParseError,
 				Message:  fmt.Sprintf("cannot load IMPL %q: %v", slug, err),
 				Severity: "fatal",
@@ -158,7 +158,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 				if len(saveRes.Errors) > 0 {
 					saveMsg = saveRes.Errors[0].Message
 				}
-				return result.NewFailure[*PrepareTierResult]([]result.SAWError{{
+				return result.NewFailure[*PrepareTierResult]([]result.PolywaveError{{
 					Code:     result.CodeParseError,
 					Message:  fmt.Sprintf("cannot save IMPL %q after fixes: %s", slug, saveMsg),
 					Severity: "fatal",

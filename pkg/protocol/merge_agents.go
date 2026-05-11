@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // isAgentAlreadyMerged returns true if the agent's branch (slug or legacy)
@@ -27,12 +27,12 @@ func isAgentAlreadyMerged(repoDir string, mergeLog *MergeLog, agentID, slugBranc
 //  1. Every file_ownership entry for this wave references an agent that exists in the wave.
 //  2. No duplicate files appear in ownership entries for this wave (I1 recheck).
 //
-// Returns a slice of result.SAWError if inconsistencies are found; nil slice means valid.
-func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
+// Returns a slice of result.PolywaveError if inconsistencies are found; nil slice means valid.
+func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.PolywaveError {
 	// Find the target wave and build a set of valid agent IDs
 	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
-		return []result.SAWError{{
+		return []result.PolywaveError{{
 			Code:     result.CodeWaveNotFound,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "error",
@@ -44,7 +44,7 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 		validAgents[agent.ID] = true
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	seenFiles := make(map[string]string) // file path -> first agent that owns it
 
 	for _, fo := range manifest.FileOwnership {
@@ -54,7 +54,7 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 
 		// Check 1: agent in ownership table must exist in the wave
 		if !validAgents[fo.Agent] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeUnknownAgentInOwnership,
 				Message:  fmt.Sprintf("file_ownership entry for wave %d references unknown agent %q (file: %s)", waveNum, fo.Agent, fo.File),
 				Severity: "error",
@@ -64,7 +64,7 @@ func PreMergeValidation(manifest *IMPLManifest, waveNum int) []result.SAWError {
 
 		// Check 2: no duplicate file ownership (I1 recheck)
 		if firstOwner, exists := seenFiles[fo.File]; exists {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeDisjointOwnership,
 				Message:  fmt.Sprintf("file %q is owned by both agent %q and agent %q in wave %d (I1 violation)", fo.File, firstOwner, fo.Agent, waveNum),
 				Severity: "error",
@@ -155,7 +155,7 @@ type MergeAgentsData struct {
 //   - Logger: structured logger for operation logging
 //
 // Returns result.Result[MergeAgentsData] with wave number, merge statuses.
-// All error conditions are encoded as fatal SAWErrors in the result.
+// All error conditions are encoded as fatal PolywaveErrors in the result.
 func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData] {
 	manifestPath := opts.ManifestPath
 	waveNum := opts.WaveNum
@@ -165,7 +165,7 @@ func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData] {
 	// Load manifest to check if this is a multi-repo wave
 	manifest, err := Load(opts.Ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -175,7 +175,7 @@ func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData] {
 	// Find the specified wave
 	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     result.CodeWaveNotFound,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",
@@ -186,7 +186,7 @@ func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData] {
 	// siblings of this directory (same pattern as worktree.go line 116).
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
 			Severity: "fatal",
@@ -199,7 +199,7 @@ func MergeAgents(opts MergeAgentsOpts) result.Result[MergeAgentsData] {
 	for _, fo := range manifest.FileOwnership {
 		if fo.Wave == waveNum {
 			if fo.Repo != "" {
-				// fo.Repo is a repo name (e.g. "scout-and-wave-go"), not a path.
+				// fo.Repo is a repo name (e.g. "polywave-go"), not a path.
 				// Resolve it as a sibling of the provided repoDir.
 				agentRepos[fo.Agent] = filepath.Join(repoParent, fo.Repo)
 			} else {
@@ -266,7 +266,7 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     "PRE_MERGE_VALIDATION_FAILED",
 			Message:  validationErrs[0].Message,
 			Severity: "fatal",
@@ -277,7 +277,7 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 	// Checkout merge target branch before merge loop (E28)
 	if mergeTarget != "" {
 		if _, err := git.Run(repoDir, "checkout", mergeTarget); err != nil {
-			return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+			return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 				Code:     result.CodeMergeConflict,
 				Message:  fmt.Sprintf("failed to checkout merge target %s: %v", mergeTarget, err),
 				Severity: "fatal",
@@ -288,7 +288,7 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to load merge-log: %v", err),
 			Severity: "fatal",
@@ -349,7 +349,7 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 			status.Error = err.Error()
 			data.Merges = append(data.Merges, status)
 			// Return partial result with failures
-			return result.NewPartial(data, []result.SAWError{{
+			return result.NewPartial(data, []result.PolywaveError{{
 				Code:     result.CodeMergeConflict,
 				Message:  fmt.Sprintf("merge failed for agent %s: %s", agent.ID, err.Error()),
 				Severity: "error",
@@ -375,7 +375,7 @@ func mergeAgentsSingleRepo(ctx context.Context, manifestPath string, waveNum int
 			status.Success = false
 			status.Error = fmt.Sprintf("merge operation succeeded but branch tip %s not found in HEAD history (verification failed)", branchTip)
 			data.Merges = append(data.Merges, status)
-			return result.NewPartial(data, []result.SAWError{{
+			return result.NewPartial(data, []result.PolywaveError{{
 				Code:     "MERGE_VERIFICATION_FAILED",
 				Message:  fmt.Sprintf("agent %s: merge succeeded but branch %s tip (%s) not in HEAD history", agent.ID, activeBranch, branchTip),
 				Severity: "error",
@@ -422,7 +422,7 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 	log := loggerFrom(logger)
 	// H4: PreMergeValidation — verify ownership table consistency before any git operations.
 	if validationErrs := PreMergeValidation(manifest, waveNum); len(validationErrs) > 0 {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     "PRE_MERGE_VALIDATION_FAILED",
 			Message:  validationErrs[0].Message,
 			Severity: "fatal",
@@ -433,7 +433,7 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 	// Load merge-log for idempotency (E9)
 	mergeLog, err := LoadMergeLog(manifestPath, waveNum)
 	if err != nil {
-		return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+		return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to load merge-log: %v", err),
 			Severity: "fatal",
@@ -469,7 +469,7 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 		// Checkout merge target branch before merge loop (E28)
 		if mergeTarget != "" {
 			if _, err := git.Run(absRepoDir, "checkout", mergeTarget); err != nil {
-				return result.NewFailure[MergeAgentsData]([]result.SAWError{{
+				return result.NewFailure[MergeAgentsData]([]result.PolywaveError{{
 					Code:     result.CodeMergeConflict,
 					Message:  fmt.Sprintf("failed to checkout merge target %s in %s: %v", mergeTarget, repoDir, err),
 					Severity: "fatal",
@@ -516,7 +516,7 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 				status.Error = fmt.Sprintf("%s (repo: %s)", err.Error(), repoDir)
 				data.Merges = append(data.Merges, status)
 				// Return partial result with failures
-				return result.NewPartial(data, []result.SAWError{{
+				return result.NewPartial(data, []result.PolywaveError{{
 					Code:     result.CodeMergeConflict,
 					Message:  fmt.Sprintf("merge failed for agent %s in repo %s: %s", agent.ID, repoDir, err.Error()),
 					Severity: "error",
@@ -538,7 +538,7 @@ func mergeAgentsMultiRepo(ctx context.Context, manifestPath string, waveNum int,
 				status.Success = false
 				status.Error = fmt.Sprintf("merge operation succeeded but branch tip %s not found in HEAD history (verification failed, repo: %s)", branchTip, repoDir)
 				data.Merges = append(data.Merges, status)
-				return result.NewPartial(data, []result.SAWError{{
+				return result.NewPartial(data, []result.PolywaveError{{
 					Code:     "MERGE_VERIFICATION_FAILED",
 					Message:  fmt.Sprintf("agent %s in repo %s: merge succeeded but branch %s tip (%s) not in HEAD history", agent.ID, repoDir, activeBranch, branchTip),
 					Severity: "error",

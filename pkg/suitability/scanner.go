@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 // ScanPreImplementation analyzes files against requirements to classify status
 func ScanPreImplementation(repoRoot string, requirements []Requirement) result.Result[SuitabilityResult] {
 	if repoRoot == "" {
-		return result.NewFailure[SuitabilityResult]([]result.SAWError{
+		return result.NewFailure[SuitabilityResult]([]result.PolywaveError{
 			{
 				Code:     result.CodeSuitabilityRepoRootEmpty,
 				Message:  "repo root cannot be empty",
@@ -36,12 +36,12 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) result.R
 	}
 
 	if _, err := os.Stat(repoRoot); err != nil {
-		sawErr := result.SAWError{
+		sawErr := result.PolywaveError{
 			Code:     result.CodeSuitabilityFileStatFailed,
 			Message:  fmt.Sprintf("repo root does not exist or is not accessible: %s", repoRoot),
 			Severity: "fatal",
 		}.WithCause(err)
-		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
+		return result.NewFailure[SuitabilityResult]([]result.PolywaveError{sawErr})
 	}
 
 	scanResult := SuitabilityResult{
@@ -54,12 +54,12 @@ func ScanPreImplementation(repoRoot string, requirements []Requirement) result.R
 	for _, req := range requirements {
 		status, err := classifyRequirement(repoRoot, req)
 		if err != nil {
-			sawErr := result.SAWError{
+			sawErr := result.PolywaveError{
 				Code:     result.CodeSuitabilityClassifyFailed,
 				Message:  fmt.Sprintf("failed to classify requirement %s", req.ID),
 				Severity: "fatal",
 			}.WithCause(err)
-			return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
+			return result.NewFailure[SuitabilityResult]([]result.PolywaveError{sawErr})
 		}
 
 		scanResult.PreImplementation.ItemStatus = append(scanResult.PreImplementation.ItemStatus, status)
@@ -199,7 +199,7 @@ func ClassifyFile(filePath string, req Requirement) (ItemStatus, error) {
 			status.Missing = append(status.Missing, "file does not exist")
 			return status, nil
 		}
-		return status, result.SAWError{
+		return status, result.PolywaveError{
 			Code:     result.CodeSuitabilityFileReadFailed,
 			Message:  fmt.Sprintf("failed to read file %s", filePath),
 			Severity: "fatal",

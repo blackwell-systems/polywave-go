@@ -9,10 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/hooks"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PrepareAgentOpts configures engine.PrepareAgent. Consolidates brief generation,
@@ -47,7 +47,7 @@ type PrepareAgentResult struct {
 }
 
 // PrepareAgent performs all prepare-agent work: parse IMPL doc, find agent task,
-// build brief, write .saw-agent-brief.md and .saw-ownership.json, detect
+// build brief, write .polywave-agent-brief.md and .saw-ownership.json, detect
 // context_source, persist to IMPL doc, initialize journal observer.
 func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[PrepareAgentResult] {
 	var res PrepareAgentResult
@@ -55,7 +55,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 	// Parse IMPL doc
 	doc, err := protocol.Load(ctx, opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed, fmt.Sprintf("failed to parse IMPL doc: %v", err)),
 		})
 	}
@@ -77,7 +77,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 	}
 
 	if agentTask == "" {
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum)),
 		})
 	}
@@ -92,7 +92,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 		for _, e := range gateRes.Errors {
 			errParts = append(errParts, e.Message)
 		}
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveNotReady, fmt.Sprintf("pre-launch gate failed: %s", strings.Join(errParts, "; "))),
 		})
 	}
@@ -131,8 +131,8 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 	}
 
 	// Generate SAW-formatted name for Agent tool
-	sawName := fmt.Sprintf("[SAW:wave%d:agent-%s] %s", opts.WaveNum, opts.AgentID, taskFirstLine)
-	// Wrap in single quotes for valid YAML: values containing brackets (e.g. [SAW:...])
+	sawName := fmt.Sprintf("[polywave:wave%d:agent-%s] %s", opts.WaveNum, opts.AgentID, taskFirstLine)
+	// Wrap in single quotes for valid YAML: values containing brackets (e.g. [polywave:...])
 	// are invalid bare YAML scalars and must be quoted.
 	sawNameYAML := fmt.Sprintf("'%s'", sawName)
 
@@ -167,10 +167,10 @@ saw_name: %s
 	// Determine output path
 	var briefPath string
 	if opts.NoWorktree {
-		// Solo agent - write to .saw-state
-		stateDir := protocol.SAWStateAgentDir(opts.ProjectRoot, opts.WaveNum, fmt.Sprintf("agent-%s", opts.AgentID))
+		// Solo agent - write to .polywave-state
+		stateDir := protocol.PolywaveStateAgentDir(opts.ProjectRoot, opts.WaveNum, fmt.Sprintf("agent-%s", opts.AgentID))
 		if err := os.MkdirAll(stateDir, 0755); err != nil {
-			return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 				result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to create state dir: %v", err)),
 			})
 		}
@@ -178,12 +178,12 @@ saw_name: %s
 	} else {
 		// Worktree agent - write to worktree root (slug-scoped path)
 		worktreePath := protocol.WorktreeDir(opts.ProjectRoot, doc.FeatureSlug, opts.WaveNum, opts.AgentID)
-		briefPath = filepath.Join(worktreePath, ".saw-agent-brief.md")
+		briefPath = filepath.Join(worktreePath, ".polywave-agent-brief.md")
 	}
 
 	// Write brief
 	if err := os.WriteFile(briefPath, []byte(brief), 0644); err != nil {
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write brief: %v", err)),
 		})
 	}
@@ -222,7 +222,7 @@ saw_name: %s
 	}, "", "  ")
 	ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
 	if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write ownership manifest: %v", err)),
 		})
 	}
@@ -274,7 +274,7 @@ saw_name: %s
 	fullAgentID := fmt.Sprintf("wave%d-agent-%s", opts.WaveNum, opts.AgentID)
 	obsRes := journal.NewObserver(opts.ProjectRoot, fullAgentID)
 	if obsRes.IsFatal() {
-		return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeJournalInitFail, fmt.Sprintf("failed to create journal observer: %s", obsRes.Errors[0].Message)),
 		})
 	}
@@ -288,7 +288,7 @@ saw_name: %s
 		}
 		cursorData, _ := json.MarshalIndent(emptyCursor, "", "  ")
 		if err := os.WriteFile(observer.CursorPath, cursorData, 0644); err != nil {
-			return result.NewFailure[PrepareAgentResult]([]result.SAWError{
+			return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 				result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write cursor file: %v", err)),
 			})
 		}
@@ -333,8 +333,8 @@ saw_name: %s
 // SCOUT_VALIDATING to REVIEWED. Best-effort: failure returns a warning
 // message without aborting the caller. Returns "" on success.
 func advanceStateToReviewed(ctx context.Context, implPath string) string {
-	os.Setenv("SAW_ALLOW_MAIN_COMMIT", "1")
-	defer os.Unsetenv("SAW_ALLOW_MAIN_COMMIT")
+	os.Setenv("POLYWAVE_ALLOW_MAIN_COMMIT", "1")
+	defer os.Unsetenv("POLYWAVE_ALLOW_MAIN_COMMIT")
 	stateRes := protocol.SetImplState(ctx, implPath, protocol.StateReviewed, protocol.SetImplStateOpts{
 		Commit:    true,
 		CommitMsg: "chore: advance IMPL state to REVIEWED (solo-wave prepare-agent)",

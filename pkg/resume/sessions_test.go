@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func makeTestSession(agentID string, waveNum int) AgentSession {
@@ -120,7 +120,7 @@ func TestLoadAgentSessions_FileNotExist(t *testing.T) {
 }
 
 // TestSaveAgentSession_CreatesDirectory verifies that SaveAgentSession creates the
-// .saw-state/sessions/ directory if it does not exist.
+// .polywave-state/sessions/ directory if it does not exist.
 func TestSaveAgentSession_CreatesDirectory(t *testing.T) {
 	// Use a stateDir that does NOT pre-create the sessions subdirectory.
 	stateDir := filepath.Join(t.TempDir(), "saw-state-new")

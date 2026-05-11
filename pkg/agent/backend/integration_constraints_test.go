@@ -3,10 +3,10 @@ package backend_test
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // TestBedrockBuildWorkshop_WithConstraints verifies that a Bedrock client

@@ -4,11 +4,11 @@ import (
 	"context"
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/observability"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -49,7 +49,7 @@ type Event struct {
 type RunScoutOpts struct {
 	Feature              string                  // human feature description (required)
 	RepoPath             string                  // absolute path to the repository being scouted (required)
-	SAWRepoPath          string                  // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
+	PolywaveRepoPath          string                  // path to scout-and-wave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave)
 	IMPLOutPath          string                  // where to write the IMPL doc (required)
 	ScoutModel           string                  // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
 	ProgramManifestPath  string                  // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
@@ -63,7 +63,7 @@ type RunScoutOpts struct {
 type RunPlannerOpts struct {
 	Description    string // human project description (required)
 	RepoPath       string // absolute path to the repository being planned (required)
-	SAWRepoPath    string // path to scout-and-wave protocol repo (optional; falls back to $SAW_REPO then ~/code/scout-and-wave)
+	PolywaveRepoPath    string // path to scout-and-wave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave)
 	ProgramOutPath string // where to write the PROGRAM manifest (required)
 	PlannerModel   string // optional: model override for the Planner agent
 }
@@ -127,7 +127,7 @@ type ChatMessage struct {
 type RunChatOpts struct {
 	IMPLPath    string        // path to IMPL doc for context (required)
 	RepoPath    string        // absolute path to the repository (required)
-	SAWRepoPath string        // path to scout-and-wave protocol repo (optional)
+	PolywaveRepoPath string        // path to scout-and-wave protocol repo (optional)
 	History     []ChatMessage // previous conversation turns (optional)
 	Message     string        // current user message (required)
 	ChatModel   string        // model override (e.g. "ollama:qwen2.5-coder:32b"); empty = backend default

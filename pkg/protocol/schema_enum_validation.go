@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // validateAllEnums validates ALL enum fields in the manifest, complementing
@@ -12,8 +12,8 @@ import (
 // This covers: FileOwnership.Action, QualityGates.Level, ScaffoldFile.Status,
 // PreMortemRow.Likelihood, PreMortemRow.Impact.
 // Empty values are allowed for backward compatibility.
-func validateAllEnums(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateAllEnums(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	errs = append(errs, validateFileOwnershipActions(m)...)
 	errs = append(errs, validateQualityGatesLevel(m)...)
@@ -27,8 +27,8 @@ func validateAllEnums(m *IMPLManifest) []result.SAWError {
 
 // validateFileOwnershipActions checks FileOwnership.Action values.
 // Valid: "new", "modify", "delete", or empty.
-func validateFileOwnershipActions(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateFileOwnershipActions(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	validActions := map[string]bool{
 		"new":    true,
@@ -41,7 +41,7 @@ func validateFileOwnershipActions(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		if !validActions[fo.Action] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("file_ownership[%d].action has invalid value %q — must be one of: new, modify, delete", i, fo.Action),
 				Severity: "error",
@@ -55,8 +55,8 @@ func validateFileOwnershipActions(m *IMPLManifest) []result.SAWError {
 
 // validateQualityGatesLevel checks QualityGates.Level value.
 // Valid: "quick", "standard", "full", or empty.
-func validateQualityGatesLevel(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateQualityGatesLevel(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if m.QualityGates == nil {
 		return errs
@@ -73,7 +73,7 @@ func validateQualityGatesLevel(m *IMPLManifest) []result.SAWError {
 	}
 
 	if !validLevels[m.QualityGates.Level] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidEnum,
 			Message:  fmt.Sprintf("quality_gates.level has invalid value %q — must be one of: quick, standard, full", m.QualityGates.Level),
 			Severity: "error",
@@ -87,8 +87,8 @@ func validateQualityGatesLevel(m *IMPLManifest) []result.SAWError {
 // validateScaffoldStatuses checks ScaffoldFile.Status values.
 // Valid: "pending", "committed", strings starting with "committed" (e.g. "committed (abc123)"),
 // strings starting with "FAILED", or empty.
-func validateScaffoldStatuses(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateScaffoldStatuses(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	for i, sf := range m.Scaffolds {
 		if sf.Status == "" {
@@ -103,7 +103,7 @@ func validateScaffoldStatuses(m *IMPLManifest) []result.SAWError {
 		if strings.HasPrefix(sf.Status, "FAILED") {
 			continue
 		}
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidEnum,
 			Message:  fmt.Sprintf("scaffolds[%d].status has invalid value %q — must be one of: pending, committed, or start with \"committed\" or \"FAILED\"", i, sf.Status),
 			Severity: "error",
@@ -116,8 +116,8 @@ func validateScaffoldStatuses(m *IMPLManifest) []result.SAWError {
 
 // validatePreMortemRowEnums checks PreMortemRow.Likelihood and Impact values.
 // Valid: "low", "medium", "high", or empty.
-func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validatePreMortemRowEnums(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if m.PreMortem == nil {
 		return errs
@@ -131,7 +131,7 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 
 	for i, row := range m.PreMortem.Rows {
 		if row.Likelihood != "" && !validValues[row.Likelihood] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("pre_mortem.rows[%d].likelihood has invalid value %q — must be one of: low, medium, high", i, row.Likelihood),
 				Severity: "error",
@@ -139,7 +139,7 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if row.Impact != "" && !validValues[row.Impact] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("pre_mortem.rows[%d].impact has invalid value %q — must be one of: low, medium, high", i, row.Impact),
 				Severity: "error",
@@ -160,8 +160,8 @@ func validatePreMortemRowEnums(m *IMPLManifest) []result.SAWError {
 // but FullValidate counts warnings as errors and the existing test suite uses
 // WAVE_EXECUTING manifests without this field. Absent-field warnings are
 // deferred to a future improvement when FullValidate supports severity filtering.
-func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateInjectionMethod(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if m.InjectionMethod == "" {
 		return errs
@@ -174,7 +174,7 @@ func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
 	}
 
 	if !validValues[string(m.InjectionMethod)] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidEnum,
 			Severity: "error",
 			Message:  fmt.Sprintf("injection_method has invalid value %q — must be one of: hook, manual-fallback, unknown", m.InjectionMethod),
@@ -194,8 +194,8 @@ func validateInjectionMethod(m *IMPLManifest) []result.SAWError {
 // states, but FullValidate counts warnings as errors and the existing test suite uses WAVE_EXECUTING
 // manifests without this field. Absent-field warnings are deferred to a future improvement when
 // FullValidate supports severity filtering.
-func validateAgentContextSource(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateAgentContextSource(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	validValues := map[string]bool{
 		"prepared-brief":        true,
@@ -209,7 +209,7 @@ func validateAgentContextSource(m *IMPLManifest) []result.SAWError {
 				continue
 			}
 			if !validValues[string(agent.ContextSource)] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidEnum,
 					Severity: "error",
 					Message:  fmt.Sprintf("waves[%d].agents[%d] (id=%s) context_source has invalid value %q — must be one of: prepared-brief, fallback-full-context, cross-repo-full", i, j, agent.ID, agent.ContextSource),

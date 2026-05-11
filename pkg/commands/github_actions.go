@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -32,7 +32,7 @@ func (p *GithubActionsParser) ParseCI(repoRoot string) result.Result[ParseCIData
 	// Find all YAML workflow files
 	entries, err := os.ReadDir(workflowsDir)
 	if err != nil {
-		return result.NewFailure[ParseCIData]([]result.SAWError{
+		return result.NewFailure[ParseCIData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflows directory: %v", err)),
 		})
 	}
@@ -87,7 +87,7 @@ func (p *GithubActionsParser) Priority() int {
 func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[ParseWorkflowData] {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
+		return result.NewFailure[ParseWorkflowData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractWorkflowRead, fmt.Sprintf("reading workflow file %s: %v", path, err)),
 		})
 	}
@@ -107,7 +107,7 @@ func (p *GithubActionsParser) parseWorkflowFile(path string) result.Result[Parse
 
 	// Cannot use protocol.LoadYAML: data is already-read bytes from the caller, not a file path.
 	if err := yaml.Unmarshal(data, &workflow); err != nil {
-		return result.NewFailure[ParseWorkflowData]([]result.SAWError{
+		return result.NewFailure[ParseWorkflowData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractWorkflowParse, fmt.Sprintf("parsing YAML in %s: %v", path, err)),
 		})
 	}

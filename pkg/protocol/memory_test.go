@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -39,7 +39,7 @@ func TestLoadProjectMemory_Valid(t *testing.T) {
 			{
 				Name:       "IMPLManifest",
 				FilePath:   "pkg/protocol/types.go",
-				ImportPath: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol",
+				ImportPath: "github.com/blackwell-systems/polywave-go/pkg/protocol",
 			},
 		},
 		FeaturesCompleted: []CompletedFeature{

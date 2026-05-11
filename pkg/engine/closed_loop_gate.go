@@ -6,11 +6,11 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/retry"
 )
 
 // ClosedLoopRetryOpts configures a pre-merge per-agent gate retry
@@ -75,19 +75,19 @@ var closedLoopRunAgentFunc = func(ctx context.Context, model string, prompt stri
 // Loops up to MaxRetries times.
 func ClosedLoopGateRetry(ctx context.Context, opts ClosedLoopRetryOpts) result.Result[ClosedLoopRetryResult] {
 	if opts.AgentID == "" {
-		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+		return result.NewFailure[ClosedLoopRetryResult]([]result.PolywaveError{
 			result.NewFatal("B009_GATE_VALIDATION_FAILED",
 				"engine.ClosedLoopGateRetry: AgentID is required"),
 		})
 	}
 	if opts.GateCommand == "" {
-		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+		return result.NewFailure[ClosedLoopRetryResult]([]result.PolywaveError{
 			result.NewFatal("B009_GATE_VALIDATION_FAILED",
 				"engine.ClosedLoopGateRetry: GateCommand is required"),
 		})
 	}
 	if opts.WorktreePath == "" {
-		return result.NewFailure[ClosedLoopRetryResult]([]result.SAWError{
+		return result.NewFailure[ClosedLoopRetryResult]([]result.PolywaveError{
 			result.NewFatal("B009_GATE_VALIDATION_FAILED",
 				"engine.ClosedLoopGateRetry: WorktreePath is required"),
 		})

@@ -9,13 +9,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 
 // ValidateInvariants checks protocol Invariant I1 (disjoint file ownership).
 // For full I1–I6 validation use Validate.
-func ValidateInvariants(manifest *IMPLManifest) []result.SAWError {
+func ValidateInvariants(manifest *IMPLManifest) []result.PolywaveError {
 	if manifest == nil {
 		return nil
 	}
@@ -41,7 +41,7 @@ func ValidateInvariants(manifest *IMPLManifest) []result.SAWError {
 						"I1 violation in Wave %d: file %q claimed by both Agent %s and Agent %s",
 						wave.Number, file, prev, agent.ID,
 					)
-					return []result.SAWError{result.NewFatal(result.CodeDisjointOwnership, msg)}
+					return []result.PolywaveError{result.NewFatal(result.CodeDisjointOwnership, msg)}
 				}
 				seen[key] = agent.ID
 			}

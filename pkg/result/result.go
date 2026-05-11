@@ -20,14 +20,14 @@ import (
 // consistent success/failure signaling. Replaces 68 distinct *Result types.
 type Result[T any] struct {
 	Data   *T         `json:"data,omitempty"`
-	Errors []SAWError `json:"errors,omitempty"`
+	Errors []PolywaveError `json:"errors,omitempty"`
 	Code   string     `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
 }
 
-// SAWError is the unified structured error type for all SAW operations.
-// Replaces: protocol.ValidationError, errparse.StructuredError, result.SAWError.
+// PolywaveError is the unified structured error type for all SAW operations.
+// Replaces: protocol.ValidationError, errparse.StructuredError, result.PolywaveError.
 // Implements the error interface. Supports errors.Is/As chains via Unwrap.
-type SAWError struct {
+type PolywaveError struct {
 	Code       string            `json:"code"`                // e.g. "V001_MANIFEST_INVALID"
 	Message    string            `json:"message"`             // human-readable
 	Severity   string            `json:"severity"`            // "fatal"|"error"|"warning"|"info"
@@ -40,8 +40,8 @@ type SAWError struct {
 	Cause      error             `json:"-"`                   // wrapped error for errors.Is/As
 }
 
-// Error implements the error interface for SAWError.
-func (e SAWError) Error() string {
+// Error implements the error interface for PolywaveError.
+func (e PolywaveError) Error() string {
 	if e.Severity != "" {
 		return fmt.Sprintf("[%s] %s: %s", e.Severity, e.Code, e.Message)
 	}
@@ -49,13 +49,13 @@ func (e SAWError) Error() string {
 }
 
 // Unwrap returns the wrapped cause error for errors.Is/As chain support.
-func (e SAWError) Unwrap() error { return e.Cause }
+func (e PolywaveError) Unwrap() error { return e.Cause }
 
 // IsFatal returns true when the error severity is "fatal".
-func (e SAWError) IsFatal() bool { return e.Severity == "fatal" }
+func (e PolywaveError) IsFatal() bool { return e.Severity == "fatal" }
 
 // WithContext returns a copy of the error with an additional context key-value pair.
-func (e SAWError) WithContext(key, value string) SAWError {
+func (e PolywaveError) WithContext(key, value string) PolywaveError {
 	newCtx := make(map[string]string, len(e.Context)+1)
 	for k, v := range e.Context {
 		newCtx[k] = v
@@ -66,24 +66,24 @@ func (e SAWError) WithContext(key, value string) SAWError {
 }
 
 // WithCause returns a copy of the error with the given cause attached.
-func (e SAWError) WithCause(cause error) SAWError {
+func (e PolywaveError) WithCause(cause error) PolywaveError {
 	e.Cause = cause
 	return e
 }
 
-// NewError creates a SAWError with severity "error".
-func NewError(code, message string) SAWError {
-	return SAWError{Code: code, Message: message, Severity: "error"}
+// NewError creates a PolywaveError with severity "error".
+func NewError(code, message string) PolywaveError {
+	return PolywaveError{Code: code, Message: message, Severity: "error"}
 }
 
-// NewFatal creates a SAWError with severity "fatal".
-func NewFatal(code, message string) SAWError {
-	return SAWError{Code: code, Message: message, Severity: "fatal"}
+// NewFatal creates a PolywaveError with severity "fatal".
+func NewFatal(code, message string) PolywaveError {
+	return PolywaveError{Code: code, Message: message, Severity: "fatal"}
 }
 
-// NewWarning creates a SAWError with severity "warning".
-func NewWarning(code, message string) SAWError {
-	return SAWError{Code: code, Message: message, Severity: "warning"}
+// NewWarning creates a PolywaveError with severity "warning".
+func NewWarning(code, message string) PolywaveError {
+	return PolywaveError{Code: code, Message: message, Severity: "warning"}
 }
 
 
@@ -127,7 +127,7 @@ func NewSuccess[T any](data T) Result[T] {
 
 // NewPartial creates a partially successful Result with data and warnings.
 // Panics if errs is empty — a PARTIAL result must carry at least one diagnostic.
-func NewPartial[T any](data T, errs []SAWError) Result[T] {
+func NewPartial[T any](data T, errs []PolywaveError) Result[T] {
 	if len(errs) == 0 {
 		panic("result.NewPartial called with empty errors slice")
 	}
@@ -140,7 +140,7 @@ func NewPartial[T any](data T, errs []SAWError) Result[T] {
 
 // NewFailure creates a failed Result with structured errors.
 // Panics if errors is empty — passing an empty slice is a programming error.
-func NewFailure[T any](errors []SAWError) Result[T] {
+func NewFailure[T any](errors []PolywaveError) Result[T] {
 	if len(errors) == 0 {
 		panic("result.NewFailure called with empty errors slice")
 	}
@@ -150,9 +150,9 @@ func NewFailure[T any](errors []SAWError) Result[T] {
 	}
 }
 
-// ToErrors converts a slice of SAWError to a slice of error so callers can
+// ToErrors converts a slice of PolywaveError to a slice of error so callers can
 // pass the result to errors.Join or range over standard error values.
-func ToErrors(errs []SAWError) []error {
+func ToErrors(errs []PolywaveError) []error {
 	out := make([]error, len(errs))
 	for i, e := range errs {
 		out[i] = e

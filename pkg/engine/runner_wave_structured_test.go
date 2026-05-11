@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // buildMinimalIMPLManifest creates a minimal IMPL manifest YAML with one wave and one agent,

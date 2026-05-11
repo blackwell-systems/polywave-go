@@ -7,14 +7,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ValidateData holds the output of a successful or partial scout boundary validation.
 type ValidateData struct {
 	ValidatedPath    string
 	UnexpectedWrites []string
-	Violations       []result.SAWError
+	Violations       []result.PolywaveError
 }
 
 // ValidateScoutWrites checks if Scout wrote files outside its boundaries.
@@ -78,15 +78,15 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 	})
 
 	if err != nil {
-		return result.NewFailure[ValidateData]([]result.SAWError{
+		return result.NewFailure[ValidateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutBoundaryViolation, fmt.Sprintf("scout boundaries validation: walk failed: %v", err)),
 		})
 	}
 
 	if len(unexpectedWrites) > 0 {
-		violations := make([]result.SAWError, len(unexpectedWrites))
+		violations := make([]result.PolywaveError, len(unexpectedWrites))
 		for i, path := range unexpectedWrites {
-			violations[i] = result.SAWError{
+			violations[i] = result.PolywaveError{
 				Code:    result.CodeScoutBoundaryViolation,
 				Message: fmt.Sprintf("Scout wrote file outside permitted boundaries: %s", path),
 				Severity: "warning",

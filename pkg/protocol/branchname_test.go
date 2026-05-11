@@ -18,28 +18,28 @@ func TestBranchName(t *testing.T) {
 			slug:     "my-feature",
 			waveNum:  1,
 			agentID:  "A",
-			expected: "saw/my-feature/wave1-agent-A",
+			expected: "polywave/my-feature/wave1-agent-A",
 		},
 		{
 			name:     "multi-generation agent",
 			slug:     "my-feature",
 			waveNum:  2,
 			agentID:  "B3",
-			expected: "saw/my-feature/wave2-agent-B3",
+			expected: "polywave/my-feature/wave2-agent-B3",
 		},
 		{
 			name:     "slug with numbers",
 			slug:     "v2-migration",
 			waveNum:  5,
 			agentID:  "C",
-			expected: "saw/v2-migration/wave5-agent-C",
+			expected: "polywave/v2-migration/wave5-agent-C",
 		},
 		{
 			name:     "slug with multiple hyphens",
 			slug:     "add-new-feature-flag",
 			waveNum:  10,
 			agentID:  "D2",
-			expected: "saw/add-new-feature-flag/wave10-agent-D2",
+			expected: "polywave/add-new-feature-flag/wave10-agent-D2",
 		},
 	}
 
@@ -107,7 +107,7 @@ func TestWorktreeDir(t *testing.T) {
 			slug:     "my-feature",
 			waveNum:  1,
 			agentID:  "A",
-			expected: "/home/user/repo/.claude/worktrees/saw/my-feature/wave1-agent-A",
+			expected: "/home/user/repo/.claude/worktrees/polywave/my-feature/wave1-agent-A",
 		},
 		{
 			name:     "relative path",
@@ -115,7 +115,7 @@ func TestWorktreeDir(t *testing.T) {
 			slug:     "test-slug",
 			waveNum:  2,
 			agentID:  "B",
-			expected: filepath.Join(".", ".claude", "worktrees", "saw", "test-slug", "wave2-agent-B"),
+			expected: filepath.Join(".", ".claude", "worktrees", "polywave", "test-slug", "wave2-agent-B"),
 		},
 		{
 			name:     "slug with hyphens",
@@ -123,7 +123,7 @@ func TestWorktreeDir(t *testing.T) {
 			slug:     "add-new-api",
 			waveNum:  3,
 			agentID:  "C2",
-			expected: "/repo/.claude/worktrees/saw/add-new-api/wave3-agent-C2",
+			expected: "/repo/.claude/worktrees/polywave/add-new-api/wave3-agent-C2",
 		},
 	}
 
@@ -145,11 +145,11 @@ func TestScopedBranchRegex_NewFormat(t *testing.T) {
 		wave    string
 		agent   string
 	}{
-		{"saw/my-slug/wave1-agent-A", true, "1", "A"},
-		{"saw/test/wave2-agent-B", true, "2", "B"},
-		{"saw/feature-x/wave10-agent-C2", true, "10", "C2"},
-		{"saw/v2-migration/wave99-agent-Z9", true, "99", "Z9"},
-		{"saw/hyphenated-slug/wave5-agent-D", true, "5", "D"},
+		{"polywave/my-slug/wave1-agent-A", true, "1", "A"},
+		{"polywave/test/wave2-agent-B", true, "2", "B"},
+		{"polywave/feature-x/wave10-agent-C2", true, "10", "C2"},
+		{"polywave/v2-migration/wave99-agent-Z9", true, "99", "Z9"},
+		{"polywave/hyphenated-slug/wave5-agent-D", true, "5", "D"},
 	}
 
 	for _, tt := range tests {
@@ -226,14 +226,14 @@ func TestScopedBranchRegex_Invalid(t *testing.T) {
 		"wave-1-agent-A",               // wrong wave format
 		"wave1-agent-a",                // lowercase agent (invalid)
 		"saw/wave1-agent-A",            // missing slug between saw/ and wave
-		"saw//wave1-agent-A",           // empty slug
+		"polywave//wave1-agent-A",           // empty slug
 		"main",                         // not a SAW branch
 		"feature/my-feature",           // different branch pattern
 		"saw/MY-SLUG/wave1-agent-A",    // uppercase in slug (invalid)
 		"saw/my_slug/wave1-agent-A",    // underscore in slug (invalid)
 		"wave1-agent-A-extra",          // trailing content
 		"prefix-wave1-agent-A",         // leading content
-		"saw/my-slug/wave1-agent-A/extra", // trailing content after agent
+		"polywave/my-slug/wave1-agent-A/extra", // trailing content after agent
 	}
 
 	for _, branch := range invalid {
@@ -252,10 +252,10 @@ func TestParseBranch_NewFormat(t *testing.T) {
 		expectedID  string
 		expectedOK  bool
 	}{
-		{"saw/my-slug/wave1-agent-A", 1, "A", true},
-		{"saw/test/wave2-agent-B2", 2, "B2", true},
-		{"saw/feature/wave10-agent-C", 10, "C", true},
-		{"saw/v2-api/wave99-agent-Z9", 99, "Z9", true},
+		{"polywave/my-slug/wave1-agent-A", 1, "A", true},
+		{"polywave/test/wave2-agent-B2", 2, "B2", true},
+		{"polywave/feature/wave10-agent-C", 10, "C", true},
+		{"polywave/v2-api/wave99-agent-Z9", 99, "Z9", true},
 	}
 
 	for _, tt := range tests {
@@ -330,11 +330,11 @@ func TestExtractSlug_NewFormat(t *testing.T) {
 		branch       string
 		expectedSlug string
 	}{
-		{"saw/my-slug/wave1-agent-A", "my-slug"},
-		{"saw/test/wave2-agent-B", "test"},
-		{"saw/feature-x/wave10-agent-C2", "feature-x"},
-		{"saw/v2-migration/wave99-agent-Z", "v2-migration"},
-		{"saw/hyphenated-slug-here/wave5-agent-D", "hyphenated-slug-here"},
+		{"polywave/my-slug/wave1-agent-A", "my-slug"},
+		{"polywave/test/wave2-agent-B", "test"},
+		{"polywave/feature-x/wave10-agent-C2", "feature-x"},
+		{"polywave/v2-migration/wave99-agent-Z", "v2-migration"},
+		{"polywave/hyphenated-slug-here/wave5-agent-D", "hyphenated-slug-here"},
 	}
 
 	for _, tt := range tests {
@@ -369,7 +369,7 @@ func TestExtractSlug_Invalid(t *testing.T) {
 		"",
 		"main",
 		"feature/branch",
-		"saw/",     // no slug
+		"polywave/",     // no slug
 		"sawx/test/wave1-agent-A", // not starting with saw/
 	}
 
@@ -396,28 +396,28 @@ func TestBranchName_SpecialSlugs(t *testing.T) {
 			slug:     "2fa-integration",
 			waveNum:  1,
 			agentID:  "A",
-			expected: "saw/2fa-integration/wave1-agent-A",
+			expected: "polywave/2fa-integration/wave1-agent-A",
 		},
 		{
 			name:     "slug with many hyphens",
 			slug:     "add-new-feature-for-api-v2",
 			waveNum:  3,
 			agentID:  "B",
-			expected: "saw/add-new-feature-for-api-v2/wave3-agent-B",
+			expected: "polywave/add-new-feature-for-api-v2/wave3-agent-B",
 		},
 		{
 			name:     "short slug",
 			slug:     "a",
 			waveNum:  1,
 			agentID:  "C",
-			expected: "saw/a/wave1-agent-C",
+			expected: "polywave/a/wave1-agent-C",
 		},
 		{
 			name:     "numeric slug",
 			slug:     "123",
 			waveNum:  2,
 			agentID:  "D",
-			expected: "saw/123/wave2-agent-D",
+			expected: "polywave/123/wave2-agent-D",
 		},
 	}
 

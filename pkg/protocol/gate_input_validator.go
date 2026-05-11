@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // GateInputValidationData captures whether the reported files in completion
@@ -35,7 +35,7 @@ func ValidateGateInputs(manifest *IMPLManifest, waveNum int, repoDir string) res
 	// Find target wave
 	targetWave := manifest.FindWave(waveNum)
 	if targetWave == nil {
-		return result.NewFailure[*GateInputValidationData]([]result.SAWError{{
+		return result.NewFailure[*GateInputValidationData]([]result.PolywaveError{{
 			Code:     result.CodeGateInputInvalid,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",

@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // parsers holds registered lock file parsers
@@ -26,7 +26,7 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	// 1. Parse IMPL doc to get file ownership for specified wave
 	manifest, err := protocol.Load(context.TODO(), implPath)
 	if err != nil {
-		return result.NewFailure[ConflictReport]([]result.SAWError{
+		return result.NewFailure[ConflictReport]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("failed to parse IMPL doc: %v", err)).WithCause(err),
 		})
@@ -37,7 +37,7 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 
 	// F5: Validate repo root contains .git directory
 	if _, err := os.Stat(filepath.Join(repoRoot, ".git")); err != nil {
-		return result.NewFailure[ConflictReport]([]result.SAWError{
+		return result.NewFailure[ConflictReport]([]result.PolywaveError{
 			result.NewFatal("D011_REPO_ROOT_INVALID",
 				fmt.Sprintf("inferred repo root %s does not contain .git directory", repoRoot)),
 		})
@@ -58,7 +58,7 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	// 3. Extract external package imports from owned files
 	imports, err := extractExternalImports(repoRoot, ownedFiles)
 	if err != nil {
-		return result.NewFailure[ConflictReport]([]result.SAWError{
+		return result.NewFailure[ConflictReport]([]result.PolywaveError{
 			result.NewFatal("D003_MISSING_DEPS",
 				fmt.Sprintf("failed to analyze dependencies: %v", err)).WithCause(err),
 		})
@@ -67,7 +67,7 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 	// 4. Detect lock files in repo root
 	lockFiles, err := DetectLockFiles(repoRoot)
 	if err != nil {
-		return result.NewFailure[ConflictReport]([]result.SAWError{
+		return result.NewFailure[ConflictReport]([]result.PolywaveError{
 			result.NewFatal("D001_LOCK_FILE_OPEN",
 				fmt.Sprintf("failed to detect lock files: %v", err)).WithCause(err),
 		})
@@ -75,7 +75,7 @@ func CheckDeps(implPath string, wave int) result.Result[ConflictReport] {
 
 	// 5. Parse lock files using registered parsers
 	lockFilePackages := make(map[string]PackageInfo) // package name -> info
-	var parseErrors []result.SAWError
+	var parseErrors []result.PolywaveError
 	for _, lockFile := range lockFiles {
 		for _, parser := range parsers {
 			if parser.Detect(lockFile) {
@@ -337,7 +337,7 @@ func getModulePath(repoRoot string) result.Result[string] {
 	goModPath := filepath.Join(repoRoot, "go.mod")
 	data, err := os.ReadFile(goModPath)
 	if err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal("D009_GOMOD_READ",
 				fmt.Sprintf("failed to read go.mod: %v", err)).WithCause(err),
 		})
@@ -353,7 +353,7 @@ func getModulePath(repoRoot string) result.Result[string] {
 		}
 	}
 
-	return result.NewFailure[string]([]result.SAWError{
+	return result.NewFailure[string]([]result.PolywaveError{
 		result.NewFatal("D010_GOMOD_PARSE",
 			"no module directive found in go.mod"),
 	})

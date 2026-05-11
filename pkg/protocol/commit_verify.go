@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CommitStatus represents the commit status of a single agent in a wave.
@@ -49,7 +49,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 	// Load the manifest
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+		return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -68,7 +68,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+		return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -81,7 +81,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 	// siblings of this directory (same pattern as worktree.go line 116).
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+		return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
@@ -96,7 +96,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 	for _, fo := range manifest.FileOwnership {
 		if fo.Wave == waveNum {
 			if fo.Repo != "" {
-				// fo.Repo is a repo name (e.g. "scout-and-wave-go"), not a path.
+				// fo.Repo is a repo name (e.g. "polywave-go"), not a path.
 				// Resolve it as a sibling of the provided repoDir.
 				agentRepos[fo.Agent] = filepath.Join(repoParent, fo.Repo)
 			} else {
@@ -124,7 +124,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 		var err error
 		baseCommit, err = git.RevParse(absRepoDir, "HEAD")
 		if err != nil {
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				{
 					Code:     result.CodeCommitMissing,
 					Message:  fmt.Sprintf("failed to get base commit: %v", err),
@@ -136,7 +136,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 
 	// Check context before starting per-agent iteration (may be slow for large waves).
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+		return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 			{
 				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("context cancelled before verifying agents: %v", err),
@@ -153,14 +153,14 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 
 	// Track validation status
 	allValid := true
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 
 	// Check each agent's branch in its respective repository
 	for _, agent := range targetWave.Agents {
 		// Support cancellation between agents. Each iteration may invoke multiple
 		// git subprocesses; checking here avoids starting new git work after cancel.
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				{
 					Code:     result.CodeCommitMissing,
 					Message:  fmt.Sprintf("context cancelled while verifying agent %s: %v", agent.ID, err),
@@ -223,7 +223,7 @@ func VerifyCommits(ctx context.Context, manifestPath string, waveNum int, repoDi
 		// Update overall validity and collect warnings
 		if !status.HasCommits {
 			allValid = false
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeCompletionVerificationWarning,
 				Message:  fmt.Sprintf("agent %s has no commits on branch %s", status.Agent, status.Branch),
 				Severity: "warning",

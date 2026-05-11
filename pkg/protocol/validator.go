@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // typedBlockRe matches the opening fence of a typed block, e.g.:
@@ -63,7 +63,7 @@ var invalidAgentIDRe = regexp.MustCompile(`\[([A-Z]1|[A-Z]0|[A-Z][0-9]{2,}|[A-Z]
 // Called by: FullValidate (after Validate). Does not call Validate itself.
 // Do not call directly unless you specifically need E16 block validation without
 // the full invariant suite.
-func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
+func ValidateIMPLDoc(path string) ([]result.PolywaveError, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("ValidateIMPLDoc: cannot open %q: %w", path, err)
@@ -81,7 +81,7 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 		return nil, fmt.Errorf("ValidateIMPLDoc: scanner error reading %q: %w", path, err2)
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	seenBlocks := map[string]bool{}
 	blockCount := 0
 
@@ -108,7 +108,7 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 		seenBlocks[blockType] = true
 		blockCount++
 
-		var blockErrs []result.SAWError
+		var blockErrs []result.PolywaveError
 		var blockAgentIDs []string
 		switch blockType {
 		case "impl-file-ownership":
@@ -137,7 +137,7 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 		}
 	}
 	if hasAgentIDErrors && len(allAgentIDs) > 0 {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "agent-id",
 			Severity: "error",
 			Line:     0,
@@ -149,7 +149,7 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 	if blockCount > 0 {
 		for _, req := range e16aRequiredBlocks {
 			if !seenBlocks[req] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     "e16a",
 					Severity: "error",
 					Line:     0,
@@ -193,7 +193,7 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 				if closingFence {
 					content := strings.Join(plainBlockLines, "\n")
 					if e16cAgentRe.MatchString(content) && e16cWaveRe.MatchString(content) {
-						errs = append(errs, result.SAWError{
+						errs = append(errs, result.PolywaveError{
 							Code:     "warning",
 							Severity: "warning",
 							Line:     plainBlockStart,
@@ -217,14 +217,14 @@ func ValidateIMPLDoc(path string) ([]result.SAWError, error) {
 
 // validateFileOwnership validates an impl-file-ownership block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, []string) {
-	var errs []result.SAWError
+func validateFileOwnership(lines []string, lineNumber int) ([]result.PolywaveError, []string) {
+	var errs []result.PolywaveError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have a header row containing "| File "
 	if !strings.Contains(content, "| File ") {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-file-ownership",
 			Severity: "error",
 			Line:     lineNumber,
@@ -251,7 +251,7 @@ func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, [
 		dataRows++
 	}
 	if dataRows == 0 {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-file-ownership",
 			Severity: "error",
 			Line:     lineNumber,
@@ -272,7 +272,7 @@ func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, [
 		}
 		pipeCount := strings.Count(row, "|")
 		if pipeCount < 4 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "impl-file-ownership",
 				Severity: "error",
 				Line:     lineNumber,
@@ -287,7 +287,7 @@ func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, [
 			if agentCell != "" && agentCell != "Agent" && agentCell != "---" {
 				agentIDs = append(agentIDs, agentCell)
 				if !validAgentIDRe.MatchString(agentCell) {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     "agent-id",
 						Severity: "error",
 						Line:     lineNumber,
@@ -303,14 +303,14 @@ func validateFileOwnership(lines []string, lineNumber int) ([]result.SAWError, [
 
 // validateDepGraph validates an impl-dep-graph block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []string) {
-	var errs []result.SAWError
+func validateDepGraph(lines []string, lineNumber int) ([]result.PolywaveError, []string) {
+	var errs []result.PolywaveError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have at least one line matching "^Wave [0-9]+"
 	if !waveHeaderRe.MatchString(content) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-dep-graph",
 			Severity: "error",
 			Line:     lineNumber,
@@ -321,7 +321,7 @@ func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []stri
 
 	// Must have at least one line matching "[A-Z]"
 	if !agentRefRe.MatchString(content) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-dep-graph",
 			Severity: "error",
 			Line:     lineNumber,
@@ -359,7 +359,7 @@ func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []stri
 	for _, block := range blocks {
 		blockContent := strings.Join(block.lines, "\n")
 		if !rootOrDependsRe.MatchString(blockContent) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "impl-dep-graph",
 				Severity: "error",
 				Line:     lineNumber,
@@ -369,7 +369,7 @@ func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []stri
 
 		// I2: Validate agent ID format
 		if !validAgentIDRe.MatchString(block.letter) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "agent-id",
 				Severity: "error",
 				Line:     lineNumber,
@@ -383,14 +383,14 @@ func validateDepGraph(lines []string, lineNumber int) ([]result.SAWError, []stri
 
 // validateWaveStructure validates an impl-wave-structure block.
 // I2: Returns (errors, agentIDs) where agentIDs are all agent IDs found in this block.
-func validateWaveStructure(lines []string, lineNumber int) ([]result.SAWError, []string) {
-	var errs []result.SAWError
+func validateWaveStructure(lines []string, lineNumber int) ([]result.PolywaveError, []string) {
+	var errs []result.PolywaveError
 	var agentIDs []string
 	content := strings.Join(lines, "\n")
 
 	// Must have at least one line matching "^Wave [0-9]+:"
 	if !waveStructureRe.MatchString(content) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-wave-structure",
 			Severity: "error",
 			Line:     lineNumber,
@@ -401,7 +401,7 @@ func validateWaveStructure(lines []string, lineNumber int) ([]result.SAWError, [
 
 	// Must reference at least one agent letter [A-Z]
 	if !agentRefRe.MatchString(content) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     "impl-wave-structure",
 			Severity: "error",
 			Line:     lineNumber,
@@ -422,7 +422,7 @@ func validateWaveStructure(lines []string, lineNumber int) ([]result.SAWError, [
 
 				// Validate format
 				if !validAgentIDRe.MatchString(id) {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     "agent-id",
 						Severity: "error",
 						Line:     lineNumber,
@@ -449,8 +449,8 @@ var completionReportRequiredFields = []string{
 
 // validateCompletionReport validates an impl-completion-report block.
 // I2: Returns (errors, agentIDs) where agentIDs is empty (completion reports don't define new agent IDs).
-func validateCompletionReport(lines []string, lineNumber int) ([]result.SAWError, []string) {
-	var errs []result.SAWError
+func validateCompletionReport(lines []string, lineNumber int) ([]result.PolywaveError, []string) {
+	var errs []result.PolywaveError
 
 	// Check required fields
 	for _, field := range completionReportRequiredFields {
@@ -462,7 +462,7 @@ func validateCompletionReport(lines []string, lineNumber int) ([]result.SAWError
 			}
 		}
 		if !found {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "impl-completion-report",
 				Severity: "error",
 				Line:     lineNumber,
@@ -483,7 +483,7 @@ func validateCompletionReport(lines []string, lineNumber int) ([]result.SAWError
 		// The bash script's tr -d '[:space:]' + cut -d'|' -f1 would silently pass this,
 		// but we explicitly reject multi-value placeholders.
 		if strings.Contains(rawVal, "|") {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "impl-completion-report",
 				Severity: "error",
 				Line:     lineNumber,
@@ -494,7 +494,7 @@ func validateCompletionReport(lines []string, lineNumber int) ([]result.SAWError
 
 		val := rawVal
 		if val != "complete" && val != "partial" && val != "blocked" {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     "impl-completion-report",
 				Severity: "error",
 				Line:     lineNumber,

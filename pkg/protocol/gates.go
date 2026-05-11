@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/errparse"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/format"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/errparse"
+	"github.com/blackwell-systems/polywave-go/pkg/format"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // GateResult represents the outcome of executing a single quality gate.
@@ -31,7 +31,7 @@ type GateResult struct {
 	Skipped      bool                       `json:"skipped,omitempty"`
 	SkipReason   string                     `json:"skip_reason,omitempty"`
 	FromCache    bool                       `json:"from_cache,omitempty"`
-	ParsedErrors []result.SAWError `json:"parsed_errors,omitempty"`
+	ParsedErrors []result.PolywaveError `json:"parsed_errors,omitempty"`
 }
 
 // GatesData wraps gate execution results for use with result.Result[T].
@@ -53,13 +53,13 @@ func ValidateQualityGate(gate QualityGate) result.Result[ValidateGateData] {
 	// Format gates with fix=true MUST be in PRE_VALIDATION phase
 	// (or empty phase, which defaults to VALIDATION — that's an error too)
 	if gate.Fix && gate.Phase != GatePhasePre && gate.Phase != "" {
-		return result.NewFailure[ValidateGateData]([]result.SAWError{
+		return result.NewFailure[ValidateGateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeGateValidationFailed, fmt.Sprintf("format gates with fix=true must be in PRE_VALIDATION phase (got %s)", gate.Phase)),
 		})
 	}
 	// Empty phase + fix=true is also invalid (would default to VALIDATION)
 	if gate.Fix && gate.Phase == "" {
-		return result.NewFailure[ValidateGateData]([]result.SAWError{
+		return result.NewFailure[ValidateGateData]([]result.PolywaveError{
 			result.NewFatal(result.CodeGateValidationFailed, "format gates with fix=true must be in PRE_VALIDATION phase (got empty, which defaults to VALIDATION)"),
 		})
 	}
@@ -350,7 +350,7 @@ func resolveGateRepoDir(gate QualityGate, defaultRepoDir string, configRepos map
 	if p, ok := configRepos[gate.Repo]; ok {
 		return p, ""
 	}
-	return "", fmt.Sprintf("gate repo %q not found in saw.config.json (known repos: %v)",
+	return "", fmt.Sprintf("gate repo %q not found in polywave.config.json (known repos: %v)",
 		gate.Repo, sortedMapKeys(configRepos))
 }
 
@@ -383,7 +383,7 @@ func runGates(ctx context.Context, manifest *IMPLManifest, waveNumber int, repoD
 
 	var configRepos map[string]string
 	if manifestPath != "" {
-		configRepos = loadSAWConfigRepos(filepath.Dir(manifestPath))
+		configRepos = loadPolywaveConfigRepos(filepath.Dir(manifestPath))
 	} else {
 		configRepos = make(map[string]string)
 	}
@@ -580,7 +580,7 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 
 	var configRepos map[string]string
 	if manifestPath != "" {
-		configRepos = loadSAWConfigRepos(filepath.Dir(manifestPath))
+		configRepos = loadPolywaveConfigRepos(filepath.Dir(manifestPath))
 	} else {
 		configRepos = make(map[string]string)
 	}
@@ -592,7 +592,7 @@ func RunGatesWithCache(ctx context.Context, manifest *IMPLManifest, waveNumber i
 	for _, gate := range manifest.QualityGates.Gates {
 		// Validate gate before execution (BLOCKER 2 fix)
 		if vr := ValidateQualityGate(gate); vr.IsFatal() {
-			return result.NewFailure[GatesData]([]result.SAWError{
+			return result.NewFailure[GatesData]([]result.PolywaveError{
 				result.NewFatal(result.CodeGateValidationFailed, fmt.Sprintf("invalid gate %s: %s", gate.Type, vr.Errors[0].Message)),
 			})
 		}

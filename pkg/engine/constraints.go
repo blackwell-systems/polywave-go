@@ -3,9 +3,9 @@ package engine
 import (
 	"context"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // buildConstraints constructs a tools.Constraints from the IMPL manifest
@@ -96,7 +96,7 @@ func buildConstraints(manifest *protocol.IMPLManifest, agentID string, role stri
 func BuildWaveConstraints(ctx context.Context, implPath string, agentID string) result.Result[*tools.Constraints] {
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return result.NewFailure[*tools.Constraints]([]result.SAWError{
+		return result.NewFailure[*tools.Constraints]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				"BuildWaveConstraints: load manifest: "+err.Error()).
 				WithCause(err),
@@ -135,7 +135,7 @@ func buildIntegratorConstraints(manifest *protocol.IMPLManifest, connectors []pr
 func BuildIntegratorConstraints(ctx context.Context, implPath string) result.Result[*tools.Constraints] {
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return result.NewFailure[*tools.Constraints]([]result.SAWError{
+		return result.NewFailure[*tools.Constraints]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				"BuildIntegratorConstraints: load manifest: "+err.Error()).
 				WithCause(err),

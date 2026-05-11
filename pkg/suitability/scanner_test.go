@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestScanPreImplementation_AllDone(t *testing.T) {
@@ -757,9 +757,9 @@ func TestClassifyFile_NonExistReadErrorUsesS004(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for unreadable file")
 	}
-	var sawErr result.SAWError
+	var sawErr result.PolywaveError
 	if !errors.As(err, &sawErr) {
-		t.Fatalf("expected result.SAWError, got %T: %v", err, err)
+		t.Fatalf("expected result.PolywaveError, got %T: %v", err, err)
 	}
 	if sawErr.Code != result.CodeSuitabilityFileReadFailed {
 		t.Errorf("expected code %s, got %s",

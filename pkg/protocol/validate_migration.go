@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ValidateMigrationBoundaries detects cross-wave migration boundaries where
@@ -16,7 +16,7 @@ import (
 //
 // Only consecutive wave pairs are checked. Directory-level granularity is used
 // to keep the check language-agnostic (no import parsing).
-func ValidateMigrationBoundaries(m *IMPLManifest) []result.SAWError {
+func ValidateMigrationBoundaries(m *IMPLManifest) []result.PolywaveError {
 	if m == nil {
 		return nil
 	}
@@ -38,7 +38,7 @@ func ValidateMigrationBoundaries(m *IMPLManifest) []result.SAWError {
 	}
 	sort.Ints(waves)
 
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 
 	// Check consecutive wave pairs
 	for i := 0; i < len(waves)-1; i++ {
@@ -63,7 +63,7 @@ func ValidateMigrationBoundaries(m *IMPLManifest) []result.SAWError {
 		sort.Strings(overlapping)
 
 		for _, dir := range overlapping {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     "MIGRATION_BOUNDARY_WARNING",
 				Message:  fmt.Sprintf("Wave %d modifies files in %s, wave %d has callers — verify re-export bridge or consolidate into one wave", waveN, dir, waveN1),
 				Severity: "warning",

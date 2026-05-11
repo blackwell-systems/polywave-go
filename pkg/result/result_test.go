@@ -33,7 +33,7 @@ func TestNewSuccess(t *testing.T) {
 // TestNewPartial verifies NewPartial constructor creates a partial success Result.
 func TestNewPartial(t *testing.T) {
 	data := 42
-	warnings := []SAWError{
+	warnings := []PolywaveError{
 		{
 			Code:     "W001",
 			Message:  "Non-critical warning",
@@ -64,7 +64,7 @@ func TestNewPartial(t *testing.T) {
 
 // TestNewFailure verifies NewFailure constructor creates a failed Result.
 func TestNewFailure(t *testing.T) {
-	errors := []SAWError{
+	errors := []PolywaveError{
 		{
 			Code:     "E001",
 			Message:  "Fatal error occurred",
@@ -101,14 +101,14 @@ func TestIsSuccess(t *testing.T) {
 		},
 		{
 			name: "partial success",
-			r: NewPartial("data", []SAWError{
+			r: NewPartial("data", []PolywaveError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: false,
 		},
 		{
 			name: "failure",
-			r: NewFailure[string]([]SAWError{
+			r: NewFailure[string]([]PolywaveError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: false,
@@ -118,7 +118,7 @@ func TestIsSuccess(t *testing.T) {
 			r: Result[string]{
 				Data:   ptr("data"),
 				Code:   "SUCCESS",
-				Errors: []SAWError{{Code: "E001"}},
+				Errors: []PolywaveError{{Code: "E001"}},
 			},
 			want: false,
 		},
@@ -142,7 +142,7 @@ func TestIsFatal(t *testing.T) {
 	}{
 		{
 			name: "fatal result",
-			r: NewFailure[string]([]SAWError{
+			r: NewFailure[string]([]PolywaveError{
 				{Code: "E001", Message: "fatal", Severity: "fatal"},
 			}),
 			want: true,
@@ -154,7 +154,7 @@ func TestIsFatal(t *testing.T) {
 		},
 		{
 			name: "partial result",
-			r: NewPartial("data", []SAWError{
+			r: NewPartial("data", []PolywaveError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: false,
@@ -179,7 +179,7 @@ func TestIsPartial(t *testing.T) {
 	}{
 		{
 			name: "partial result",
-			r: NewPartial(123, []SAWError{
+			r: NewPartial(123, []PolywaveError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: true,
@@ -191,7 +191,7 @@ func TestIsPartial(t *testing.T) {
 		},
 		{
 			name: "fatal result",
-			r: NewFailure[int]([]SAWError{
+			r: NewFailure[int]([]PolywaveError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: false,
@@ -221,14 +221,14 @@ func TestHasErrors(t *testing.T) {
 		},
 		{
 			name: "has warnings",
-			r: NewPartial("data", []SAWError{
+			r: NewPartial("data", []PolywaveError{
 				{Code: "W001", Message: "warning", Severity: "warning"},
 			}),
 			want: true,
 		},
 		{
 			name: "has fatal errors",
-			r: NewFailure[string]([]SAWError{
+			r: NewFailure[string]([]PolywaveError{
 				{Code: "E001", Message: "error", Severity: "fatal"},
 			}),
 			want: true,
@@ -238,7 +238,7 @@ func TestHasErrors(t *testing.T) {
 			r: Result[string]{
 				Data:   ptr("data"),
 				Code:   "SUCCESS",
-				Errors: []SAWError{},
+				Errors: []PolywaveError{},
 			},
 			want: false,
 		},
@@ -268,7 +268,7 @@ func TestGetData(t *testing.T) {
 // TestGetDataZeroOnNilData verifies GetData returns the zero value instead of
 // panicking when called on a Result with nil Data (e.g. a FATAL result).
 func TestGetDataZeroOnNilData(t *testing.T) {
-	r := NewFailure[string]([]SAWError{
+	r := NewFailure[string]([]PolywaveError{
 		{Code: "E001", Message: "error", Severity: "fatal"},
 	})
 
@@ -311,7 +311,7 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "partial result with warnings",
-			r: NewPartial("partial data", []SAWError{
+			r: NewPartial("partial data", []PolywaveError{
 				{
 					Code:       "W001",
 					Message:    "Warning message",
@@ -324,7 +324,7 @@ func TestJSONMarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "failure result with errors",
-			r: NewFailure[string]([]SAWError{
+			r: NewFailure[string]([]PolywaveError{
 				{
 					Code:     "E001",
 					Message:  "Fatal error",
@@ -425,9 +425,9 @@ func TestGenericTypeInstantiation(t *testing.T) {
 	})
 }
 
-// TestSAWErrorFields verifies SAWError fields serialize correctly.
-func TestSAWErrorFields(t *testing.T) {
-	err := SAWError{
+// TestPolywaveErrorFields verifies PolywaveError fields serialize correctly.
+func TestPolywaveErrorFields(t *testing.T) {
+	err := PolywaveError{
 		Code:       "E042",
 		Message:    "Test error",
 		Severity:   "error",
@@ -442,7 +442,7 @@ func TestSAWErrorFields(t *testing.T) {
 		},
 	}
 
-	r := NewFailure[string]([]SAWError{err})
+	r := NewFailure[string]([]PolywaveError{err})
 
 	// Marshal and unmarshal
 	jsonData, marshalErr := json.Marshal(r)
@@ -490,23 +490,23 @@ func TestSAWErrorFields(t *testing.T) {
 	}
 }
 
-// TestSAWErrorInterface verifies SAWError implements the error interface.
-func TestSAWErrorInterface(t *testing.T) {
-	var _ error = SAWError{} // compile-time check
+// TestPolywaveErrorInterface verifies PolywaveError implements the error interface.
+func TestPolywaveErrorInterface(t *testing.T) {
+	var _ error = PolywaveError{} // compile-time check
 
 	tests := []struct {
 		name string
-		err  SAWError
+		err  PolywaveError
 		want string
 	}{
 		{
 			name: "with severity",
-			err:  SAWError{Code: "E001", Message: "something broke", Severity: "fatal"},
+			err:  PolywaveError{Code: "E001", Message: "something broke", Severity: "fatal"},
 			want: "[fatal] E001: something broke",
 		},
 		{
 			name: "without severity",
-			err:  SAWError{Code: "E002", Message: "unknown issue"},
+			err:  PolywaveError{Code: "E002", Message: "unknown issue"},
 			want: "[E002] unknown issue",
 		},
 		{
@@ -516,7 +516,7 @@ func TestSAWErrorInterface(t *testing.T) {
 		},
 		{
 			name: "info severity",
-			err:  SAWError{Code: "I001", Message: "fyi", Severity: "info"},
+			err:  PolywaveError{Code: "I001", Message: "fyi", Severity: "info"},
 			want: "[info] I001: fyi",
 		},
 	}
@@ -531,8 +531,8 @@ func TestSAWErrorInterface(t *testing.T) {
 	}
 }
 
-// TestSAWErrorUnwrap verifies Unwrap returns the wrapped cause.
-func TestSAWErrorUnwrap(t *testing.T) {
+// TestPolywaveErrorUnwrap verifies Unwrap returns the wrapped cause.
+func TestPolywaveErrorUnwrap(t *testing.T) {
 	t.Run("nil cause", func(t *testing.T) {
 		e := NewError("E001", "test")
 		if e.Unwrap() != nil {
@@ -557,8 +557,8 @@ func TestSAWErrorUnwrap(t *testing.T) {
 	})
 }
 
-// TestSAWErrorIsFatal verifies IsFatal method on SAWError.
-func TestSAWErrorIsFatal(t *testing.T) {
+// TestPolywaveErrorIsFatal verifies IsFatal method on PolywaveError.
+func TestPolywaveErrorIsFatal(t *testing.T) {
 	if !NewFatal("E001", "fatal").IsFatal() {
 		t.Error("NewFatal should create a fatal error")
 	}
@@ -568,13 +568,13 @@ func TestSAWErrorIsFatal(t *testing.T) {
 	if NewWarning("W001", "warning").IsFatal() {
 		t.Error("NewWarning should not be fatal")
 	}
-	if (SAWError{Code: "I001", Severity: "info"}).IsFatal() {
+	if (PolywaveError{Code: "I001", Severity: "info"}).IsFatal() {
 		t.Error("info severity should not be fatal")
 	}
 }
 
-// TestSAWErrorWithContext verifies WithContext adds context.
-func TestSAWErrorWithContext(t *testing.T) {
+// TestPolywaveErrorWithContext verifies WithContext adds context.
+func TestPolywaveErrorWithContext(t *testing.T) {
 	t.Run("adds to nil context", func(t *testing.T) {
 		e := NewError("E001", "test").WithContext("key", "value")
 		if e.Context == nil {
@@ -606,8 +606,8 @@ func TestSAWErrorWithContext(t *testing.T) {
 	})
 }
 
-// TestSAWErrorWithCause verifies WithCause attaches a cause.
-func TestSAWErrorWithCause(t *testing.T) {
+// TestPolywaveErrorWithCause verifies WithCause attaches a cause.
+func TestPolywaveErrorWithCause(t *testing.T) {
 	cause := fmt.Errorf("underlying error")
 	e := NewError("E001", "test").WithCause(cause)
 	if e.Cause != cause {
@@ -639,14 +639,14 @@ func TestNewErrorConstructors(t *testing.T) {
 		t.Errorf("NewWarning = %+v", w)
 	}
 
-	i := SAWError{Code: "I001", Message: "info msg", Severity: "info"}
+	i := PolywaveError{Code: "I001", Message: "info msg", Severity: "info"}
 	if i.Code != "I001" || i.Message != "info msg" || i.Severity != "info" {
-		t.Errorf("info SAWError = %+v", i)
+		t.Errorf("info PolywaveError = %+v", i)
 	}
 }
 
-// TestSAWErrorCauseNotSerialized verifies Cause is excluded from JSON.
-func TestSAWErrorCauseNotSerialized(t *testing.T) {
+// TestPolywaveErrorCauseNotSerialized verifies Cause is excluded from JSON.
+func TestPolywaveErrorCauseNotSerialized(t *testing.T) {
 	e := NewError("E001", "test").WithCause(fmt.Errorf("secret cause"))
 	data, err := json.Marshal(e)
 	if err != nil {
@@ -677,10 +677,10 @@ func TestNewFailurePanicsOnEmptySlice(t *testing.T) {
 			t.Errorf("panic message = %q, want %q", msg, "result.NewFailure called with empty errors slice")
 		}
 	}()
-	_ = NewFailure[string]([]SAWError{})
+	_ = NewFailure[string]([]PolywaveError{})
 }
 
-// TestToErrors verifies the ToErrors helper converts []SAWError to []error.
+// TestToErrors verifies the ToErrors helper converts []PolywaveError to []error.
 func TestToErrors(t *testing.T) {
 	t.Run("nil input returns empty slice", func(t *testing.T) {
 		got := ToErrors(nil)
@@ -689,7 +689,7 @@ func TestToErrors(t *testing.T) {
 		}
 	})
 	t.Run("single error round-trips", func(t *testing.T) {
-		errs := []SAWError{{Code: "X", Message: "msg", Severity: "error"}}
+		errs := []PolywaveError{{Code: "X", Message: "msg", Severity: "error"}}
 		got := ToErrors(errs)
 		if len(got) != 1 {
 			t.Fatalf("expected 1, got %d", len(got))
@@ -700,7 +700,7 @@ func TestToErrors(t *testing.T) {
 		}
 	})
 	t.Run("compatible with errors.Join", func(t *testing.T) {
-		errs := []SAWError{
+		errs := []PolywaveError{
 			{Code: "A", Message: "first", Severity: "error"},
 			{Code: "B", Message: "second", Severity: "error"},
 		}

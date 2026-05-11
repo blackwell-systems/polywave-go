@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // StubHit represents a single stub pattern match in source code.
@@ -99,7 +99,7 @@ type AppendStubData struct {
 func AppendStubReport(ctx context.Context, manifestPath, waveKey string, scanResult result.Result[ScanStubsData]) result.Result[AppendStubData] {
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[AppendStubData]([]result.SAWError{
+		return result.NewFailure[AppendStubData]([]result.PolywaveError{
 			result.NewFatal("STUB_APPEND_FAILED", fmt.Sprintf("AppendStubReport: failed to load manifest: %v", err)),
 		})
 	}
@@ -113,7 +113,7 @@ func AppendStubReport(ctx context.Context, manifestPath, waveKey string, scanRes
 		if len(saveRes.Errors) > 0 {
 			msg = saveRes.Errors[0].Message
 		}
-		return result.NewFailure[AppendStubData]([]result.SAWError{
+		return result.NewFailure[AppendStubData]([]result.PolywaveError{
 			result.NewFatal("STUB_APPEND_FAILED", fmt.Sprintf("AppendStubReport: failed to save manifest: %s", msg)),
 		})
 	}

@@ -75,8 +75,8 @@ func TestIsWorktreePath(t *testing.T) {
 		{"/repo/.claude/worktrees/wave1-agent-A", true},
 		{"/repo/.claire/worktrees/wave1-agent-A", true},
 		{"/repo/.claude/worktrees/wave2-agent-B2", true},
-		{"/repo/.claude/worktrees/saw/my-slug/wave1-agent-A", true},
-		{"/repo/.claire/worktrees/saw/my-slug/wave2-agent-B2", true},
+		{"/repo/.claude/worktrees/polywave/my-slug/wave1-agent-A", true},
+		{"/repo/.claire/worktrees/polywave/my-slug/wave2-agent-B2", true},
 		{"/repo/src/main.go", false},
 		{"/repo/.claudewatch/data", false},
 		{"", false},
@@ -90,10 +90,10 @@ func TestIsWorktreePath(t *testing.T) {
 
 func TestResolveWorktreePath_slugScoped(t *testing.T) {
 	tmp := t.TempDir()
-	branch := "saw/my-slug/wave1-agent-A"
+	branch := "polywave/my-slug/wave1-agent-A"
 
 	// Create the slug-scoped path
-	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-A")
+	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "polywave", "my-slug", "wave1-agent-A")
 	if err := os.MkdirAll(scopedPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestResolveWorktreePath_slugScoped(t *testing.T) {
 
 func TestResolveWorktreePath_slugScoped_legacyFallback(t *testing.T) {
 	tmp := t.TempDir()
-	branch := "saw/my-slug/wave1-agent-A"
+	branch := "polywave/my-slug/wave1-agent-A"
 
 	// Only create the legacy flat path (simulates pre-upgrade worktree)
 	legacyPath := filepath.Join(tmp, ".claude", "worktrees", "wave1-agent-A")
@@ -124,7 +124,7 @@ func TestResolveWorktreePathWithSlug(t *testing.T) {
 	tmp := t.TempDir()
 
 	// Create the slug-scoped path
-	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-A")
+	scopedPath := filepath.Join(tmp, ".claude", "worktrees", "polywave", "my-slug", "wave1-agent-A")
 	if err := os.MkdirAll(scopedPath, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestResolveWorktreePathWithSlug_canonicalFallback(t *testing.T) {
 
 	// Neither path exists — should return slug-scoped canonical path
 	got := ResolveWorktreePathWithSlug(tmp, "my-slug", 1, "C")
-	want := filepath.Join(tmp, ".claude", "worktrees", "saw", "my-slug", "wave1-agent-C")
+	want := filepath.Join(tmp, ".claude", "worktrees", "polywave", "my-slug", "wave1-agent-C")
 	if got != want {
 		t.Errorf("ResolveWorktreePathWithSlug = %q, want canonical %q", got, want)
 	}

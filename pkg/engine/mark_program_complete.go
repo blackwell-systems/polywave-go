@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // MarkProgramCompleteOpts consolidates all inputs for MarkProgramComplete.
@@ -67,7 +67,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) resu
 	// 2. Parse manifest
 	manifest, parseErr := protocol.ParseProgramManifest(opts.ManifestPath)
 	if parseErr != nil {
-		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+		return result.NewFailure[MarkProgramCompleteResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("mark-program-complete: parse error: %s", parseErr)).
 				WithContext("manifest_path", opts.ManifestPath),
@@ -77,7 +77,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) resu
 	// 3. Verify all tiers complete — hard error if not
 	verifyRes := verifyAllTiersComplete(manifest)
 	if verifyRes.IsFatal() {
-		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+		return result.NewFailure[MarkProgramCompleteResult]([]result.PolywaveError{
 			verifyRes.Errors[0],
 		})
 	}
@@ -89,7 +89,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) resu
 	// 5. Write SAW:PROGRAM:COMPLETE marker
 	markerRes := writeProgramCompleteMarker(opts.ManifestPath, date)
 	if markerRes.IsFatal() {
-		return result.NewFailure[MarkProgramCompleteResult]([]result.SAWError{
+		return result.NewFailure[MarkProgramCompleteResult]([]result.PolywaveError{
 			markerRes.Errors[0],
 		})
 	}
@@ -174,7 +174,7 @@ func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) result.Result[Ve
 	}
 
 	if len(incomplete) > 0 {
-		return result.NewFailure[VerifyData]([]result.SAWError{
+		return result.NewFailure[VerifyData]([]result.PolywaveError{
 			result.NewFatal(result.CodeVerifyTiersIncomplete,
 				fmt.Sprintf("not all tiers complete — incomplete IMPLs: %s", strings.Join(incomplete, ", "))).
 				WithContext("incomplete_count", fmt.Sprintf("%d", len(incomplete))),
@@ -192,7 +192,7 @@ func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) result.Result[Ve
 func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMarkerData] {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return result.NewFailure[WriteMarkerData]([]result.SAWError{
+		return result.NewFailure[WriteMarkerData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMarkerReadFailed,
 				fmt.Sprintf("cannot read manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
@@ -245,7 +245,7 @@ func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMa
 
 	content := strings.Join(filtered, "\n")
 	if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {
-		return result.NewFailure[WriteMarkerData]([]result.SAWError{
+		return result.NewFailure[WriteMarkerData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMarkerWriteFailed,
 				fmt.Sprintf("cannot write manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),

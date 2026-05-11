@@ -3,7 +3,7 @@ package errparse
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -184,7 +184,7 @@ exit status 2
 	}
 
 	// Find the panic error
-	var panicErr *result.SAWError
+	var panicErr *result.PolywaveError
 	for i := range res.Errors {
 		if len(res.Errors[i].Message) > 5 && res.Errors[i].Message[:6] == "panic:" {
 			panicErr = &res.Errors[i]

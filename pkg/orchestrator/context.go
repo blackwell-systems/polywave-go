@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ContextMDEntry is one completed feature record for docs/CONTEXT.md (E18).
@@ -39,7 +39,7 @@ func UpdateContextMD(_ context.Context, repoPath string, entry ContextMDEntry) r
 	if _, err := os.Stat(contextPath); os.IsNotExist(err) {
 		// Ensure docs/ directory exists.
 		if err := os.MkdirAll(filepath.Dir(contextPath), 0755); err != nil {
-			return result.NewFailure[UpdateContextData]([]result.SAWError{
+			return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 				result.NewFatal(result.CodeContextError,
 					fmt.Sprintf("UpdateContextMD: create docs dir: %s", err.Error())),
 			})
@@ -56,7 +56,7 @@ established_interfaces: []
 features_completed: []
 `, entry.Date)
 		if err := os.WriteFile(contextPath, []byte(canonical), 0644); err != nil {
-			return result.NewFailure[UpdateContextData]([]result.SAWError{
+			return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 				result.NewFatal(result.CodeContextError,
 					fmt.Sprintf("UpdateContextMD: create CONTEXT.md: %s", err.Error())),
 			})
@@ -69,14 +69,14 @@ features_completed: []
 
 	f, err := os.OpenFile(contextPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		return result.NewFailure[UpdateContextData]([]result.SAWError{
+		return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextError,
 				fmt.Sprintf("UpdateContextMD: open CONTEXT.md for append: %s", err.Error())),
 		})
 	}
 	if _, err := f.WriteString(entryLines); err != nil {
 		f.Close()
-		return result.NewFailure[UpdateContextData]([]result.SAWError{
+		return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextError,
 				fmt.Sprintf("UpdateContextMD: write entry: %s", err.Error())),
 		})
@@ -85,7 +85,7 @@ features_completed: []
 
 	// 5. Git add and commit.
 	if err := git.Add(repoPath, "docs/CONTEXT.md"); err != nil {
-		return result.NewFailure[UpdateContextData]([]result.SAWError{
+		return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextError,
 				fmt.Sprintf("UpdateContextMD: git add: %s", err.Error())),
 		})
@@ -93,7 +93,7 @@ features_completed: []
 
 	commitMsg := fmt.Sprintf("chore: update docs/CONTEXT.md for %s", entry.Slug)
 	if _, err := git.CommitWithMessage(repoPath, commitMsg); err != nil {
-		return result.NewFailure[UpdateContextData]([]result.SAWError{
+		return result.NewFailure[UpdateContextData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextError,
 				fmt.Sprintf("UpdateContextMD: git commit: %s", err.Error())),
 		})

@@ -1,7 +1,7 @@
 // Package config provides unified configuration loading and saving for
 // scout-and-wave. It replaces the scattered config handling previously split
-// across backend.SAWProviders, autonomy.Config, and the web app's
-// service.SAWConfig with a single SAWConfig type and Load/Save API.
+// across backend.PolywaveProviders, autonomy.Config, and the web app's
+// service.PolywaveConfig with a single PolywaveConfig type and Load/Save API.
 package config
 
 import (
@@ -10,14 +10,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/autonomy"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
-// SAWConfig is the unified configuration type for all SAW operations.
-// It is the superset of fields from backend.SAWProviders, autonomy.Config,
-// and the web application's service.SAWConfig.
-type SAWConfig struct {
+// PolywaveConfig is the unified configuration type for all SAW operations.
+// It is the superset of fields from backend.PolywaveProviders, autonomy.Config,
+// and the web application's service.PolywaveConfig.
+type PolywaveConfig struct {
 	Providers     ProvidersConfig `json:"providers,omitempty"`
 	Autonomy      AutonomyConfig  `json:"autonomy,omitempty"`
 	Repos         []RepoEntry     `json:"repos,omitempty"`
@@ -103,12 +103,12 @@ type AppearConfig struct {
 	FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
 }
 
-const configFileName = "saw.config.json"
+const configFileName = "polywave.config.json"
 
 // maxWalkDepth is the maximum number of parent directories to traverse.
 const maxWalkDepth = 10
 
-// FindConfigPath walks up from startDir looking for saw.config.json.
+// FindConfigPath walks up from startDir looking for polywave.config.json.
 // Returns the absolute path if found, empty string if not.
 func FindConfigPath(startDir string) string {
 	dir, err := filepath.Abs(startDir)
@@ -129,28 +129,28 @@ func FindConfigPath(startDir string) string {
 	return ""
 }
 
-// Load finds saw.config.json starting from startDir, walking up to 10
-// parent directories. Parses the full config into SAWConfig.
+// Load finds polywave.config.json starting from startDir, walking up to 10
+// parent directories. Parses the full config into PolywaveConfig.
 // Returns N013_CONFIG_NOT_FOUND if no config file exists.
 // Returns N014_CONFIG_INVALID if JSON parsing fails.
-func Load(startDir string) result.Result[*SAWConfig] {
+func Load(startDir string) result.Result[*PolywaveConfig] {
 	path := FindConfigPath(startDir)
 	if path == "" {
-		return result.NewFailure[*SAWConfig]([]result.SAWError{
-			result.NewError(result.CodeConfigNotFound, "no saw.config.json found walking up from "+startDir),
+		return result.NewFailure[*PolywaveConfig]([]result.PolywaveError{
+			result.NewError(result.CodeConfigNotFound, "no polywave.config.json found walking up from "+startDir),
 		})
 	}
 
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return result.NewFailure[*SAWConfig]([]result.SAWError{
+		return result.NewFailure[*PolywaveConfig]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "failed to read config: "+err.Error()),
 		})
 	}
 
-	var cfg SAWConfig
+	var cfg PolywaveConfig
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return result.NewFailure[*SAWConfig]([]result.SAWError{
+		return result.NewFailure[*PolywaveConfig]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "invalid JSON in "+path+": "+err.Error()),
 		})
 	}
@@ -159,7 +159,7 @@ func Load(startDir string) result.Result[*SAWConfig] {
 	if len(cfg.Repos) == 0 {
 		var raw map[string]json.RawMessage
 		if err := json.Unmarshal(data, &raw); err != nil {
-			return result.NewFailure[*SAWConfig]([]result.SAWError{
+			return result.NewFailure[*PolywaveConfig]([]result.PolywaveError{
 				result.NewError(result.CodeConfigInvalid, "failed to re-parse config for migration: "+err.Error()),
 			})
 		}
@@ -185,10 +185,10 @@ func Load(startDir string) result.Result[*SAWConfig] {
 	return result.NewSuccess(&cfg)
 }
 
-// Save atomically writes cfg to saw.config.json at repoPath.
+// Save atomically writes cfg to polywave.config.json at repoPath.
 // Uses temp-file + rename pattern. Preserves unknown top-level keys
 // that may exist in the current config file.
-func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
+func Save(repoPath string, cfg *PolywaveConfig) result.Result[bool] {
 	configPath := filepath.Join(repoPath, configFileName)
 
 	// Read existing file to preserve unknown keys.
@@ -200,13 +200,13 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	// Marshal the cfg struct to get known keys.
 	cfgBytes, err := json.Marshal(cfg)
 	if err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "failed to marshal config: "+err.Error()),
 		})
 	}
 	var cfgMap map[string]json.RawMessage
 	if err := json.Unmarshal(cfgBytes, &cfgMap); err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "failed to re-parse config: "+err.Error()),
 		})
 	}
@@ -218,7 +218,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 
 	output, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "failed to marshal merged config: "+err.Error()),
 		})
 	}
@@ -226,7 +226,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 
 	// Validate that repoPath exists before attempting CreateTemp.
 	if _, err := os.Stat(repoPath); err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "config save: target directory does not exist: "+repoPath),
 		})
 	}
@@ -234,7 +234,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	// Atomic write: temp file + rename.
 	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
 	if err != nil {
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "failed to create temp file: "+err.Error()),
 		})
 	}
@@ -243,20 +243,20 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 	if _, err := tmpFile.Write(output); err != nil {
 		tmpFile.Close()
 		os.Remove(tmpPath)
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "failed to write temp file: "+err.Error()),
 		})
 	}
 	if err := tmpFile.Close(); err != nil {
 		os.Remove(tmpPath)
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "failed to close temp file: "+err.Error()),
 		})
 	}
 
 	if err := os.Rename(tmpPath, configPath); err != nil {
 		os.Remove(tmpPath)
-		return result.NewFailure[bool]([]result.SAWError{
+		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "failed to rename temp file: "+err.Error()),
 		})
 	}
@@ -273,7 +273,7 @@ func Save(repoPath string, cfg *SAWConfig) result.Result[bool] {
 // LoadOrDefault is a convenience function that returns a default config
 // if Load fails. The default config uses "gated" autonomy level,
 // max_auto_retries 2, and max_queue_depth 10.
-func LoadOrDefault(startDir string) *SAWConfig {
+func LoadOrDefault(startDir string) *PolywaveConfig {
 	r := Load(startDir)
 	if r.IsSuccess() {
 		return r.GetData()
@@ -281,7 +281,7 @@ func LoadOrDefault(startDir string) *SAWConfig {
 	slog.Warn("LoadOrDefault: falling back to default config",
 		"reason", r.Errors[0].Message,
 		"startDir", startDir)
-	return &SAWConfig{
+	return &PolywaveConfig{
 		Autonomy: AutonomyConfig{
 			Level:          "gated",
 			MaxAutoRetries: 2,

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -20,7 +20,7 @@ import (
 // Returns a result.Result[*ProgramStatusData] containing all computed status information.
 func GetProgramStatus(manifest *PROGRAMManifest, repoPath string) result.Result[*ProgramStatusData] {
 	if manifest == nil {
-		return result.NewFailure[*ProgramStatusData]([]result.SAWError{{
+		return result.NewFailure[*ProgramStatusData]([]result.PolywaveError{{
 			Code: result.CodeProgramStatusFailed, Message: "manifest cannot be nil", Severity: "fatal",
 		}})
 	}

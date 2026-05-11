@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // makeTestRepo initialises a bare git repo at dir and returns its path.
@@ -60,7 +60,7 @@ func TestClassifyWorktrees_DirtyWorktree(t *testing.T) {
 	repo := makeTestRepo(t)
 	wtDir := t.TempDir()
 	wtPath := filepath.Join(wtDir, "wt-dirty")
-	branch := "saw/my-slug/wave1-agent-A"
+	branch := "polywave/my-slug/wave1-agent-A"
 
 	addWorktree(t, repo, wtPath, branch)
 
@@ -95,7 +95,7 @@ func TestClassifyWorktrees_CleanWorktree(t *testing.T) {
 	repo := makeTestRepo(t)
 	wtDir := t.TempDir()
 	wtPath := filepath.Join(wtDir, "wt-clean")
-	branch := "saw/my-slug/wave2-agent-B"
+	branch := "polywave/my-slug/wave2-agent-B"
 
 	addWorktree(t, repo, wtPath, branch)
 
@@ -136,8 +136,8 @@ func TestClassifyWorktrees_MixedDirtyClean(t *testing.T) {
 	dirtyPath := filepath.Join(wtDir, "wt-dirty")
 	cleanPath := filepath.Join(wtDir, "wt-clean")
 
-	addWorktree(t, repo, dirtyPath, "saw/my-slug/wave1-agent-A")
-	addWorktree(t, repo, cleanPath, "saw/my-slug/wave1-agent-B")
+	addWorktree(t, repo, dirtyPath, "polywave/my-slug/wave1-agent-A")
+	addWorktree(t, repo, cleanPath, "polywave/my-slug/wave1-agent-B")
 
 	// Make the first worktree dirty.
 	if err := os.WriteFile(filepath.Join(dirtyPath, "change.txt"), []byte("x\n"), 0o644); err != nil {
@@ -174,8 +174,8 @@ func TestClassifyWorktrees_SlugFiltering(t *testing.T) {
 	matchPath := filepath.Join(wtDir, "wt-match")
 	otherPath := filepath.Join(wtDir, "wt-other")
 
-	addWorktree(t, repo, matchPath, "saw/my-slug/wave1-agent-A")
-	addWorktree(t, repo, otherPath, "saw/other-slug/wave1-agent-B")
+	addWorktree(t, repo, matchPath, "polywave/my-slug/wave1-agent-A")
+	addWorktree(t, repo, otherPath, "polywave/other-slug/wave1-agent-B")
 
 	manifest := makeManifest("my-slug")
 	result := ClassifyWorktrees([]string{matchPath, otherPath}, manifest, nil)
@@ -194,7 +194,7 @@ func TestClassifyWorktrees_LockedWorktree(t *testing.T) {
 	repo := makeTestRepo(t)
 	wtDir := t.TempDir()
 	wtPath := filepath.Join(wtDir, "wt-locked")
-	branch := "saw/my-slug/wave1-agent-A"
+	branch := "polywave/my-slug/wave1-agent-A"
 	addWorktree(t, repo, wtPath, branch)
 
 	// Lock the worktree.

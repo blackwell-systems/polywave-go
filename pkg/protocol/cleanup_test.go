@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 	"gopkg.in/yaml.v3"
 )
 
@@ -76,18 +76,18 @@ func TestCleanup_AllRemoved(t *testing.T) {
 	}
 
 	// Create worktrees and branches for both agents (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
 	if err := os.MkdirAll(sawDir, 0755); err != nil {
 		t.Fatalf("failed to create saw dir: %v", err)
 	}
 
 	worktreePathA := filepath.Join(sawDir, "wave1-agent-A")
-	if err := git.WorktreeAdd(tmpDir, worktreePathA, "saw/test-cleanup/wave1-agent-A"); err != nil {
+	if err := git.WorktreeAdd(tmpDir, worktreePathA, "polywave/test-cleanup/wave1-agent-A"); err != nil {
 		t.Fatalf("failed to create worktree for agent A: %v", err)
 	}
 
 	worktreePathB := filepath.Join(sawDir, "wave1-agent-B")
-	if err := git.WorktreeAdd(tmpDir, worktreePathB, "saw/test-cleanup/wave1-agent-B"); err != nil {
+	if err := git.WorktreeAdd(tmpDir, worktreePathB, "polywave/test-cleanup/wave1-agent-B"); err != nil {
 		t.Fatalf("failed to create worktree for agent B: %v", err)
 	}
 
@@ -349,12 +349,12 @@ func TestCleanup_PartialFailure(t *testing.T) {
 	}
 
 	// Create worktree and branch for agent D only (agent E doesn't exist) — slug-scoped
-	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
 	if err := os.MkdirAll(sawDir, 0755); err != nil {
 		t.Fatalf("failed to create saw dir: %v", err)
 	}
 	worktreePathD := filepath.Join(sawDir, "wave1-agent-D")
-	if err := git.WorktreeAdd(tmpDir, worktreePathD, "saw/test-cleanup/wave1-agent-D"); err != nil {
+	if err := git.WorktreeAdd(tmpDir, worktreePathD, "polywave/test-cleanup/wave1-agent-D"); err != nil {
 		t.Fatalf("failed to create worktree for agent D: %v", err)
 	}
 
@@ -477,11 +477,11 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	}
 
 	// Create worktree and make a commit (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
 	if err := os.MkdirAll(sawDir, 0755); err != nil {
 		t.Fatalf("failed to create saw dir: %v", err)
 	}
-	branchF := "saw/test-cleanup/wave1-agent-F"
+	branchF := "polywave/test-cleanup/wave1-agent-F"
 	worktreePathF := filepath.Join(sawDir, "wave1-agent-F")
 	if err := git.WorktreeAdd(tmpDir, worktreePathF, branchF); err != nil {
 		t.Fatalf("failed to create worktree for agent F: %v", err)
@@ -596,11 +596,11 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 	}
 
 	// Create and then manually delete worktree and branch (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup")
+	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
 	if err := os.MkdirAll(sawDir, 0755); err != nil {
 		t.Fatalf("failed to create saw dir: %v", err)
 	}
-	branchG := "saw/test-cleanup/wave1-agent-G"
+	branchG := "polywave/test-cleanup/wave1-agent-G"
 	worktreePathG := filepath.Join(sawDir, "wave1-agent-G")
 	if err := git.WorktreeAdd(tmpDir, worktreePathG, branchG); err != nil {
 		t.Fatalf("failed to create worktree for agent G: %v", err)
@@ -673,12 +673,12 @@ func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
 	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
-	sawDir := filepath.Join(worktreesDir, "saw", "test-cleanup-prune")
+	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup-prune")
 	if err := os.MkdirAll(sawDir, 0755); err != nil {
 		t.Fatalf("failed to create saw dir: %v", err)
 	}
 	stalePath := filepath.Join(sawDir, "wave1-agent-H")
-	if err := git.WorktreeAdd(tmpDir, stalePath, "saw/test-cleanup-prune/wave1-agent-H"); err != nil {
+	if err := git.WorktreeAdd(tmpDir, stalePath, "polywave/test-cleanup-prune/wave1-agent-H"); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}
 
@@ -950,12 +950,12 @@ func TestCleanupBySlug_NoMatch(t *testing.T) {
 	}
 
 	// Create a stale worktree with a completed IMPL for slug "slug-alpha"
-	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees", "saw", "slug-alpha")
+	worktreesDir := filepath.Join(tmpDir, ".claude", "worktrees", "polywave", "slug-alpha")
 	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
 	worktreePath := filepath.Join(worktreesDir, "wave1-agent-A")
-	if err := git.WorktreeAdd(tmpDir, worktreePath, "saw/slug-alpha/wave1-agent-A"); err != nil {
+	if err := git.WorktreeAdd(tmpDir, worktreePath, "polywave/slug-alpha/wave1-agent-A"); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}
 

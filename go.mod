@@ -1,4 +1,4 @@
-module github.com/blackwell-systems/scout-and-wave-go
+module github.com/blackwell-systems/polywave-go
 
 go 1.25.0
 

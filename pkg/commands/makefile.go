@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // MakefileParser extracts commands from Makefile targets
@@ -24,7 +24,7 @@ func (p *MakefileParser) ParseBuildSystem(repoRoot string) result.Result[ParseBu
 
 	file, err := os.Open(makefilePath)
 	if err != nil {
-		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+		return result.NewFailure[ParseBuildSystemData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractMakefileRead, fmt.Sprintf("reading Makefile: %v", err)),
 		})
 	}

@@ -128,7 +128,7 @@ func TestPredictConflictsFromReports_FilesCreatedConflict(t *testing.T) {
 }
 
 func TestPredictConflictsFromReports_IMPLFilesIgnored(t *testing.T) {
-	// IMPL docs and .saw-state files should not trigger conflict errors,
+	// IMPL docs and .polywave-state files should not trigger conflict errors,
 	// since multiple agents are expected to update them.
 	manifest := &IMPLManifest{
 		Waves: []Wave{
@@ -172,18 +172,18 @@ func TestPredictConflictsFromReports_SawStateFilesIgnored(t *testing.T) {
 		CompletionReports: map[string]CompletionReport{
 			"A": {
 				Status:       "complete",
-				FilesChanged: []string{".saw-state/wave1/agent-A/brief.md"},
+				FilesChanged: []string{".polywave-state/wave1/agent-A/brief.md"},
 			},
 			"B": {
 				Status:       "complete",
-				FilesChanged: []string{".saw-state/wave1/agent-A/brief.md"},
+				FilesChanged: []string{".polywave-state/wave1/agent-A/brief.md"},
 			},
 		},
 	}
 
 	res := PredictConflictsFromReports(context.Background(), manifest, 1)
 	if !res.IsSuccess() {
-		t.Errorf("expected success for .saw-state file overlap, got: %v", res.Errors)
+		t.Errorf("expected success for .polywave-state file overlap, got: %v", res.Errors)
 	}
 }
 
@@ -307,7 +307,7 @@ func TestPredictConflictsFromReports_IdenticalEditsAllowed(t *testing.T) {
 	runGit("branch", "-M", "main")
 
 	// Create branch D with edited file
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-D")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-D")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +316,7 @@ func TestPredictConflictsFromReports_IdenticalEditsAllowed(t *testing.T) {
 
 	// Create branch F with IDENTICAL edit
 	runGit("checkout", "main")
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-F")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-F")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -450,7 +450,7 @@ func TestPredictConflictsFromReports_NonOverlappingEditsAllowed(t *testing.T) {
 	runGit("branch", "-M", "main")
 
 	// Agent A: modifies FuncA (near top of file, line 3)
-	runGit("checkout", "-b", "saw/cascade-test/wave1-agent-A")
+	runGit("checkout", "-b", "polywave/cascade-test/wave1-agent-A")
 	contentA := "package shared\n\n" +
 		"func FuncA(ctx context.Context, x int) int { return x }\n\n" +
 		"// lots of lines in between\n" +
@@ -465,7 +465,7 @@ func TestPredictConflictsFromReports_NonOverlappingEditsAllowed(t *testing.T) {
 
 	// Agent B: modifies FuncB (near bottom of file, line 18)
 	runGit("checkout", "main")
-	runGit("checkout", "-b", "saw/cascade-test/wave1-agent-B")
+	runGit("checkout", "-b", "polywave/cascade-test/wave1-agent-B")
 	contentB := "package shared\n\n" +
 		"func FuncA(x int) int { return x }\n\n" +
 		"// lots of lines in between\n" +
@@ -534,7 +534,7 @@ func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
 	runGit("branch", "-M", "main")
 
 	// Create branch D with one edit
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-D")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-D")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Foo() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +543,7 @@ func TestPredictConflictsFromReports_DifferingEditsBlocked(t *testing.T) {
 
 	// Create branch F with DIFFERENT edit
 	runGit("checkout", "main")
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-F")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-F")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Bar() {}\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -743,7 +743,7 @@ func Base3() {}
 	runGit("branch", "-M", "main")
 
 	// Agent A: append-only (add FuncA after Base1, non-overlapping position)
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-A")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-A")
 	contentA := `package shared
 
 func Base1() {}
@@ -762,7 +762,7 @@ func Base3() {}
 
 	// Agent B: append-only (add FuncB after Base3, different position)
 	runGit("checkout", "main")
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-B")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-B")
 	contentB := `package shared
 
 func Base1() {}
@@ -849,7 +849,7 @@ func TestPredictConflictsWithStrategy_ManualRequired(t *testing.T) {
 	runGit("branch", "-M", "main")
 
 	// Agent A: edit line 3
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-A")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-A")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Func() int { return 2 }\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
@@ -858,7 +858,7 @@ func TestPredictConflictsWithStrategy_ManualRequired(t *testing.T) {
 
 	// Agent B: edit same line differently
 	runGit("checkout", "main")
-	runGit("checkout", "-b", "saw/test-feature/wave1-agent-B")
+	runGit("checkout", "-b", "polywave/test-feature/wave1-agent-B")
 	if err := os.WriteFile(testFile, []byte("package shared\n\nfunc Func() int { return 3 }\n"), 0644); err != nil {
 		t.Fatal(err)
 	}

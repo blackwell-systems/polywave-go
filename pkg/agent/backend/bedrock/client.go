@@ -20,9 +20,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/document"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/dedup"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // Client implements backend.Backend using AWS Bedrock.
@@ -60,7 +60,7 @@ func New(cfg backend.Config) *Client {
 	// Build config options for AWS SDK
 	var opts []func(*config.LoadOptions) error
 
-	// Fall back to saw.config.json when no explicit credentials provided
+	// Fall back to polywave.config.json when no explicit credentials provided
 	if cfg.BedrockProfile == "" && cfg.BedrockRegion == "" && cfg.BedrockAccessKeyID == "" {
 		cwd, _ := os.Getwd()
 		providers := backend.LoadProvidersFromConfig(cwd)
@@ -521,7 +521,7 @@ func (c *Client) RunStreamingWithTools(ctx context.Context, systemPrompt, userPr
 			result, execErr := backend.ExecuteTool(ctx, workshop, toolBlk.name, inputMap, workDir)
 			isError := execErr != nil
 
-			// Debug: log tool calls and results for diagnosis (off by default, opt-in via SAW_LOG_LEVEL=DEBUG)
+			// Debug: log tool calls and results for diagnosis (off by default, opt-in via POLYWAVE_LOG_LEVEL=DEBUG)
 			truncResult := result
 			if len(truncResult) > 200 {
 				truncResult = truncResult[:200] + "...[truncated]"

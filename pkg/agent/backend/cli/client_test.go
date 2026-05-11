@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
 )
 
 func TestBuildCLIArgs_Default(t *testing.T) {

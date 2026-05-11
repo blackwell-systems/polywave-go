@@ -7,7 +7,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RunTierGate verifies that all IMPLs in a tier are complete and runs the tier-level
@@ -24,7 +24,7 @@ func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int,
 	}
 
 	if tier == nil {
-		return result.NewFailure[*TierGateData]([]result.SAWError{{
+		return result.NewFailure[*TierGateData]([]result.PolywaveError{{
 			Code: result.CodeTierGateFailed, Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
 		}})
 	}
@@ -67,7 +67,7 @@ func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int,
 	// If not all IMPLs are done, the tier cannot pass
 	if !data.AllImplsDone {
 		data.Passed = false
-		return result.NewPartial(data, []result.SAWError{{
+		return result.NewPartial(data, []result.PolywaveError{{
 			Code: result.CodeTierGateFailed, Message: "not all IMPLs in tier are complete", Severity: "error",
 		}})
 	}
@@ -84,7 +84,7 @@ func RunTierGate(ctx context.Context, manifest *PROGRAMManifest, tierNumber int,
 	}
 
 	if !data.Passed {
-		return result.NewPartial(data, []result.SAWError{{
+		return result.NewPartial(data, []result.PolywaveError{{
 			Code: result.CodeTierGateFailed, Message: "one or more required gates failed", Severity: "error",
 		}})
 	}

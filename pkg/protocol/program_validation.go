@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // kebabCaseRegex validates kebab-case slugs (lowercase letters, digits, hyphens only)
@@ -15,9 +15,9 @@ var kebabCaseRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 // ValidateProgram validates a PROGRAMManifest against the schema rules including
 // P1 (IMPL independence within tier) and tier ordering correctness.
-// Returns a slice of SAWErrors (empty if valid).
-func ValidateProgram(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+// Returns a slice of PolywaveErrors (empty if valid).
+func ValidateProgram(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	errs = append(errs, validateProgramRequiredFields(manifest)...)
 	errs = append(errs, validateProgramState(manifest)...)
@@ -34,11 +34,11 @@ func ValidateProgram(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateProgramRequiredFields checks that title, program_slug, and state are non-empty.
-func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if strings.TrimSpace(manifest.Title) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "title is required",
 			Severity: "error",
@@ -47,7 +47,7 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 	}
 
 	if strings.TrimSpace(manifest.ProgramSlug) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "program_slug is required",
 			Severity: "error",
@@ -56,7 +56,7 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 	}
 
 	if strings.TrimSpace(string(manifest.State)) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "state is required",
 			Severity: "error",
@@ -68,8 +68,8 @@ func validateProgramRequiredFields(manifest *PROGRAMManifest) []result.SAWError 
 }
 
 // validateProgramState checks that state is a valid ProgramState constant.
-func validateProgramState(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateProgramState(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if strings.TrimSpace(string(manifest.State)) == "" {
 		// Already caught by required field check
@@ -89,7 +89,7 @@ func validateProgramState(manifest *PROGRAMManifest) []result.SAWError {
 	}
 
 	if !validStates[manifest.State] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidState,
 			Message:  fmt.Sprintf("state %q is invalid — must be one of: PLANNING, VALIDATING, REVIEWED, SCAFFOLD, TIER_EXECUTING, TIER_VERIFIED, COMPLETE, BLOCKED, NOT_SUITABLE", manifest.State),
 			Severity: "error",
@@ -101,8 +101,8 @@ func validateProgramState(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateIMPLStatuses checks that each IMPL status is valid.
-func validateIMPLStatuses(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateIMPLStatuses(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	validStatuses := map[string]bool{
 		"pending":   true,
@@ -114,7 +114,7 @@ func validateIMPLStatuses(manifest *PROGRAMManifest) []result.SAWError {
 
 	for i, impl := range manifest.Impls {
 		if !validStatuses[impl.Status] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Message:  fmt.Sprintf("IMPL %q has invalid status %q — must be one of: pending, scouting, reviewed, executing, complete", impl.Slug, impl.Status),
 				Severity: "error",
@@ -127,8 +127,8 @@ func validateIMPLStatuses(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateP1Independence checks that no IMPL in a tier depends on another IMPL in the same tier.
-func validateP1Independence(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateP1Independence(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build map of IMPL slug -> tier number
 	implTier := make(map[string]int)
@@ -141,7 +141,7 @@ func validateP1Independence(manifest *PROGRAMManifest) []result.SAWError {
 		for _, dep := range impl.DependsOn {
 			depTier, exists := implTier[dep]
 			if exists && depTier == impl.Tier {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeP1Violation,
 					Message:  fmt.Sprintf("IMPL %q (tier %d) depends on %q (tier %d) — IMPLs within the same tier must be independent", impl.Slug, impl.Tier, dep, depTier),
 					Severity: "error",
@@ -157,8 +157,8 @@ func validateP1Independence(manifest *PROGRAMManifest) []result.SAWError {
 // validateTierIMPLConsistency checks that:
 // 1. Every IMPL slug appears in exactly one tier
 // 2. Every tier references only IMPLs defined in the impls section
-func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build set of defined IMPL slugs
 	definedImpls := make(map[string]bool)
@@ -174,7 +174,7 @@ func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
 		for _, implSlug := range tier.Impls {
 			// Check if IMPL is defined
 			if !definedImpls[implSlug] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeTierMismatch,
 					Message:  fmt.Sprintf("tier %d references IMPL %q which is not defined in impls section", tier.Number, implSlug),
 					Severity: "error",
@@ -190,14 +190,14 @@ func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
 	for implSlug := range definedImpls {
 		count := implTierCount[implSlug]
 		if count == 0 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeTierMismatch,
 				Message:  fmt.Sprintf("IMPL %q is not assigned to any tier", implSlug),
 				Severity: "error",
 				Field:    "tiers",
 			})
 		} else if count > 1 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeTierMismatch,
 				Message:  fmt.Sprintf("IMPL %q appears in multiple tiers: %v", implSlug, implTierNumbers[implSlug]),
 				Severity: "error",
@@ -210,8 +210,8 @@ func validateTierIMPLConsistency(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateDependencyValidity checks that all depends_on references point to existing IMPL slugs.
-func validateDependencyValidity(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateDependencyValidity(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build set of defined IMPL slugs
 	definedImpls := make(map[string]bool)
@@ -223,7 +223,7 @@ func validateDependencyValidity(manifest *PROGRAMManifest) []result.SAWError {
 	for i, impl := range manifest.Impls {
 		for _, dep := range impl.DependsOn {
 			if !definedImpls[dep] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidDependency,
 					Message:  fmt.Sprintf("IMPL %q depends on %q which does not exist", impl.Slug, dep),
 					Severity: "error",
@@ -237,8 +237,8 @@ func validateDependencyValidity(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateTierOrdering checks that if IMPL-A depends on IMPL-B, A's tier is strictly greater than B's tier.
-func validateTierOrdering(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateTierOrdering(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build map of IMPL slug -> tier number
 	implTier := make(map[string]int)
@@ -251,7 +251,7 @@ func validateTierOrdering(manifest *PROGRAMManifest) []result.SAWError {
 		for _, dep := range impl.DependsOn {
 			depTier, exists := implTier[dep]
 			if exists && impl.Tier <= depTier {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeTierOrderViolation,
 					Message:  fmt.Sprintf("IMPL %q (tier %d) depends on %q (tier %d) — dependent IMPLs must be in strictly later tiers", impl.Slug, impl.Tier, dep, depTier),
 					Severity: "error",
@@ -265,8 +265,8 @@ func validateTierOrdering(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // validateProgramContractConsumers checks that all consumer.Impl references point to existing IMPL slugs.
-func validateProgramContractConsumers(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateProgramContractConsumers(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build set of defined IMPL slugs
 	definedImpls := make(map[string]bool)
@@ -278,7 +278,7 @@ func validateProgramContractConsumers(manifest *PROGRAMManifest) []result.SAWErr
 	for i, contract := range manifest.ProgramContracts {
 		for j, consumer := range contract.Consumers {
 			if !definedImpls[consumer.Impl] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidConsumer,
 					Message:  fmt.Sprintf("program contract %q references consumer IMPL %q which does not exist", contract.Name, consumer.Impl),
 					Severity: "error",
@@ -292,12 +292,12 @@ func validateProgramContractConsumers(manifest *PROGRAMManifest) []result.SAWErr
 }
 
 // validateSlugFormats checks that program_slug and IMPL slugs are kebab-case.
-func validateSlugFormats(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateSlugFormats(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Validate program_slug
 	if manifest.ProgramSlug != "" && !kebabCaseRegex.MatchString(manifest.ProgramSlug) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidSlugFormat,
 			Message:  fmt.Sprintf("program_slug %q is not kebab-case (lowercase letters, digits, hyphens only)", manifest.ProgramSlug),
 			Severity: "error",
@@ -308,7 +308,7 @@ func validateSlugFormats(manifest *PROGRAMManifest) []result.SAWError {
 	// Validate IMPL slugs
 	for i, impl := range manifest.Impls {
 		if impl.Slug != "" && !kebabCaseRegex.MatchString(impl.Slug) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidSlugFormat,
 				Message:  fmt.Sprintf("IMPL slug %q is not kebab-case (lowercase letters, digits, hyphens only)", impl.Slug),
 				Severity: "error",
@@ -321,16 +321,16 @@ func validateSlugFormats(manifest *PROGRAMManifest) []result.SAWError {
 }
 
 // ValidateP1FileDisjointness checks that IMPLs in the same tier do not have
-// overlapping file_ownership entries (P1 invariant). Returns SAWError
+// overlapping file_ownership entries (P1 invariant). Returns PolywaveError
 // with Code "P1_FILE_OVERLAP" if the same file appears in multiple IMPLs.
-func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 	fileToIMPL := make(map[string]string) // file path -> IMPL slug
 
 	for _, impl := range impls {
 		for _, fo := range impl.FileOwnership {
 			if existingIMPL, exists := fileToIMPL[fo.File]; exists {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeP1FileOverlap,
 					Message:  fmt.Sprintf("File %s owned by both %s and %s in tier %d (violates P1 disjoint ownership)", fo.File, existingIMPL, impl.FeatureSlug, tier),
 					Severity: "error",
@@ -348,8 +348,8 @@ func ValidateP1FileDisjointness(tier int, impls []*IMPLManifest) []result.SAWErr
 // It checks that referenced IMPL docs exist on disk, have valid states
 // (reviewed/complete), and don't violate P1 (file_ownership disjointness
 // within a tier) or P2 (frozen contract redefinition).
-func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, repoPath string) []result.SAWError {
-	var errs []result.SAWError
+func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, repoPath string) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Collect states that qualify as "reviewed or later" for import-mode validation.
 	reviewedOrLater := map[ProtocolState]bool{
@@ -414,7 +414,7 @@ func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, r
 		} else if _, err := os.Stat(completePath); err == nil {
 			resolvedPath = completePath
 		} else {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeIMPLFileMissing,
 				Message:  fmt.Sprintf("IMPL %q has status %q but IMPL-%s.yaml not found in docs/IMPL/ or docs/IMPL/complete/", impl.Slug, impl.Status, impl.Slug),
 				Severity: "error",
@@ -426,7 +426,7 @@ func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, r
 		// Check 2: Parse IMPL doc and verify state consistency.
 		implDoc, err := Load(ctx, resolvedPath)
 		if err != nil {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeIMPLFileMissing,
 				Message:  fmt.Sprintf("IMPL %q: failed to parse %s: %v", impl.Slug, resolvedPath, err),
 				Severity: "error",
@@ -436,7 +436,7 @@ func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, r
 		}
 
 		if impl.Status == "reviewed" && !reviewedOrLater[implDoc.State] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeIMPLStateMismatch,
 				Message:  fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected REVIEWED or later)", impl.Slug, impl.Status, implDoc.State),
 				Severity: "error",
@@ -444,7 +444,7 @@ func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, r
 			})
 		}
 		if impl.Status == "complete" && implDoc.State != StateComplete {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeIMPLStateMismatch,
 				Message:  fmt.Sprintf("IMPL %q has program status %q but IMPL doc state is %q (expected COMPLETE)", impl.Slug, impl.Status, implDoc.State),
 				Severity: "error",
@@ -458,7 +458,7 @@ func ValidateProgramImportMode(ctx context.Context, manifest *PROGRAMManifest, r
 		// Check P2: frozen contract redefinition.
 		for _, ic := range implDoc.InterfaceContracts {
 			if frozenContracts[ic.Name] {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeP2ContractRedefinition,
 					Message:  fmt.Sprintf("IMPL %q redefines frozen program contract %q", impl.Slug, ic.Name),
 					Severity: "error",
@@ -513,11 +513,11 @@ func PartitionIMPLsByStatus(manifest *PROGRAMManifest, tierNumber int) (needsSco
 }
 
 // validateCompletionBounds checks that completion counts don't exceed totals.
-func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateCompletionBounds(manifest *PROGRAMManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if manifest.Completion.TiersComplete > manifest.Completion.TiersTotal {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeCompletionBounds,
 			Message:  fmt.Sprintf("tiers_complete (%d) exceeds tiers_total (%d)", manifest.Completion.TiersComplete, manifest.Completion.TiersTotal),
 			Severity: "error",
@@ -526,7 +526,7 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
 	}
 
 	if manifest.Completion.ImplsComplete > manifest.Completion.ImplsTotal {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeCompletionBounds,
 			Message:  fmt.Sprintf("impls_complete (%d) exceeds impls_total (%d)", manifest.Completion.ImplsComplete, manifest.Completion.ImplsTotal),
 			Severity: "error",
@@ -535,7 +535,7 @@ func validateCompletionBounds(manifest *PROGRAMManifest) []result.SAWError {
 	}
 
 	if manifest.Completion.ImplsTotal != len(manifest.Impls) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeImplsTotalMismatch,
 			Message:  fmt.Sprintf("impls_total (%d) must equal the number of impls entries (%d)", manifest.Completion.ImplsTotal, len(manifest.Impls)),
 			Severity: "error",

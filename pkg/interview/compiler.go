@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 const placeholder = "<!-- placeholder — fill in before running /saw bootstrap -->"
@@ -16,7 +16,7 @@ const placeholder = "<!-- placeholder — fill in before running /saw bootstrap 
 // Returns the rendered markdown string.
 func CompileToRequirements(doc *InterviewDoc) result.Result[string] {
 	if doc == nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeRequirementsWriteFailed, "interview doc is nil"),
 		})
 	}
@@ -122,7 +122,7 @@ func CompileToRequirements(doc *InterviewDoc) result.Result[string] {
 func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[WriteReqData] {
 	compileResult := CompileToRequirements(doc)
 	if compileResult.IsFatal() {
-		return result.NewFailure[WriteReqData]([]result.SAWError{
+		return result.NewFailure[WriteReqData]([]result.PolywaveError{
 			result.NewFatal(result.CodeRequirementsWriteFailed,
 				fmt.Sprintf("compiling requirements: %s", compileResult.Errors[0].Message)).
 				WithContext("path", outputPath),
@@ -132,7 +132,7 @@ func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[W
 
 	dir := filepath.Dir(outputPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return result.NewFailure[WriteReqData]([]result.SAWError{
+		return result.NewFailure[WriteReqData]([]result.PolywaveError{
 			result.NewFatal(result.CodeRequirementsWriteFailed, fmt.Sprintf("creating output directory: %s", err.Error())).
 				WithContext("path", outputPath).
 				WithCause(err),
@@ -140,7 +140,7 @@ func WriteRequirementsFile(doc *InterviewDoc, outputPath string) result.Result[W
 	}
 
 	if err := os.WriteFile(outputPath, []byte(content), 0o644); err != nil {
-		return result.NewFailure[WriteReqData]([]result.SAWError{
+		return result.NewFailure[WriteReqData]([]result.PolywaveError{
 			result.NewFatal(result.CodeRequirementsWriteFailed, fmt.Sprintf("writing requirements file: %s", err.Error())).
 				WithContext("path", outputPath).
 				WithCause(err),

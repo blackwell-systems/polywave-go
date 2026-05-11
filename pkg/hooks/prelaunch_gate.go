@@ -5,9 +5,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PreLaunchCheck is a single pre-launch validation result.
@@ -82,11 +82,11 @@ func PreLaunchGate(
 
 	// Ready is true only if no check has status "fail"
 	data.Ready = true
-	var errors []result.SAWError
+	var errors []result.PolywaveError
 	for _, check := range data.Checks {
 		if check.Status == "fail" {
 			data.Ready = false
-			errors = append(errors, result.SAWError{
+			errors = append(errors, result.PolywaveError{
 				Code:     result.CodeWaveNotReady,
 				Severity: "error",
 				Message:  fmt.Sprintf("%s: %s", check.Name, check.Message),
@@ -101,7 +101,7 @@ func PreLaunchGate(
 	return result.NewSuccess(*data)
 }
 
-func checkManifestValidation(errs []result.SAWError) PreLaunchCheck {
+func checkManifestValidation(errs []result.PolywaveError) PreLaunchCheck {
 	if len(errs) == 0 {
 		return PreLaunchCheck{Name: "validation", Status: "pass", Message: "manifest is valid"}
 	}
@@ -225,10 +225,10 @@ func checkWorktreeBranch(m *protocol.IMPLManifest, waveNum int, agentID string, 
 	branch = strings.TrimSpace(branch)
 
 	// Expected patterns:
-	//   saw/{slug}/wave{N}-agent-{ID}
+	//   polywave/{slug}/wave{N}-agent-{ID}
 	//   wave{N}-agent-{ID} (legacy)
 	slug := m.FeatureSlug
-	expectedFull := fmt.Sprintf("saw/%s/wave%d-agent-%s", slug, waveNum, agentID)
+	expectedFull := fmt.Sprintf("polywave/%s/wave%d-agent-%s", slug, waveNum, agentID)
 	expectedLegacy := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 
 	if branch == expectedFull || branch == expectedLegacy {
@@ -276,7 +276,7 @@ func checkScaffoldsCommitted(m *protocol.IMPLManifest) PreLaunchCheck {
 	}
 }
 
-func checkOwnershipDisjoint(errs []result.SAWError) PreLaunchCheck {
+func checkOwnershipDisjoint(errs []result.PolywaveError) PreLaunchCheck {
 	i1Violations := make([]string, 0)
 	for _, e := range errs {
 		if e.Code == result.CodeDisjointOwnership {

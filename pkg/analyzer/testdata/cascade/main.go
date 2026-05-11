@@ -1,6 +1,6 @@
 package main
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/analyzer/testdata/cascade/lib"
+import "github.com/blackwell-systems/polywave-go/pkg/analyzer/testdata/cascade/lib"
 
 func main() {
 	lib.Modified()

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // setupTestRepo creates a temporary git repository for testing.
@@ -122,8 +122,8 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	defer cleanup()
 
 	// Create two agent branches with non-conflicting files
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-B", "file-b.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -161,8 +161,8 @@ func TestMergeAgents_AllSucceed(t *testing.T) {
 	if !data.Merges[0].Success {
 		t.Errorf("expected agent A merge to succeed, got error: %s", data.Merges[0].Error)
 	}
-	if data.Merges[0].Branch != "saw/test-feature/wave1-agent-A" {
-		t.Errorf("expected branch=saw/test-feature/wave1-agent-A, got %s", data.Merges[0].Branch)
+	if data.Merges[0].Branch != "polywave/test-feature/wave1-agent-A" {
+		t.Errorf("expected branch=polywave/test-feature/wave1-agent-A, got %s", data.Merges[0].Branch)
 	}
 
 	// Check agent B merge
@@ -193,7 +193,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	readmePath := filepath.Join(repoDir, "README.md")
 
 	// Agent A modifies README - changes line 1
-	cmd := exec.Command("git", "-C", repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "checkout", "-b", "polywave/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to create branch: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestMergeAgents_ConflictStops(t *testing.T) {
 	}
 
 	// Agent B also modifies README - changes the same line (will conflict after A merges)
-	cmd = exec.Command("git", "-C", repoDir, "checkout", "-b", "saw/test-feature/wave1-agent-B")
+	cmd = exec.Command("git", "-C", repoDir, "checkout", "-b", "polywave/test-feature/wave1-agent-B")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to create branch B: %v", err)
 	}
@@ -364,7 +364,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 	defer cleanup()
 
 	// Create agent branch
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest with long task description
 	longTask := "This is a very long task description that exceeds fifty characters and should be truncated in the commit message"
@@ -394,7 +394,7 @@ func TestMergeAgents_TaskTruncation(t *testing.T) {
 
 	commitMsg := string(output)
 	// Task should be truncated to 50 chars
-	expectedMsg := "Merge saw/test-feature/wave1-agent-A: This is a very long task description that exceeds"
+	expectedMsg := "Merge polywave/test-feature/wave1-agent-A: This is a very long task description that exceeds"
 	if commitMsg != expectedMsg {
 		t.Errorf("commit message not truncated correctly\ngot:  %q (len=%d)\nwant: %q (len=%d)", commitMsg, len(commitMsg), expectedMsg, len(expectedMsg))
 	}
@@ -411,8 +411,8 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 	defer cleanup()
 
 	// Create two agent branches
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-B", "file-b.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -428,7 +428,7 @@ func TestMergeAgents_SkipsAlreadyMergedAgents(t *testing.T) {
 
 	// Actually merge agent A so git confirms it's an ancestor of HEAD.
 	// The idempotency check requires BOTH the merge log AND git history to agree.
-	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-A", "saw/test-feature/wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge polywave/test-feature/wave1-agent-A", "polywave/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent A: %v", err)
 	}
@@ -497,7 +497,7 @@ func TestMergeAgents_AppendsMergeLog(t *testing.T) {
 	defer cleanup()
 
 	// Create agent branch
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -555,9 +555,9 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	defer cleanup()
 
 	// Create three agent branches
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-B", "file-b.txt")
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-C", "file-c.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-B", "file-b.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-C", "file-c.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -576,7 +576,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	// Manually merge A and B and record in merge-log (simulating partial completion before crash)
 
 	// Merge agent A
-	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-A", "saw/test-feature/wave1-agent-A")
+	cmd := exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge polywave/test-feature/wave1-agent-A", "polywave/test-feature/wave1-agent-A")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent A: %v", err)
 	}
@@ -586,7 +586,7 @@ func TestMergeAgents_IdempotentOnCrash(t *testing.T) {
 	mergeSHAA := string(output[:len(output)-1])
 
 	// Merge agent B
-	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge saw/test-feature/wave1-agent-B", "saw/test-feature/wave1-agent-B")
+	cmd = exec.Command("git", "-C", repoDir, "merge", "--no-ff", "-m", "Merge polywave/test-feature/wave1-agent-B", "polywave/test-feature/wave1-agent-B")
 	if err := cmd.Run(); err != nil {
 		t.Fatalf("failed to merge agent B: %v", err)
 	}
@@ -666,7 +666,7 @@ func TestMergeAgents_LegacyBranchFallback(t *testing.T) {
 	createAgentBranch(t, repoDir, "wave1-agent-B", "file-b.txt")
 
 	// Create manifest (FeatureSlug = "test-feature", so code will first
-	// try saw/test-feature/wave1-agent-A which won't exist, then fall back
+	// try polywave/test-feature/wave1-agent-A which won't exist, then fall back
 	// to wave1-agent-A)
 	waves := []Wave{
 		{
@@ -925,7 +925,7 @@ func TestMergeAgents_WithMergeTarget(t *testing.T) {
 	}
 
 	// Create an agent branch with a commit
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest
 	waves := []Wave{
@@ -976,7 +976,7 @@ func TestMergeAgents_EmptyMergeTarget(t *testing.T) {
 	originalBranch := strings.TrimSpace(string(output))
 
 	// Create an agent branch with a commit
-	createAgentBranch(t, repoDir, "saw/test-feature/wave1-agent-A", "file-a.txt")
+	createAgentBranch(t, repoDir, "polywave/test-feature/wave1-agent-A", "file-a.txt")
 
 	// Create manifest
 	waves := []Wave{

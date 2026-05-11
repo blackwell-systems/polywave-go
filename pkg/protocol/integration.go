@@ -11,7 +11,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -324,7 +324,7 @@ type AppendIntegrationData struct {
 func AppendIntegrationReport(manifestPath string, waveKey string, report *IntegrationReport) result.Result[AppendIntegrationData] {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to read manifest: %v", err)),
 		})
 	}
@@ -334,20 +334,20 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	// manifest (which would lose unknown fields). All yaml calls here are intentional Node ops.
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to parse YAML: %v", err)),
 		})
 	}
 
 	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: unexpected YAML structure"),
 		})
 	}
 
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: root is not a mapping"),
 		})
 	}
@@ -356,12 +356,12 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	var reportNode yaml.Node
 	reportBytes, err := yaml.Marshal(report)
 	if err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to marshal report: %v", err)),
 		})
 	}
 	if err := yaml.Unmarshal(reportBytes, &reportNode); err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to unmarshal report node: %v", err)),
 		})
 	}
@@ -384,7 +384,7 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	}
 
 	if reportsValue.Kind != yaml.MappingNode {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", "AppendIntegrationReport: integration_reports is not a mapping"),
 		})
 	}
@@ -406,12 +406,12 @@ func AppendIntegrationReport(manifestPath string, waveKey string, report *Integr
 	// Write back
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to marshal output: %v", err)),
 		})
 	}
 	if err := os.WriteFile(manifestPath, out, 0644); err != nil {
-		return result.NewFailure[AppendIntegrationData]([]result.SAWError{
+		return result.NewFailure[AppendIntegrationData]([]result.PolywaveError{
 			result.NewFatal("INTEGRATION_APPEND_FAILED", fmt.Sprintf("AppendIntegrationReport: failed to write file: %v", err)),
 		})
 	}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TestManagerNew verifies that New returns a non-nil Manager with slug.
@@ -77,7 +77,7 @@ func TestManagerCreateRemoveRoundtrip(t *testing.T) {
 	}
 
 	wtPath := r.GetData().Path
-	expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-D")
+	expectedPath := filepath.Join(repoDir, ".claude", "worktrees", "polywave", "test-feature", "wave1-agent-D")
 	if wtPath != expectedPath {
 		t.Errorf("Create path = %q; want %q", wtPath, expectedPath)
 	}
@@ -215,7 +215,7 @@ func TestCleanupAllPartial(t *testing.T) {
 
 	// Inject a fake tracked path that will fail removal (no real worktree).
 	fakePath := "/tmp/nonexistent-worktree-for-test"
-	m.active[fakePath] = "saw/partial-test/wave1-agent-fake"
+	m.active[fakePath] = "polywave/partial-test/wave1-agent-fake"
 
 	r := m.CleanupAll()
 
@@ -367,7 +367,7 @@ func TestCleanupAllErrorPropagation(t *testing.T) {
 	}
 	// Inject a fake tracked path that has no real worktree (Remove will fail).
 	fakePath := "/tmp/nonexistent-for-error-prop-test"
-	m.active[fakePath] = "saw/err-prop-test/wave1-agent-fake"
+	m.active[fakePath] = "polywave/err-prop-test/wave1-agent-fake"
 
 	r := m.CleanupAll()
 	// All removals failed — expect Fatal.

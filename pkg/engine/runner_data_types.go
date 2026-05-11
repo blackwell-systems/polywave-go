@@ -1,6 +1,6 @@
 package engine
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+import "github.com/blackwell-systems/polywave-go/pkg/protocol"
 
 // ScoutData contains metadata from a successful RunScout operation.
 type ScoutData struct {

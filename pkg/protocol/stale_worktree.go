@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // StaleWorktree represents a single stale worktree detected during scanning.
@@ -144,9 +144,9 @@ func CleanStaleWorktrees(stale []StaleWorktree, force bool) result.Result[*Stale
 	}
 
 	if len(data.Errors) > 0 {
-		warnings := make([]result.SAWError, len(data.Errors))
+		warnings := make([]result.PolywaveError, len(data.Errors))
 		for i, e := range data.Errors {
-			warnings[i] = result.SAWError{
+			warnings[i] = result.PolywaveError{
 				Code:     result.CodeStaleWorktree,
 				Message:  fmt.Sprintf("cleanup failed for %s: %s", e.Worktree.BranchName, e.Error),
 				Severity: "warning",
@@ -177,7 +177,7 @@ func DetectStaleWorktreesForSlug(repoPath, slug string) ([]StaleWorktree, error)
 func CleanupBySlug(repoDir, slug string, force bool) result.Result[*StaleCleanupData] {
 	stale, err := DetectStaleWorktreesForSlug(repoDir, slug)
 	if err != nil {
-		return result.NewFailure[*StaleCleanupData]([]result.SAWError{{
+		return result.NewFailure[*StaleCleanupData]([]result.PolywaveError{{
 			Code:     result.CodeStaleWorktree,
 			Message:  fmt.Sprintf("failed to detect stale worktrees for slug %s: %v", slug, err),
 			Severity: "fatal",

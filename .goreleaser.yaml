@@ -1,9 +1,9 @@
 version: 2
 
 builds:
-  - id: sawtools
-    main: ./cmd/sawtools
-    binary: sawtools
+  - id: polywave-tools
+    main: ./cmd/polywave-tools
+    binary: polywave-tools
     goos:
       - linux
       - darwin
@@ -16,10 +16,10 @@ builds:
       - CGO_ENABLED=0
 
 archives:
-  - id: sawtools
-    builds: [sawtools]
+  - id: polywave-tools
+    builds: [polywave-tools]
     format: tar.gz
-    name_template: "sawtools_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "polywave-tools_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 checksum:
   name_template: "checksums.txt"
 

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // UpdateStatusOpts carries optional fields for update-status beyond the status string.
@@ -31,7 +31,7 @@ func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID
 	// Load manifest
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
+		return result.NewFailure[*UpdateStatusData]([]result.PolywaveError{{
 			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -48,7 +48,7 @@ func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
+		return result.NewFailure[*UpdateStatusData]([]result.PolywaveError{{
 			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
 			Severity: "fatal",
@@ -65,7 +65,7 @@ func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID
 	}
 
 	if !found {
-		return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
+		return result.NewFailure[*UpdateStatusData]([]result.PolywaveError{{
 			Code:     result.CodeStatusUpdateFailed,
 			Message:  fmt.Sprintf("agent %s not found in wave %d", agentID, waveNum),
 			Severity: "fatal",
@@ -94,7 +94,7 @@ func UpdateStatus(ctx context.Context, manifestPath string, waveNum int, agentID
 			effectiveCommit = existingCommit
 		}
 		if strings.TrimSpace(effectiveCommit) == "" {
-			return result.NewFailure[*UpdateStatusData]([]result.SAWError{{
+			return result.NewFailure[*UpdateStatusData]([]result.PolywaveError{{
 				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("cannot set agent %s status to complete: commit is required", agentID),
 				Severity: "fatal",

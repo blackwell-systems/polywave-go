@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/autonomy"
+	"github.com/blackwell-systems/polywave-go/pkg/queue"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CheckQueueOpts configures a CheckQueue call.

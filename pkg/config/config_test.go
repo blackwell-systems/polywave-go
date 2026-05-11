@@ -163,7 +163,7 @@ func TestLoad_BackwardCompat(t *testing.T) {
 
 func TestSave_AtomicWrite(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &SAWConfig{
+	cfg := &PolywaveConfig{
 		Providers: ProvidersConfig{
 			Anthropic: AnthropicProvider{APIKey: "test-key"},
 		},
@@ -181,7 +181,7 @@ func TestSave_AtomicWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var loaded SAWConfig
+	var loaded PolywaveConfig
 	if err := json.Unmarshal(data, &loaded); err != nil {
 		t.Fatalf("cannot parse saved file: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestSave_PreservesUnknownKeys(t *testing.T) {
 	}
 
 	// Save with updated providers.
-	cfg := &SAWConfig{
+	cfg := &PolywaveConfig{
 		Providers: ProvidersConfig{
 			Anthropic: AnthropicProvider{APIKey: "new"},
 		},
@@ -233,7 +233,7 @@ func TestSave_PreservesUnknownKeys(t *testing.T) {
 	}
 
 	// Verify the provider was updated.
-	var loaded SAWConfig
+	var loaded PolywaveConfig
 	if err := json.Unmarshal(saved, &loaded); err != nil {
 		t.Fatal(err)
 	}
@@ -306,11 +306,11 @@ func TestLoadOrDefault_LoadsWhenExists(t *testing.T) {
 	}
 }
 
-// TestSave_FilePermissions verifies that Save() writes saw.config.json with
+// TestSave_FilePermissions verifies that Save() writes polywave.config.json with
 // 0600 permissions, ensuring API keys are never world-readable.
 func TestSave_FilePermissions(t *testing.T) {
 	dir := t.TempDir()
-	cfg := &SAWConfig{
+	cfg := &PolywaveConfig{
 		Providers: ProvidersConfig{
 			Anthropic: AnthropicProvider{APIKey: "secret-key"},
 		},

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SetImplStateOpts contains options for the SetImplState operation.
@@ -68,7 +68,7 @@ func IsValidTransition(from, to ProtocolState) bool {
 func SetImplState(ctx context.Context, manifestPath string, newState ProtocolState, opts SetImplStateOpts) result.Result[*SetImplStateData] {
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+		return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -80,7 +80,7 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 	// Validate transition
 	allowed, ok := allowedTransitions[previousState]
 	if !ok {
-		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+		return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("unknown state %q; cannot determine valid transitions", previousState),
 			Severity: "fatal",
@@ -100,7 +100,7 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 		for i, s := range allowed {
 			validTargets[i] = string(s)
 		}
-		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+		return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("transition from %s to %s is not allowed; valid targets: [%s]", previousState, newState, strings.Join(validTargets, ", ")),
 			Severity: "fatal",
@@ -112,7 +112,7 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 
 	// Write the new state atomically
 	if err := updateManifestState(manifestPath, newState); err != nil {
-		return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+		return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 			Code:     result.CodeStateTransition,
 			Message:  fmt.Sprintf("failed to update manifest state: %v", err),
 			Severity: "fatal",
@@ -134,7 +134,7 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 		}
 
 		if err := git.Add(manifestDir, filepath.Base(manifestPath)); err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+			return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git add failed: %v", err),
 				Severity: "fatal",
@@ -143,7 +143,7 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 
 		sha, err := git.CommitWithMessage(manifestDir, commitMsg)
 		if err != nil {
-			return result.NewFailure[*SetImplStateData]([]result.SAWError{{
+			return result.NewFailure[*SetImplStateData]([]result.PolywaveError{{
 				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("git commit failed: %v", err),
 				Severity: "fatal",
@@ -159,10 +159,10 @@ func SetImplState(ctx context.Context, manifestPath string, newState ProtocolSta
 
 // ValidateStateTransitionContext checks whether a state transition is
 // semantically appropriate given the manifest context. Returns warning-level
-// SAWErrors for transitions that are technically allowed but potentially
+// PolywaveErrors for transitions that are technically allowed but potentially
 // dangerous (e.g., WAVE_EXECUTING -> COMPLETE with multiple agents).
-func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolState) []result.SAWError {
-	var warnings []result.SAWError
+func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolState) []result.PolywaveError {
+	var warnings []result.PolywaveError
 
 	if from == StateWaveExecuting && to == StateComplete {
 		var currentWave *Wave
@@ -176,7 +176,7 @@ func ValidateStateTransitionContext(manifest *IMPLManifest, from, to ProtocolSta
 		}
 
 		if currentWave != nil && !IsSoloWave(currentWave) {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeStateTransition,
 				Message:  fmt.Sprintf("WAVE_EXECUTING -> COMPLETE bypasses merge/verify for wave %d with %d agents; consider WAVE_MERGING -> WAVE_VERIFIED -> COMPLETE path", currentWave.Number, len(currentWave.Agents)),
 				Severity: "warning",

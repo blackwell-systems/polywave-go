@@ -214,7 +214,7 @@ func TestNewObserver_CreatesDirectories(t *testing.T) {
 	}
 
 	// Verify expected paths are set
-	expectedJournalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-A")
+	expectedJournalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-A")
 	if obs.JournalDir != expectedJournalDir {
 		t.Errorf("JournalDir = %s, want %s", obs.JournalDir, expectedJournalDir)
 	}

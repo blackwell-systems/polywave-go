@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"regexp"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // agentIDRegex matches valid agent IDs: A-Z optionally followed by 2-9
@@ -35,16 +35,16 @@ var agentIDRegex = regexp.MustCompile(`^[A-Z][2-9]?$`)
 func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string] {
 	// Validation
 	if count <= 0 {
-		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountInvalid, fmt.Sprintf("count must be > 0, got %d", count))})
+		return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeAgentCountInvalid, fmt.Sprintf("count must be > 0, got %d", count))})
 	}
 
 	if grouping != nil && len(grouping) != count {
-		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentCountMismatch, fmt.Sprintf("grouping length (%d) must match count (%d)", len(grouping), count))})
+		return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeAgentCountMismatch, fmt.Sprintf("grouping length (%d) must match count (%d)", len(grouping), count))})
 	}
 
 	// Check for >234 agents (26 letters * 9 generations = 234 max)
 	if count > 234 {
-		return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeAgentLimitExceeded, fmt.Sprintf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count))})
+		return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeAgentLimitExceeded, fmt.Sprintf("count %d exceeds maximum 234 agents (26 letters × 9 generations)", count))})
 	}
 
 	// Upfront validation for grouped mode
@@ -62,13 +62,13 @@ func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string] {
 		// Check per-category agent cap
 		for category, n := range categoryCounts {
 			if n > 9 {
-				return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryLimitExceeded, fmt.Sprintf("category %q has %d agents, maximum is 9 per category", category, n))})
+				return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeCategoryLimitExceeded, fmt.Sprintf("category %q has %d agents, maximum is 9 per category", category, n))})
 			}
 		}
 
 		// Check category count cap
 		if len(categoryCounts) > 26 {
-			return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeCategoryCountExceeded, fmt.Sprintf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts)))})
+			return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeCategoryCountExceeded, fmt.Sprintf("grouped mode requires ≤ 26 distinct categories, got %d", len(categoryCounts)))})
 		}
 	}
 
@@ -84,7 +84,7 @@ func AssignAgentIDs(count int, grouping [][]string) result.Result[[]string] {
 	// Validate all generated IDs
 	for i, id := range ids {
 		if !agentIDRegex.MatchString(id) {
-			return result.NewFailure[[]string]([]result.SAWError{result.NewError(result.CodeInvalidAgentIDGenerated, fmt.Sprintf("generated invalid agent ID %q at index %d", id, i))})
+			return result.NewFailure[[]string]([]result.PolywaveError{result.NewError(result.CodeInvalidAgentIDGenerated, fmt.Sprintf("generated invalid agent ID %q at index %d", id, i))})
 		}
 	}
 

@@ -6,7 +6,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Mock implementations for testing (will be replaced by Agent A's real implementations)
@@ -22,7 +22,7 @@ func newMockWorkshop() *mockWorkshop {
 
 func (w *mockWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	if _, exists := w.tools[tool.Name]; exists {
-		return result.NewFailure[RegisterData]([]result.SAWError{
+		return result.NewFailure[RegisterData]([]result.PolywaveError{
 			{
 				Code:     result.CodeToolAlreadyRegistered,
 				Message:  "tool already registered: " + tool.Name,

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CallerSite represents one location where a function/method is called.
@@ -27,14 +27,14 @@ type CallerSite struct {
 // tuple where symbolName appears as a call expression.
 func CheckCallers(ctx context.Context, repoDir, symbolName string) result.Result[[]CallerSite] {
 	if symbolName == "" {
-		return result.NewFailure[[]CallerSite]([]result.SAWError{
+		return result.NewFailure[[]CallerSite]([]result.PolywaveError{
 			result.NewFatal("X001_INVALID_INPUT", "symbolName must not be empty"),
 		})
 	}
 
 	// Verify repoDir is readable
 	if _, err := os.Stat(repoDir); err != nil {
-		return result.NewFailure[[]CallerSite]([]result.SAWError{
+		return result.NewFailure[[]CallerSite]([]result.PolywaveError{
 			result.NewFatal("X001_INVALID_INPUT", fmt.Sprintf("repoDir unreadable: %v", err)),
 		})
 	}
@@ -96,7 +96,7 @@ func CheckCallers(ctx context.Context, repoDir, symbolName string) result.Result
 	})
 
 	if walkErr != nil && walkErr == ctx.Err() {
-		return result.NewFailure[[]CallerSite]([]result.SAWError{
+		return result.NewFailure[[]CallerSite]([]result.PolywaveError{
 			result.NewFatal("X001_INVALID_INPUT", fmt.Sprintf("scan cancelled: %v", walkErr)),
 		})
 	}
@@ -127,7 +127,7 @@ func ListErrorRanges(ctx context.Context, repoDir string) result.Result[[]ErrorC
 
 	data, err := os.ReadFile(codesPath)
 	if err != nil {
-		return result.NewFailure[[]ErrorCodeRange]([]result.SAWError{
+		return result.NewFailure[[]ErrorCodeRange]([]result.PolywaveError{
 			result.NewFatal("X002_FILE_READ", fmt.Sprintf("failed to read codes.go: %v", err)),
 		})
 	}

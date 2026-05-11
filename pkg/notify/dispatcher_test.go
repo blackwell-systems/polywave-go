@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // --- mock helpers ---
@@ -73,7 +73,7 @@ func TestDispatch_AllReceive(t *testing.T) {
 func TestDispatch_OneFailsOthersStillReceive(t *testing.T) {
 	a1 := &mockAdapter{name: "a1"}
 	a2 := &mockAdapter{name: "a2", sendFn: func(_ context.Context, _ Message) result.Result[SendData] {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "BOOM", Message: "boom", Severity: "fatal"},
 		})
 	}}
@@ -182,7 +182,7 @@ func TestDispatch_FormatterOutput(t *testing.T) {
 
 func TestDispatch_AllFail(t *testing.T) {
 	failFn := func(_ context.Context, _ Message) result.Result[SendData] {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "ERR", Message: "fail", Severity: "fatal"},
 		})
 	}
@@ -199,7 +199,7 @@ func TestDispatch_AllFail(t *testing.T) {
 func TestDispatch_PartialWhenSomeFail(t *testing.T) {
 	a1 := &mockAdapter{name: "ok"}
 	a2 := &mockAdapter{name: "fail", sendFn: func(_ context.Context, _ Message) result.Result[SendData] {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "ERR", Message: "fail", Severity: "error"},
 		})
 	}}

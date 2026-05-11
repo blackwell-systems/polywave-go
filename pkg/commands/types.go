@@ -1,6 +1,6 @@
 package commands
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+import "github.com/blackwell-systems/polywave-go/pkg/result"
 
 // CommandSet represents extracted build/test/lint/format commands
 type CommandSet struct {

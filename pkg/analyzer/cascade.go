@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RenameInfo describes a type rename operation.
@@ -91,7 +91,7 @@ func DetectCascades(ctx context.Context, repoRoot string, renames []RenameInfo) 
 	})
 
 	if err != nil {
-		return result.NewFailure[CascadeResult]([]result.SAWError{result.NewFatal(result.CodeAnalyzeWalkFailed, err.Error())})
+		return result.NewFailure[CascadeResult]([]result.PolywaveError{result.NewFatal(result.CodeAnalyzeWalkFailed, err.Error())})
 	}
 
 	// Sort for determinism: by file path, then line number

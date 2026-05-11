@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // WorktreeInfo contains the details of a created worktree for a single agent.
@@ -29,8 +29,8 @@ type CreateWorktreesData struct {
 // For cross-repo waves, agents' files are looked up in the file ownership table
 // to determine which repo each agent belongs to. If a Repo column is present,
 // worktrees are created in sibling directories (e.g., if repoDir is
-// /path/to/scout-and-wave and an agent has Repo=scout-and-wave-go, the worktree
-// is created at /path/to/scout-and-wave-go/.claude/worktrees/...).
+// /path/to/scout-and-wave and an agent has Repo=polywave-go, the worktree
+// is created at /path/to/polywave-go/.claude/worktrees/...).
 //
 // Each worktree is created at {agentRepoDir}/.claude/worktrees/saw/{slug}/wave{N}-agent-{Letter}
 // on a new branch named saw/{slug}/wave{N}-agent-{Letter}.
@@ -47,7 +47,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 	// Load IMPL doc (pure YAML format)
 	doc, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+		return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -66,7 +66,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+		return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -78,7 +78,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 	// Record base commit for post-merge verification (prevention fix for verify-commits bug)
 	baseCommit, err := git.RevParse(repoDir, "HEAD")
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+		return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to get base commit: %v", err),
@@ -96,7 +96,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 	// Resolve absolute path for repoDir (handles "." case)
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+		return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo path: %v", err),
@@ -175,7 +175,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 				} else if candidate.branch == branchName {
 					// Only error on the primary (new-format) branch; legacy branches
 					// that are unmerged are a soft warning.
-					return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+					return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 						{
 							Code:     result.CodeBranchExists,
 							Message:  fmt.Sprintf("branch %q already exists in %s and is not merged into HEAD; delete it manually or merge first", candidate.branch, agentRepoDir),
@@ -191,7 +191,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 			// Worktree exists - check if it's stale
 			currentHead, err := git.RevParse(agentRepoDir, "HEAD")
 			if err != nil {
-				return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+				return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 					{
 						Code:     result.CodeWorktreeCreateFailed,
 						Message:  fmt.Sprintf("failed to get current HEAD: %v", err),
@@ -238,7 +238,7 @@ func CreateWorktrees(ctx context.Context, manifestPath string, waveNum int, repo
 
 		// Create the worktree
 		if err := git.WorktreeAdd(agentRepoDir, worktreePath, branchName); err != nil {
-			return result.NewFailure[CreateWorktreesData]([]result.SAWError{
+			return result.NewFailure[CreateWorktreesData]([]result.PolywaveError{
 				{
 					Code:     result.CodeWorktreeCreateFailed,
 					Message:  fmt.Sprintf("failed to create worktree for agent %s in repo %s: %v", agent.ID, agentRepoDir, err),

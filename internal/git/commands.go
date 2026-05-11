@@ -1,4 +1,4 @@
-// Package git wraps the git CLI for operations required by scout-and-wave-go:
+// Package git wraps the git CLI for operations required by polywave-go:
 // worktree creation and removal, branch merging with conflict detection, diff
 // inspection, and repository root resolution. All commands are thin
 // wrappers that return structured errors on non-zero exit codes.
@@ -304,22 +304,22 @@ func CommitCount(repoPath, fromRef, toRef string) (int, error) {
 }
 
 // preCommitHookTemplate is the SAW worktree isolation hook that blocks commits
-// to main/master branches unless SAW_ALLOW_MAIN_COMMIT=1 is set.
+// to main/master branches unless POLYWAVE_ALLOW_MAIN_COMMIT=1 is set.
 const preCommitHookTemplate = `#!/usr/bin/env bash
-# SAW pre-commit guard: Block commits to main/master in Wave agent worktrees
+# Polywave pre-commit guard: Block commits to main/master in Wave agent worktrees
 # This hook prevents accidental commits to protected branches during parallel execution.
 # Wave agents should only commit to their dedicated wave{N}-agent-{ID} branches.
 
 set -euo pipefail
 
 # Allow bypass via environment variable (for SAW orchestrator merge operations)
-if [[ "${SAW_ALLOW_MAIN_COMMIT:-0}" == "1" ]]; then
+if [[ "${POLYWAVE_ALLOW_MAIN_COMMIT:-0}" == "1" ]]; then
 	exit 0
 fi
 
-# Only enforce isolation in Wave agent contexts (presence of .saw-agent-brief.md)
+# Only enforce isolation in Wave agent contexts (presence of .polywave-agent-brief.md)
 # Orchestrator commits to main are allowed (baseline fixes, state management, etc.)
-if [[ ! -f ".saw-agent-brief.md" ]]; then
+if [[ ! -f ".polywave-agent-brief.md" ]]; then
 	# Not in agent worktree - allow commit to any branch (Orchestrator context)
 	exit 0
 fi
@@ -329,11 +329,11 @@ branch=$(git rev-parse --abbrev-ref HEAD)
 
 # Block commits to main/master branches from agent worktrees
 if [[ "$branch" == "main" || "$branch" == "master" ]]; then
-	echo "❌ SAW isolation violation: Cannot commit to $branch from Wave agent worktree"
+	echo "❌ Polywave isolation violation: Cannot commit to $branch from Wave agent worktree"
 	echo ""
 	echo "Wave agents must commit to their dedicated branches (wave{N}-agent-{ID})."
 	echo "If you are the orchestrator performing a merge operation, set:"
-	echo "  export SAW_ALLOW_MAIN_COMMIT=1"
+	echo "  export POLYWAVE_ALLOW_MAIN_COMMIT=1"
 	echo ""
 	exit 1
 fi
@@ -395,7 +395,7 @@ func ChangedFilesSinceRef(repoPath, ref string) ([]string, error) {
 	return DiffNameOnly(repoPath, ref, "HEAD")
 }
 
-// InstallHooks generates and installs the SAW pre-commit hook in a worktree.
+// InstallHooks generates and installs the Polywave pre-commit hook in a worktree.
 // It writes the hook template to the worktree's hooks directory, making it executable.
 // Creates the hooks directory if it doesn't exist.
 //
@@ -511,7 +511,7 @@ func VerifyHookInWorktree(worktreePath string) (bool, error) {
 	}
 
 	contentStr := string(hookContent)
-	if !strings.Contains(contentStr, "SAW_ALLOW_MAIN_COMMIT") && !strings.Contains(contentStr, "SAW pre-commit guard") {
+	if !strings.Contains(contentStr, "POLYWAVE_ALLOW_MAIN_COMMIT") && !strings.Contains(contentStr, "Polywave pre-commit guard") {
 		return false, nil // Hook doesn't contain SAW logic
 	}
 

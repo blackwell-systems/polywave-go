@@ -3,7 +3,7 @@ package errparse
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // mockParser is a simple Parser implementation for testing.
@@ -101,7 +101,7 @@ func TestParseOutput_Dispatches(t *testing.T) {
 
 	expected := &ParseResult{
 		Tool:   "go-build",
-		Errors: []result.SAWError{{Code: result.CodeToolError, File: "main.go", Line: 1, Severity: "error", Message: "syntax error", Tool: "go-build"}},
+		Errors: []result.PolywaveError{{Code: result.CodeToolError, File: "main.go", Line: 1, Severity: "error", Message: "syntax error", Tool: "go-build"}},
 		Raw:    "main.go:1: syntax error",
 	}
 

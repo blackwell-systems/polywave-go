@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // IMPLStatusData holds the result of an UpdateIMPLStatus operation.
@@ -43,7 +43,7 @@ type UpdatePromptData struct {
 func UpdateIMPLStatus(path string, completedAgents []string) result.Result[IMPLStatusData] {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return result.NewFailure[IMPLStatusData]([]result.SAWError{
+		return result.NewFailure[IMPLStatusData]([]result.PolywaveError{
 			result.NewFatal(result.CodeStatusUpdateFailed,
 				fmt.Sprintf("UpdateIMPLStatus: cannot read %q: %v", path, err)),
 		})
@@ -52,7 +52,7 @@ func UpdateIMPLStatus(path string, completedAgents []string) result.Result[IMPLS
 	updated := UpdateIMPLStatusBytes(data, completedAgents)
 
 	if err := os.WriteFile(path, updated, 0644); err != nil {
-		return result.NewFailure[IMPLStatusData]([]result.SAWError{
+		return result.NewFailure[IMPLStatusData]([]result.PolywaveError{
 			result.NewFatal(result.CodeStatusUpdateFailed,
 				fmt.Sprintf("UpdateIMPLStatus: cannot write %q: %v", path, err)),
 		})
@@ -124,7 +124,7 @@ func UpdateIMPLStatusBytes(content []byte, completedAgents []string) []byte {
 // Returns Fatal wrapping ErrAgentNotFound if the agent ID doesn't exist in any wave.
 func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) result.Result[UpdatePromptData] {
 	if agentID == "" {
-		return result.NewFailure[UpdatePromptData]([]result.SAWError{
+		return result.NewFailure[UpdatePromptData]([]result.PolywaveError{
 			result.NewFatal("PROMPT_UPDATE_FAILED", "agent ID cannot be empty"),
 		})
 	}
@@ -144,7 +144,7 @@ func UpdateAgentPrompt(m *IMPLManifest, agentID string, newPrompt string) result
 	}
 
 	// Agent not found in any wave
-	return result.NewFailure[UpdatePromptData]([]result.SAWError{
+	return result.NewFailure[UpdatePromptData]([]result.PolywaveError{
 		result.NewFatal("PROMPT_UPDATE_FAILED",
 			fmt.Sprintf("%s: %s", ErrAgentNotFound, agentID)),
 	})

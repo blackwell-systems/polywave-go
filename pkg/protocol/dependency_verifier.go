@@ -3,7 +3,7 @@ package protocol
 import (
 	"context"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DependencyVerificationData holds the outcome of checking that all dependency
@@ -40,7 +40,7 @@ func VerifyDependenciesAvailable(ctx context.Context, manifest *IMPLManifest, wa
 		}
 	}
 	if targetWave == nil {
-		return result.NewFailure[DependencyVerificationData]([]result.SAWError{
+		return result.NewFailure[DependencyVerificationData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWaveNotReady,
 				Message:  formatWaveNotFound(waveNum),

@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 func makeManifest(waves []protocol.Wave, reports map[string]protocol.CompletionReport) *protocol.IMPLManifest {

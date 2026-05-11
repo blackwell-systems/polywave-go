@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // E37Required returns true when a critic review is required before wave execution.

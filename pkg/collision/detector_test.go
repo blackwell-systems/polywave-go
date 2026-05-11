@@ -7,8 +7,8 @@ import (
 	"sort"
 	"testing"
 
-	igit "github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	igit "github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -343,18 +343,18 @@ func TestDetectCollisionsInTypes(t *testing.T) {
 			name: "multi-collision - 3 agents",
 			agentTypes: map[string][]TypeDeclaration{
 				"A": {
-					{Name: "SAWConfig", Package: "pkg/config", Kind: "struct"},
+					{Name: "PolywaveConfig", Package: "pkg/config", Kind: "struct"},
 				},
 				"B": {
-					{Name: "SAWConfig", Package: "pkg/config", Kind: "struct"},
+					{Name: "PolywaveConfig", Package: "pkg/config", Kind: "struct"},
 				},
 				"C": {
-					{Name: "SAWConfig", Package: "pkg/config", Kind: "struct"},
+					{Name: "PolywaveConfig", Package: "pkg/config", Kind: "struct"},
 				},
 			},
 			want: []TypeCollision{
 				{
-					TypeName:   "SAWConfig",
+					TypeName:   "PolywaveConfig",
 					Package:    "pkg/config",
 					Agents:     []string{"A", "B", "C"},
 					Resolution: "Keep A, remove from B and C",
@@ -484,7 +484,7 @@ func TestBuildBranchName(t *testing.T) {
 			slug:    "my-feature",
 			waveNum: 1,
 			agentID: "A",
-			want:    "saw/my-feature/wave1-agent-A",
+			want:    "polywave/my-feature/wave1-agent-A",
 		},
 		{
 			name:    "legacy format",
@@ -498,7 +498,7 @@ func TestBuildBranchName(t *testing.T) {
 			slug:    "type-collision-detection",
 			waveNum: 1,
 			agentID: "A",
-			want:    "saw/type-collision-detection/wave1-agent-A",
+			want:    "polywave/type-collision-detection/wave1-agent-A",
 		},
 	}
 
@@ -518,7 +518,7 @@ func TestGetChangedGoFiles(t *testing.T) {
 		initTestRepo(t, repoDir)
 
 		// Create a branch with a modified .go file
-		branchName := "saw/test-slug/wave1-agent-A"
+		branchName := "polywave/test-slug/wave1-agent-A"
 		_, err := igit.Run(repoDir, "checkout", "-b", branchName)
 		require.NoError(t, err, "create branch")
 
@@ -634,7 +634,7 @@ waves:
 		const waveNum = 1
 
 		// Create agent A branch with a unique type.
-		branchA := "saw/" + slug + "/wave1-agent-A"
+		branchA := "polywave/" + slug + "/wave1-agent-A"
 		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
 		require.NoError(t, err)
 		fileA := filepath.Join(repoDir, "pkg", "svc", "handler.go")
@@ -648,7 +648,7 @@ waves:
 		// Create agent B branch with a distinct type.
 		_, err = igit.Run(repoDir, "checkout", "main")
 		require.NoError(t, err)
-		branchB := "saw/" + slug + "/wave1-agent-B"
+		branchB := "polywave/" + slug + "/wave1-agent-B"
 		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
 		require.NoError(t, err)
 		fileB := filepath.Join(repoDir, "pkg", "svc", "logger.go")
@@ -685,7 +685,7 @@ waves:
 		// Both agents define the same type in the same package — a collision.
 		const sharedType = "package svc\n\ntype SharedEntry struct{ ID string }\n"
 
-		branchA := "saw/" + slug + "/wave1-agent-A"
+		branchA := "polywave/" + slug + "/wave1-agent-A"
 		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
 		require.NoError(t, err)
 		fileA := filepath.Join(repoDir, "pkg", "svc", "entry.go")
@@ -698,7 +698,7 @@ waves:
 
 		_, err = igit.Run(repoDir, "checkout", "main")
 		require.NoError(t, err)
-		branchB := "saw/" + slug + "/wave1-agent-B"
+		branchB := "polywave/" + slug + "/wave1-agent-B"
 		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
 		require.NoError(t, err)
 		fileB := filepath.Join(repoDir, "pkg", "svc", "entry.go")
@@ -838,7 +838,7 @@ func TestRootPackageCollision(t *testing.T) {
 		// Both agents define AppConfig in the root package (no subdirectory).
 		const rootType = "package main\n\ntype AppConfig struct{ Port int }\n"
 
-		branchA := "saw/" + slug + "/wave1-agent-A"
+		branchA := "polywave/" + slug + "/wave1-agent-A"
 		_, err := igit.Run(repoDir, "checkout", "-b", branchA)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "config.go"), []byte(rootType), 0644))
@@ -849,7 +849,7 @@ func TestRootPackageCollision(t *testing.T) {
 
 		_, err = igit.Run(repoDir, "checkout", "main")
 		require.NoError(t, err)
-		branchB := "saw/" + slug + "/wave1-agent-B"
+		branchB := "polywave/" + slug + "/wave1-agent-B"
 		_, err = igit.Run(repoDir, "checkout", "-b", branchB)
 		require.NoError(t, err)
 		require.NoError(t, os.WriteFile(filepath.Join(repoDir, "config.go"), []byte(rootType), 0644))

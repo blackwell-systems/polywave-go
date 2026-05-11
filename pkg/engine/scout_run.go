@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/idgen"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/idgen"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RunCriticOpts configures the engine.RunCritic call. The RunCritic function
@@ -21,7 +21,7 @@ import (
 type RunCriticOpts struct {
 	IMPLPath    string       // absolute path to IMPL doc (required)
 	CriticModel string       // optional model override
-	SAWRepoPath string       // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
+	PolywaveRepoPath string       // optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave
 	Timeout     int          // minutes; default 20
 	Logger      *slog.Logger // optional
 }
@@ -38,7 +38,7 @@ type RunCriticResult struct {
 // without launching it. Used by --backend agent-tool.
 type BuildCriticPromptOpts struct {
 	IMPLPath    string // absolute path to IMPL doc (required)
-	SAWRepoPath string // optional; falls back to $SAW_REPO then ~/code/scout-and-wave
+	PolywaveRepoPath string // optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave
 }
 
 // runCriticFn is the function variable through which RunScoutFull calls the
@@ -52,7 +52,7 @@ func runCriticOptsBuilder(implPath, criticModel, sawRepoPath string, logger *slo
 	return RunCriticOpts{
 		IMPLPath:    implPath,
 		CriticModel: criticModel,
-		SAWRepoPath: sawRepoPath,
+		PolywaveRepoPath: sawRepoPath,
 		Logger:      logger,
 	}
 }
@@ -62,7 +62,7 @@ type RunScoutFullOpts struct {
 	Feature             string
 	RepoPath            string
 	ImplOutputPath      string // optional: explicit IMPL output path; overrides default derivation
-	SAWRepoPath         string
+	PolywaveRepoPath         string
 	ScoutModel          string
 	Timeout             int    // minutes; default 10
 	ProgramManifestPath string
@@ -98,7 +98,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	if repoPath == "" {
 		cwd, err := os.Getwd()
 		if err != nil {
-			return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+			return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutFailed,
 					fmt.Sprintf("engine.RunScoutFull: failed to get current directory: %v", err)),
 			})
@@ -107,7 +107,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	}
 	absRepo, err := filepath.Abs(repoPath)
 	if err != nil {
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutFailed,
 				fmt.Sprintf("engine.RunScoutFull: failed to resolve repo path: %v", err)),
 		})
@@ -115,7 +115,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	repoPath = absRepo
 
 	if _, err := os.Stat(repoPath); err != nil {
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutFailed,
 				fmt.Sprintf("engine.RunScoutFull: repo path does not exist: %s", repoPath)),
 		})
@@ -164,7 +164,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// Ensure docs/IMPL directory exists.
 	implDir := filepath.Dir(implPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutFailed,
 				fmt.Sprintf("engine.RunScoutFull: failed to create IMPL directory: %v", err)),
 		})
@@ -184,7 +184,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	scoutOpts := RunScoutOpts{
 		Feature:             opts.Feature,
 		RepoPath:            repoPath,
-		SAWRepoPath:         opts.SAWRepoPath,
+		PolywaveRepoPath:         opts.PolywaveRepoPath,
 		IMPLOutPath:         implPath,
 		ScoutModel:          opts.ScoutModel,
 		ProgramManifestPath: opts.ProgramManifestPath,
@@ -211,7 +211,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		if len(corrRes.Errors) > 0 {
 			errMsg = corrRes.Errors[0].Message
 		}
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutFailed,
 				fmt.Sprintf("engine.RunScoutFull: Scout execution failed: %s", errMsg)),
 		})
@@ -219,7 +219,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 
 	// Wait for IMPL file to appear (race condition guard).
 	if !waitForFile(implPath, 10*time.Second) {
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutFailed,
 				fmt.Sprintf("engine.RunScoutFull: IMPL doc not found at %s after Scout completion", implPath)),
 		})
@@ -228,7 +228,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 	// Validate IMPL doc (defense-in-depth — Scout self-validates internally).
 	errs, err := protocol.ValidateIMPLDoc(implPath)
 	if err != nil {
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutValidationFailed,
 				fmt.Sprintf("engine.RunScoutFull: validation system error: %v", err)),
 		})
@@ -249,7 +249,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 			if agentCount > 0 {
 				res := idgen.AssignAgentIDs(agentCount, nil)
 				if res.IsFatal() {
-					return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+					return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 						result.NewFatal(result.CodeScoutFailed,
 							fmt.Sprintf("engine.RunScoutFull: failed to generate agent IDs: %s", res.Errors[0].Message)),
 					})
@@ -257,7 +257,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 				correctIDs := res.GetData()
 				log.Warn("RunScoutFull: agent ID validation errors found; manual correction required",
 					"correct_ids", strings.Join(correctIDs, " "))
-				return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+				return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 					result.NewFatal(result.CodeScoutFailed,
 						fmt.Sprintf("engine.RunScoutFull: IMPL doc validation failed (agent ID errors); suggested IDs: %s",
 							strings.Join(correctIDs, " "))),
@@ -270,7 +270,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 		for _, e := range errs {
 			msgs = append(msgs, fmt.Sprintf("line %d [%s]: %s", e.Line, e.Code, e.Message))
 		}
-		return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+		return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeScoutValidationFailed,
 				fmt.Sprintf("engine.RunScoutFull: IMPL doc validation failed: %s",
 					strings.Join(msgs, "; "))),
@@ -302,7 +302,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 			log.Warn("RunScoutFull: could not load IMPL manifest for critic threshold check; skipping critic gate",
 				"error", loadErr)
 		} else if criticThresholdMet(manifest) {
-			criticOpts := runCriticOptsBuilder(implPath, opts.CriticModel, opts.SAWRepoPath, opts.Logger)
+			criticOpts := runCriticOptsBuilder(implPath, opts.CriticModel, opts.PolywaveRepoPath, opts.Logger)
 			criticRes, criticErr := runCriticFn(ctx, criticOpts, onChunk)
 			if criticErr != nil {
 				log.Warn("RunScoutFull: critic gate failed or not available; skipping gracefully", "error", criticErr)
@@ -310,7 +310,7 @@ func RunScoutFull(ctx context.Context, opts RunScoutFullOpts, onChunk func(strin
 				res.CriticVerdict = criticRes.Verdict
 				// E37: critic gate — ISSUES verdict blocks advance to REVIEWED state.
 				if criticRes.Verdict == "ISSUES" {
-					return result.NewFailure[RunScoutFullResult]([]result.SAWError{
+					return result.NewFailure[RunScoutFullResult]([]result.PolywaveError{
 						result.NewFatal("P009_CRITIC_GATE_FAILED",
 							"E37 critic gate: verdict ISSUES — resolve critic findings before proceeding").
 							WithContext("impl_path", implPath).
@@ -390,7 +390,7 @@ func criticThresholdMet(manifest *protocol.IMPLManifest) bool {
 
 // countAgentsFromErrors extracts the agent count from validation error messages.
 // The validator appends "Run: sawtools assign-agent-ids --count N" as the last error.
-func countAgentsFromErrors(errs []result.SAWError) int {
+func countAgentsFromErrors(errs []result.PolywaveError) int {
 	for _, e := range errs {
 		if e.Code == "agent-id" && e.Line == 0 {
 			// This is the suggestion message: "Run: sawtools assign-agent-ids --count N"

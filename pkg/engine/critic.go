@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // init wires RunCritic into the runCriticFn hook used by RunScoutFull in scout_run.go.
@@ -40,13 +40,13 @@ func init() {
 func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.Result[string] {
 	// Validate IMPL path is absolute and exists.
 	if !filepath.IsAbs(opts.IMPLPath) {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeInvalidPath,
 				fmt.Sprintf("run-critic: impl-path must be absolute (got %q)", opts.IMPLPath)),
 		})
 	}
 	if _, err := os.Stat(opts.IMPLPath); err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLNotFound,
 				fmt.Sprintf("run-critic: impl path does not exist: %s", opts.IMPLPath)),
 		})
@@ -55,7 +55,7 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.R
 	// Load the IMPL doc to collect repo roots.
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("run-critic: failed to load IMPL doc: %v", err)),
 		})
@@ -71,28 +71,28 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.R
 	}
 
 	// Resolve the SAW repo path for loading critic-agent.md.
-	sawRepo := opts.SAWRepoPath
+	sawRepo := opts.PolywaveRepoPath
 	if sawRepo == "" {
-		sawRepo = os.Getenv("SAW_REPO")
+		sawRepo = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return result.NewFailure[string]([]result.SAWError{
+			return result.NewFailure[string]([]result.PolywaveError{
 				result.NewFatal(result.CodeContextError,
 					fmt.Sprintf("run-critic: cannot determine home directory: %v", err)),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+		sawRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load the critic-agent.md prompt with reference injection.
 	criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
 	criticMdRes := LoadTypePromptWithRefs(criticMdPath)
 	if criticMdRes.IsFatal() {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeBriefExtractFail,
-				fmt.Sprintf("run-critic: critic-agent.md not found at %s — verify SAW installation or set SAW_REPO environment variable: %v", criticMdPath, criticMdRes.Errors[0].Message)),
+				fmt.Sprintf("run-critic: critic-agent.md not found at %s — verify SAW installation or set POLYWAVE_REPO environment variable: %v", criticMdPath, criticMdRes.Errors[0].Message)),
 		})
 	}
 	criticMdContent := criticMdRes.GetData()
@@ -117,7 +117,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) re
 
 	promptResult := BuildCriticPrompt(ctx, BuildCriticPromptOpts{
 		IMPLPath:    opts.IMPLPath,
-		SAWRepoPath: opts.SAWRepoPath,
+		PolywaveRepoPath: opts.PolywaveRepoPath,
 	})
 	if promptResult.IsFatal() {
 		return result.NewFailure[RunCriticResult](promptResult.Errors)
@@ -156,7 +156,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) re
 	spec := &protocol.Agent{ID: "critic", Task: prompt}
 	_, execErr := runner.ExecuteStreamingWithTools(ctx, spec, workDir, onChunk, nil)
 	if execErr != nil {
-		return result.NewFailure[RunCriticResult]([]result.SAWError{
+		return result.NewFailure[RunCriticResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeAgentRunFailed,
 				fmt.Sprintf("run-critic: critic agent execution failed: %v", execErr)),
 		})
@@ -165,7 +165,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) re
 	// Reload the manifest to pick up the critic_report written by the agent.
 	updatedManifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[RunCriticResult]([]result.SAWError{
+		return result.NewFailure[RunCriticResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("run-critic: failed to reload IMPL doc after critic run: %v", err)),
 		})
@@ -173,7 +173,7 @@ func RunCritic(ctx context.Context, opts RunCriticOpts, onChunk func(string)) re
 
 	review := protocol.GetCriticReview(ctx, updatedManifest)
 	if review == nil {
-		return result.NewFailure[RunCriticResult]([]result.SAWError{
+		return result.NewFailure[RunCriticResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeCompletionReportMissing,
 				"run-critic: critic agent completed but no critic_report was written to IMPL doc"),
 		})

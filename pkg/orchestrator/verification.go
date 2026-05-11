@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -23,7 +23,7 @@ func runVerification(ctx context.Context, o *Orchestrator, testCommand string) r
 		vet := exec.CommandContext(ctx, "go", "vet", "./...")
 		vet.Dir = o.repoPath
 		if out, err := vet.CombinedOutput(); err != nil {
-			return result.NewFailure[VerificationData]([]result.SAWError{
+			return result.NewFailure[VerificationData]([]result.PolywaveError{
 				result.NewFatal(result.CodeLintFailed, fmt.Sprintf(
 					"runVerification: go vet failed: %s\noutput: %s", err.Error(), string(out))),
 			})
@@ -32,7 +32,7 @@ func runVerification(ctx context.Context, o *Orchestrator, testCommand string) r
 
 	parts := strings.Fields(testCommand)
 	if len(parts) == 0 {
-		return result.NewFailure[VerificationData]([]result.SAWError{
+		return result.NewFailure[VerificationData]([]result.PolywaveError{
 			result.NewFatal(result.CodeGateCommandMissing, "runVerification: empty test command"),
 		})
 	}
@@ -42,7 +42,7 @@ func runVerification(ctx context.Context, o *Orchestrator, testCommand string) r
 
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return result.NewFailure[VerificationData]([]result.SAWError{
+		return result.NewFailure[VerificationData]([]result.PolywaveError{
 			result.NewFatal(result.CodeTestFailed, fmt.Sprintf(
 				"runVerification: command %q failed: %s\noutput: %s", testCommand, err.Error(), string(out))),
 		})

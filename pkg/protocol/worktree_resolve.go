@@ -36,7 +36,7 @@ func ResolveWorktreePath(repoDir string, branch string) string {
 	// Check slug-scoped paths first (if slug is known)
 	if slug != "" {
 		for _, base := range WorktreeBaseDirs {
-			candidate := filepath.Join(repoDir, base, "worktrees", "saw", slug, localPart)
+			candidate := filepath.Join(repoDir, base, "worktrees", "polywave", slug, localPart)
 			if _, err := os.Stat(candidate); err == nil {
 				return candidate
 			}
@@ -53,7 +53,7 @@ func ResolveWorktreePath(repoDir string, branch string) string {
 
 	// Fallback: canonical path (slug-scoped if slug is available).
 	if slug != "" {
-		return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", "saw", slug, localPart)
+		return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", "polywave", slug, localPart)
 	}
 	return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", localPart)
 }
@@ -67,7 +67,7 @@ func ResolveWorktreePathWithSlug(repoDir, slug string, waveNum int, agentID stri
 	// Check slug-scoped paths first
 	if slug != "" {
 		for _, base := range WorktreeBaseDirs {
-			candidate := filepath.Join(repoDir, base, "worktrees", "saw", slug, localPart)
+			candidate := filepath.Join(repoDir, base, "worktrees", "polywave", slug, localPart)
 			if _, err := os.Stat(candidate); err == nil {
 				return candidate
 			}
@@ -84,7 +84,7 @@ func ResolveWorktreePathWithSlug(repoDir, slug string, waveNum int, agentID stri
 
 	// Fallback: canonical slug-scoped path
 	if slug != "" {
-		return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", "saw", slug, localPart)
+		return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", "polywave", slug, localPart)
 	}
 	return filepath.Join(repoDir, WorktreeBaseDirs[0], "worktrees", localPart)
 }

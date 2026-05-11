@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RetryAttempt is the unified per-attempt state carrier.
@@ -43,20 +43,20 @@ const maxExcerptLen = 2000
 //   - the agent has no completion report in the manifest
 func BuildRetryAttempt(ctx context.Context, manifestPath string, agentID string, attemptNum int) result.Result[*RetryAttempt] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+		return result.NewFailure[*RetryAttempt]([]result.PolywaveError{
 			result.NewFatal("RETRY_CONTEXT_CANCELLED", err.Error()).WithCause(err),
 		})
 	}
 	m, err := protocol.Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+		return result.NewFailure[*RetryAttempt]([]result.PolywaveError{
 			result.NewFatal(result.CodeRetryLoadManifestFailed, fmt.Sprintf("failed to load manifest at %s: %s", manifestPath, err.Error())).WithCause(err),
 		})
 	}
 
 	report, ok := m.CompletionReports[agentID]
 	if !ok {
-		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+		return result.NewFailure[*RetryAttempt]([]result.PolywaveError{
 			result.NewFatal(result.CodeRetryReportMissing, fmt.Sprintf("no completion report found for agent %s in manifest %s", agentID, manifestPath)),
 		})
 	}

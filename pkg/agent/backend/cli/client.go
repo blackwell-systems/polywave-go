@@ -14,8 +14,8 @@ import (
 
 	"github.com/creack/pty"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/dedup"
 )
 
 // ansiRE matches ANSI/VT100 escape sequences emitted by a PTY-connected process.

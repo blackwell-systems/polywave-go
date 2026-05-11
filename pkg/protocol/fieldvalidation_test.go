@@ -3,7 +3,7 @@ package protocol
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestValidateWorktreeNames_Valid(t *testing.T) {
@@ -204,8 +204,8 @@ func TestValidateWorktreeNames_ScopedBranch(t *testing.T) {
 		CompletionReports: map[string]CompletionReport{
 			"A": {
 				Status:   "complete",
-				Branch:   "saw/my-feature/wave1-agent-A",
-				Worktree: ".claude/worktrees/saw/my-feature/wave1-agent-A",
+				Branch:   "polywave/my-feature/wave1-agent-A",
+				Worktree: ".claude/worktrees/polywave/my-feature/wave1-agent-A",
 				Commit:   "abc123",
 			},
 		},
@@ -230,8 +230,8 @@ func TestValidateWorktreeNames_ScopedBranchAbsolutePath(t *testing.T) {
 		CompletionReports: map[string]CompletionReport{
 			"B": {
 				Status:   "complete",
-				Branch:   "saw/slug-scoped-branches/wave2-agent-B",
-				Worktree: "/home/user/repo/.claude/worktrees/saw/slug-scoped-branches/wave2-agent-B",
+				Branch:   "polywave/slug-scoped-branches/wave2-agent-B",
+				Worktree: "/home/user/repo/.claude/worktrees/polywave/slug-scoped-branches/wave2-agent-B",
 				Commit:   "def456",
 			},
 		},

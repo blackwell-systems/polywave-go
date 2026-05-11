@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -16,14 +16,14 @@ import (
 // Only top-level (manifest root) keys are checked — nested duplicates are not flagged.
 // Line numbers in errors are 1-indexed (yaml.Node.Line is 1-based).
 //
-// Returns a slice of result.SAWError, empty if no duplicates found.
-func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
+// Returns a slice of result.PolywaveError, empty if no duplicates found.
+func ValidateDuplicateKeys(rawYAML []byte) []result.PolywaveError {
 	// Cannot use LoadYAML: operates on raw bytes already in memory and needs the yaml.Node
 	// tree for duplicate-key walking — LoadYAML unmarshals into a typed struct, not a Node.
 	var root yaml.Node
 	if err := yaml.Unmarshal(rawYAML, &root); err != nil {
 		// If YAML is unparseable, return a single parse error
-		return []result.SAWError{
+		return []result.PolywaveError{
 			{
 				Code:     result.CodeParseError,
 				Message:  fmt.Sprintf("failed to parse YAML: %v", err),
@@ -57,7 +57,7 @@ func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
 		keyLines[key] = append(keyLines[key], keyNode.Line)
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	// Collect duplicate keys in deterministic order
 	keys := make([]string, 0, len(keyLines))
 	for k := range keyLines {
@@ -73,7 +73,7 @@ func ValidateDuplicateKeys(rawYAML []byte) []result.SAWError {
 		for i, l := range lines {
 			lineStrs[i] = fmt.Sprintf("%d", l)
 		}
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeDuplicateKey,
 			Message:  fmt.Sprintf("duplicate key %q at lines %s", key, strings.Join(lineStrs, ", ")),
 			Severity: "error",

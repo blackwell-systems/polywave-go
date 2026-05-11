@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // saveCursorData holds the result data from a successful saveCursor operation.
@@ -60,7 +60,7 @@ func (o *JournalObserver) log() *slog.Logger {
 }
 
 // NewObserver creates a journal observer instance for an agent.
-// It creates the necessary directory structure under .saw-state/wave{N}/agent-{ID}/.
+// It creates the necessary directory structure under .polywave-state/wave{N}/agent-{ID}/.
 func NewObserver(projectRoot string, agentID string) result.Result[*JournalObserver] {
 	rawAgentID := agentID
 
@@ -77,19 +77,19 @@ func NewObserver(projectRoot string, agentID string) result.Result[*JournalObser
 		}
 	}
 
-	journalDir := filepath.Join(protocol.SAWStateDir(projectRoot), waveDir, strippedAgentID)
+	journalDir := filepath.Join(protocol.PolywaveStateDir(projectRoot), waveDir, strippedAgentID)
 	resultsDir := filepath.Join(journalDir, "tool-results")
 
 	// Create directory structure
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
-		return result.NewFailure[*JournalObserver]([]result.SAWError{{
+		return result.NewFailure[*JournalObserver]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to create journal dir: %s", err.Error()),
 			Severity: "fatal",
 		}})
 	}
 	if err := os.MkdirAll(resultsDir, 0755); err != nil {
-		return result.NewFailure[*JournalObserver]([]result.SAWError{{
+		return result.NewFailure[*JournalObserver]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to create results dir: %s", err.Error()),
 			Severity: "fatal",
@@ -116,7 +116,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Find the latest session file
 	sessionFile, err := o.findLatestSessionFile()
 	if err != nil {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to find session file: %s", err.Error()),
 			Severity: "fatal",
@@ -135,7 +135,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Load cursor
 	cursor, err := o.loadCursor()
 	if err != nil {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to load cursor: %s", err.Error()),
 			Severity: "fatal",
@@ -153,7 +153,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Open session file
 	f, err := os.Open(filepath.Join(o.getClaudeProjectDir(), sessionFile))
 	if err != nil {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to open session file: %s", err.Error()),
 			Severity: "fatal",
@@ -163,7 +163,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 
 	// Seek to cursor position
 	if _, err := f.Seek(cursor.Offset, 0); err != nil {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to seek to cursor: %s", err.Error()),
 			Severity: "fatal",
@@ -193,7 +193,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverAppendFailed,
 			Message:  fmt.Sprintf("failed to read session file: %s", err.Error()),
 			Severity: "fatal",
@@ -203,7 +203,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Update cursor
 	cursor.Offset += bytesRead
 	if r := o.saveCursor(cursor); r.IsFatal() {
-		return result.NewFailure[*SyncResult]([]result.SAWError{{
+		return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  fmt.Sprintf("failed to save cursor: %s", r.Errors[0].Message),
 			Severity: "fatal",
@@ -213,7 +213,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 	// Append to index
 	if len(entries) > 0 {
 		if r := o.appendToIndex(entries); r.IsFatal() {
-			return result.NewFailure[*SyncResult]([]result.SAWError{{
+			return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 				Code:     result.CodeJournalObserverAppendFailed,
 				Message:  fmt.Sprintf("failed to append to index: %s", r.Errors[0].Message),
 				Severity: "fatal",
@@ -222,7 +222,7 @@ func (o *JournalObserver) Sync() result.Result[*SyncResult] {
 
 		// Update recent cache
 		if r := o.updateRecent(entries); r.IsFatal() {
-			return result.NewFailure[*SyncResult]([]result.SAWError{{
+			return result.NewFailure[*SyncResult]([]result.PolywaveError{{
 				Code:     result.CodeJournalObserverUpdateFailed,
 				Message:  fmt.Sprintf("failed to update recent: %s", r.Errors[0].Message),
 				Severity: "fatal",
@@ -455,14 +455,14 @@ func (o *JournalObserver) loadCursor() (*SessionCursor, error) {
 func (o *JournalObserver) saveCursor(cursor *SessionCursor) result.Result[saveCursorData] {
 	data, err := json.MarshalIndent(cursor, "", "  ")
 	if err != nil {
-		return result.NewFailure[saveCursorData]([]result.SAWError{{
+		return result.NewFailure[saveCursorData]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
 	if err := os.WriteFile(o.CursorPath, data, 0644); err != nil {
-		return result.NewFailure[saveCursorData]([]result.SAWError{{
+		return result.NewFailure[saveCursorData]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverCursorFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
@@ -478,7 +478,7 @@ func (o *JournalObserver) saveCursor(cursor *SessionCursor) result.Result[saveCu
 func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[appendData] {
 	f, err := os.OpenFile(o.IndexPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return result.NewFailure[appendData]([]result.SAWError{{
+		return result.NewFailure[appendData]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverAppendFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
@@ -489,7 +489,7 @@ func (o *JournalObserver) appendToIndex(entries []ToolEntry) result.Result[appen
 	encoder := json.NewEncoder(f)
 	for _, entry := range entries {
 		if err := encoder.Encode(entry); err != nil {
-			return result.NewFailure[appendData]([]result.SAWError{{
+			return result.NewFailure[appendData]([]result.PolywaveError{{
 				Code:     result.CodeJournalObserverAppendFailed,
 				Message:  err.Error(),
 				Severity: "fatal",
@@ -521,14 +521,14 @@ func (o *JournalObserver) updateRecent(newEntries []ToolEntry) result.Result[upd
 	// Save back
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return result.NewFailure[updateData]([]result.SAWError{{
+		return result.NewFailure[updateData]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverUpdateFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
 		}})
 	}
 	if err := os.WriteFile(o.RecentPath, data, 0644); err != nil {
-		return result.NewFailure[updateData]([]result.SAWError{{
+		return result.NewFailure[updateData]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverUpdateFailed,
 			Message:  err.Error(),
 			Severity: "fatal",
@@ -547,7 +547,7 @@ func (o *JournalObserver) LoadJournal() result.Result[[]ToolEntry] {
 		return result.NewSuccess([]ToolEntry{})
 	}
 	if err != nil {
-		return result.NewFailure[[]ToolEntry]([]result.SAWError{{
+		return result.NewFailure[[]ToolEntry]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverAppendFailed,
 			Message:  fmt.Sprintf("failed to read index: %s", err.Error()),
 			Severity: "fatal",
@@ -582,7 +582,7 @@ func (o *JournalObserver) LoadJournal() result.Result[[]ToolEntry] {
 func (o *JournalObserver) GenerateContext() result.Result[string] {
 	res := o.LoadJournal()
 	if res.IsFatal() {
-		return result.NewFailure[string]([]result.SAWError{{
+		return result.NewFailure[string]([]result.PolywaveError{{
 			Code:     result.CodeJournalObserverAppendFailed,
 			Message:  fmt.Sprintf("failed to load journal: %s", res.Errors[0].Message),
 			Severity: "fatal",

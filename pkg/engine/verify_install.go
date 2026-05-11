@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 )
 
 // InstallCheck represents a single prerequisite check result.
@@ -27,9 +27,9 @@ type InstallResult struct {
 }
 
 // VerifyInstallOpts holds options for RunVerifyInstall.
-// RepoPath is used to find saw.config.json; empty means use cwd.
+// RepoPath is used to find polywave.config.json; empty means use cwd.
 type VerifyInstallOpts struct {
-	RepoPath string // absolute path (for saw.config.json lookup); empty = cwd
+	RepoPath string // absolute path (for polywave.config.json lookup); empty = cwd
 }
 
 // RunVerifyInstall runs all prerequisite checks and returns a structured result.
@@ -131,7 +131,7 @@ func checkSawtoolsBinary() InstallCheck {
 	path, err := os.Executable()
 	if err != nil {
 		return InstallCheck{
-			Name:   "sawtools_binary",
+			Name:   "polywave_tools_binary",
 			Status: "pass",
 			Detail: "running (path unknown)",
 		}
@@ -142,7 +142,7 @@ func checkSawtoolsBinary() InstallCheck {
 		resolved = path
 	}
 	return InstallCheck{
-		Name:   "sawtools_binary",
+		Name:   "polywave_tools_binary",
 		Status: "pass",
 		Detail: fmt.Sprintf("at %s", resolved),
 	}
@@ -224,7 +224,7 @@ func checkSkillFiles() InstallCheck {
 
 	skillDir := filepath.Join(home, ".claude", "skills", "saw")
 	// Update this list when skill files are added or renamed.
-	required := []string{"SKILL.md", "agent-template.md", "saw-bootstrap.md"}
+	required := []string{"SKILL.md", "agent-template.md", "polywave-bootstrap.md"}
 	var missing []string
 
 	for _, f := range required {
@@ -249,7 +249,7 @@ func checkSkillFiles() InstallCheck {
 	}
 }
 
-// checkConfigFile looks for saw.config.json in repoPath (or cwd if empty), then ~/.claude/.
+// checkConfigFile looks for polywave.config.json in repoPath (or cwd if empty), then ~/.claude/.
 // Returns the check result and the path to the found config (empty if not found).
 func checkConfigFile(repoPath string) (InstallCheck, string) {
 	// Determine base directory
@@ -259,12 +259,12 @@ func checkConfigFile(repoPath string) (InstallCheck, string) {
 	}
 
 	candidates := []string{
-		filepath.Join(baseDir, "saw.config.json"),
+		filepath.Join(baseDir, "polywave.config.json"),
 	}
 
 	// Then check ~/.claude/
 	if home, err := os.UserHomeDir(); err == nil {
-		candidates = append(candidates, filepath.Join(home, ".claude", "saw.config.json"))
+		candidates = append(candidates, filepath.Join(home, ".claude", "polywave.config.json"))
 	}
 
 	for _, p := range candidates {
@@ -280,11 +280,11 @@ func checkConfigFile(repoPath string) (InstallCheck, string) {
 	return InstallCheck{
 		Name:   "config_file",
 		Status: "warn",
-		Detail: "saw.config.json not found (checked project root and ~/.claude/)",
+		Detail: "polywave.config.json not found (checked project root and ~/.claude/)",
 	}, ""
 }
 
-// checkConfiguredRepos reads saw.config.json and verifies each repo path exists.
+// checkConfiguredRepos reads polywave.config.json and verifies each repo path exists.
 func checkConfiguredRepos(configPath string) InstallCheck {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -314,7 +314,7 @@ func checkConfiguredRepos(configPath string) InstallCheck {
 		return InstallCheck{
 			Name:   "configured_repos",
 			Status: "warn",
-			Detail: "no repos configured in saw.config.json",
+			Detail: "no repos configured in polywave.config.json",
 		}
 	}
 

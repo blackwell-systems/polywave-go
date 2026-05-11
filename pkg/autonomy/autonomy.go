@@ -3,7 +3,7 @@ package autonomy
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Level represents the autonomy level for orchestrator decision-making.
@@ -25,7 +25,7 @@ const (
 	StageQueueAdvance Stage = "queue_advance"
 )
 
-// Config holds autonomy configuration loaded from saw.config.json.
+// Config holds autonomy configuration loaded from polywave.config.json.
 type Config struct {
 	Level Level `json:"level" yaml:"level"`
 
@@ -99,7 +99,7 @@ func ParseLevel(s string) result.Result[ParseLevelData] {
 	case LevelGated, LevelSupervised, LevelAutonomous:
 		return result.NewSuccess(ParseLevelData{Level: Level(s)})
 	default:
-		return result.NewFailure[ParseLevelData]([]result.SAWError{
+		return result.NewFailure[ParseLevelData]([]result.PolywaveError{
 			result.NewFatal("AUTONOMY_INVALID_LEVEL",
 				fmt.Sprintf("unknown level %q (valid: gated, supervised, autonomous)", s)),
 		})

@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // buildTestManifestWithCritic creates a minimal valid manifest YAML for testing critic round-trips.
@@ -309,7 +309,7 @@ func TestWriteCriticReviewResult_FileNotFound(t *testing.T) {
 		t.Errorf("WriteCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
 	if len(res.Errors) == 0 {
-		t.Error("WriteCriticReviewResult() Errors empty, want at least one SAWError")
+		t.Error("WriteCriticReviewResult() Errors empty, want at least one PolywaveError")
 	}
 }
 
@@ -354,11 +354,11 @@ func TestGetCriticReviewResult_NoCriticReport(t *testing.T) {
 		t.Errorf("GetCriticReviewResult() Code = %q, want FATAL", res.Code)
 	}
 	if len(res.Errors) == 0 {
-		t.Error("GetCriticReviewResult() Errors empty, want at least one SAWError")
+		t.Error("GetCriticReviewResult() Errors empty, want at least one PolywaveError")
 	}
 }
 
-// TestGetCriticReviewResult_ErrorCode verifies that the SAWError returned
+// TestGetCriticReviewResult_ErrorCode verifies that the PolywaveError returned
 // for a missing critic report has the expected error code.
 func TestGetCriticReviewResult_ErrorCode(t *testing.T) {
 	manifest := &IMPLManifest{}

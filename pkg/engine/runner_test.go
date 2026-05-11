@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TestRunScout_MissingScoutMd verifies that RunScout returns a fatal result when scout.md is missing (L1).
@@ -25,7 +25,7 @@ func TestRunScout_MissingScoutMd(t *testing.T) {
 		Feature:     "test feature",
 		RepoPath:    dir,
 		IMPLOutPath: filepath.Join(dir, "IMPL-test.yaml"),
-		SAWRepoPath: nonexistentSAWRepo,
+		PolywaveRepoPath: nonexistentSAWRepo,
 	}, func(string) {})
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result when scout.md is missing, got success")
@@ -175,8 +175,8 @@ func TestJournalIntegration_ArchiveJournal(t *testing.T) {
 
 	// Verify archive was created
 	// The archive name is derived from the journal directory structure
-	// which NewObserver creates as .saw-state/wave1/agent-A (parsing wave1-agent-A)
-	archiveDir := filepath.Join(dir, ".saw-state", "archive")
+	// which NewObserver creates as .polywave-state/wave1/agent-A (parsing wave1-agent-A)
+	archiveDir := filepath.Join(dir, ".polywave-state", "archive")
 	entries, err := os.ReadDir(archiveDir)
 	if err != nil {
 		t.Fatalf("failed to read archive directory: %v", err)
@@ -427,7 +427,7 @@ func TestRunScout_NilObsEmitter_NoScoutCompletePanic(t *testing.T) {
 		Feature:     "test feature",
 		RepoPath:    dir,
 		IMPLOutPath: dir + "/IMPL-test.yaml",
-		SAWRepoPath: nonexistentSAWRepo,
+		PolywaveRepoPath: nonexistentSAWRepo,
 		ObsEmitter:  nil,
 	}, func(string) {})
 

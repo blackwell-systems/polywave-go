@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // detectLanguage auto-detects the language from file extensions.
@@ -95,7 +95,7 @@ func BuildGraph(ctx context.Context, repoRoot string, files []string) result.Res
 	// Step 0: Detect language
 	lang, err := detectLanguage(files)
 	if err != nil {
-		return result.NewFailure[*DepGraph]([]result.SAWError{
+		return result.NewFailure[*DepGraph]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeUnsupportedLang, err.Error()),
 		})
 	}
@@ -112,12 +112,12 @@ func BuildGraph(ctx context.Context, repoRoot string, files []string) result.Res
 	case "python":
 		fileImports, err = parsePythonFiles(repoRoot, files)
 	default:
-		return result.NewFailure[*DepGraph]([]result.SAWError{
+		return result.NewFailure[*DepGraph]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeUnsupportedLang, fmt.Sprintf("unsupported language: %s", lang)),
 		})
 	}
 	if err != nil {
-		return result.NewFailure[*DepGraph]([]result.SAWError{
+		return result.NewFailure[*DepGraph]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
 		})
 	}
@@ -142,7 +142,7 @@ func BuildGraph(ctx context.Context, repoRoot string, files []string) result.Res
 
 	// Step 3: Detect cycles
 	if cycles := detectCycles(adj, files); cycles != nil {
-		return result.NewFailure[*DepGraph]([]result.SAWError{
+		return result.NewFailure[*DepGraph]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeCycleDetected, fmt.Sprintf("circular dependency detected: %s", formatCycle(cycles[0]))),
 		})
 	}
@@ -157,7 +157,7 @@ func BuildGraph(ctx context.Context, repoRoot string, files []string) result.Res
 	// Step 6: Detect cascade candidates
 	cascades, err := detectCascades(ctx, repoRoot, files, revAdj)
 	if err != nil {
-		return result.NewFailure[*DepGraph]([]result.SAWError{
+		return result.NewFailure[*DepGraph]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeWalkFailed, fmt.Sprintf("detect cascades: %v", err)),
 		})
 	}

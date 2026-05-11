@@ -1,4 +1,4 @@
-// Package result — error code constants for SAWError.Code field.
+// Package result — error code constants for PolywaveError.Code field.
 //
 // Code ranges by domain:
 //

@@ -7,12 +7,12 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // RunIntegrationAgentOpts configures an integration agent run (E26).
@@ -43,7 +43,7 @@ type RunIntegrationAgentOpts struct {
 // an agent.
 func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEvent func(Event)) result.Result[IntegrationAgentData] {
 	if err := validateIntegrationOpts(opts); err != nil {
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationInvalidOpts,
 			Message:  err.Error(),
 			Severity: "fatal",
@@ -76,7 +76,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	manifest, err := protocol.Load(context.TODO(), opts.IMPLPath)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationLoadFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: load manifest: %v", err),
 			Severity: "fatal",
@@ -101,7 +101,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 		publish("integration_agent_failed", map[string]string{
 			"error": "no integration_connectors defined in manifest (E26-P2)",
 		})
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationNoConnectors,
 			Message:  "engine.RunIntegrationAgent: no integration_connectors defined in manifest — add integration_connectors entries listing files the agent may edit (E26-P2)",
 			Severity: "fatal",
@@ -112,7 +112,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	prompt, err := buildIntegrationPrompt(opts, manifest)
 	if err != nil {
 		publish("integration_agent_failed", map[string]string{"error": err.Error()})
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationPromptFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: build prompt: %v", err),
 			Severity: "fatal",
@@ -124,7 +124,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 	bRes := orchestrator.NewBackendFromModel(opts.Model)
 	if bRes.IsFatal() {
 		publish("integration_agent_failed", map[string]string{"error": bRes.Errors[0].Message})
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationBackendFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: backend init: %s", bRes.Errors[0].Message),
 			Severity: "fatal",
@@ -153,7 +153,7 @@ func RunIntegrationAgent(ctx context.Context, opts RunIntegrationAgentOpts, onEv
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
 		publish("integration_agent_failed", map[string]string{"error": execErr.Error()})
-		return result.NewFailure[IntegrationAgentData]([]result.SAWError{{
+		return result.NewFailure[IntegrationAgentData]([]result.PolywaveError{{
 			Code:     result.CodeIntegrationAgentFailed,
 			Message:  fmt.Sprintf("engine.RunIntegrationAgent: agent execution failed: %v", execErr),
 			Severity: "fatal",

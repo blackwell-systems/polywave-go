@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Pipeline is a named sequence of steps executed in order.
@@ -61,13 +61,13 @@ type StepData struct {
 func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData] {
 	start := time.Now()
 	stepsExecuted := 0
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 
 	for _, step := range p.steps {
 		// Check context cancellation before each step.
 		select {
 		case <-ctx.Done():
-			return result.NewFailure[RunData]([]result.SAWError{
+			return result.NewFailure[RunData]([]result.PolywaveError{
 				result.NewFatal(result.CodePipelineRunFailed,
 					fmt.Sprintf("pipeline %q cancelled before step %q: %v", p.name, step.Name, ctx.Err())),
 			})
@@ -94,7 +94,7 @@ func (p *Pipeline) Run(ctx context.Context, state *State) result.Result[RunData]
 					state.Errors = append(state.Errors, wrapped)
 				}
 			default: // ErrorFail or unset
-				return result.NewFailure[RunData]([]result.SAWError{
+				return result.NewFailure[RunData]([]result.PolywaveError{
 					result.NewFatal(result.CodePipelineRunFailed,
 						fmt.Sprintf("pipeline %q step %q failed: %s",
 							p.name, step.Name, stepResult.Errors[0].Message)),
@@ -134,7 +134,7 @@ func shouldRun(condition string, state *State) bool {
 //   - FATAL: step returned an error (after all retries are exhausted)
 func executeStep(ctx context.Context, step Step, state *State) result.Result[StepData] {
 	if step.Func == nil {
-		return result.NewFailure[StepData]([]result.SAWError{
+		return result.NewFailure[StepData]([]result.PolywaveError{
 			result.NewFatal(result.CodeStepExecutionFailed,
 				fmt.Sprintf("step %q has no function", step.Name)),
 		})
@@ -144,7 +144,7 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 
 	if step.ErrorStrategy != ErrorRetry {
 		if err := step.Func(ctx, state); err != nil {
-			return result.NewFailure[StepData]([]result.SAWError{
+			return result.NewFailure[StepData]([]result.PolywaveError{
 				result.NewFatal(result.CodeStepExecutionFailed, err.Error()).WithCause(err),
 			})
 		}
@@ -165,7 +165,7 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 		// Respect context cancellation between retries.
 		select {
 		case <-ctx.Done():
-			return result.NewFailure[StepData]([]result.SAWError{
+			return result.NewFailure[StepData]([]result.PolywaveError{
 				result.NewFatal(result.CodeStepExecutionFailed, ctx.Err().Error()).WithCause(ctx.Err()),
 			})
 		default:
@@ -179,7 +179,7 @@ func executeStep(ctx context.Context, step Step, state *State) result.Result[Ste
 			})
 		}
 	}
-	return result.NewFailure[StepData]([]result.SAWError{
+	return result.NewFailure[StepData]([]result.PolywaveError{
 		result.NewFatal(result.CodeStepExecutionFailed, lastErr.Error()).WithCause(lastErr),
 	})
 }

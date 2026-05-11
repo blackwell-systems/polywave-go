@@ -23,9 +23,9 @@ jobs:
       - name: Build
         run: go build ./...
 
-      - name: Install sawtools
+      - name: Install polywave-tools
         run: |
-          go build -o $(go env GOPATH)/bin/sawtools ./cmd/sawtools/
+          go build -o polywave-tools ./cmd/polywave-tools/
           echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
 
       - name: Test

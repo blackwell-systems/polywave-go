@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
+	"github.com/blackwell-systems/polywave-go/pkg/config"
 )
 
-// SAWProviders mirrors the providers section of saw.config.json.
-type SAWProviders struct {
+// PolywaveProviders mirrors the providers section of polywave.config.json.
+type PolywaveProviders struct {
 	Anthropic struct {
 		APIKey string `json:"api_key"`
 	} `json:"anthropic"`
@@ -24,10 +24,10 @@ type SAWProviders struct {
 	} `json:"openai"`
 }
 
-// LoadProvidersFromConfig reads saw.config.json from dir or its parents
+// LoadProvidersFromConfig reads polywave.config.json from dir or its parents
 // and returns the providers section. Returns zero value if not found.
-func LoadProvidersFromConfig(dir string) SAWProviders {
-	var providers SAWProviders
+func LoadProvidersFromConfig(dir string) PolywaveProviders {
+	var providers PolywaveProviders
 	path := config.FindConfigPath(dir)
 	if path == "" {
 		return providers
@@ -37,7 +37,7 @@ func LoadProvidersFromConfig(dir string) SAWProviders {
 		return providers
 	}
 	var cfg struct {
-		Providers SAWProviders `json:"providers"`
+		Providers PolywaveProviders `json:"providers"`
 	}
 	if json.Unmarshal(data, &cfg) == nil {
 		providers = cfg.Providers

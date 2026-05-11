@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PackageJSONParser extracts build/test/lint/format commands from npm/yarn scripts
@@ -29,14 +29,14 @@ func (p *PackageJSONParser) ParseBuildSystem(repoRoot string) result.Result[Pars
 
 	data, err := os.ReadFile(pkgPath)
 	if err != nil {
-		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+		return result.NewFailure[ParseBuildSystemData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractPackageRead, fmt.Sprintf("reading package.json: %v", err)),
 		})
 	}
 
 	var pkg packageJSON
 	if err := json.Unmarshal(data, &pkg); err != nil {
-		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{
+		return result.NewFailure[ParseBuildSystemData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommandExtractPackageParse, fmt.Sprintf("parsing package.json: %v", err)),
 		})
 	}

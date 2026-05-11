@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestRunGates_NoGates(t *testing.T) {
@@ -904,7 +904,7 @@ func TestGateResult_JSONWithParsedErrors(t *testing.T) {
 	}
 
 	// Now add a parsed error and verify it appears
-	gr.ParsedErrors = []result.SAWError{
+	gr.ParsedErrors = []result.PolywaveError{
 		{
 			File:     "main.go",
 			Line:     5,
@@ -1429,7 +1429,7 @@ func TestRaceDetection(t *testing.T) {
 func TestRunGates_RepoScoping(t *testing.T) {
 	// When manifestPath is empty, all gates run in repoDir regardless of their Repo field.
 	// This tests backward compat: gates with repo: set still execute (in repoDir), not skipped.
-	repoDir, err := os.MkdirTemp("", "scout-and-wave-go*")
+	repoDir, err := os.MkdirTemp("", "polywave-go*")
 	if err != nil {
 		t.Fatalf("failed to create temp dir: %v", err)
 	}
@@ -1554,7 +1554,7 @@ func TestRunGates_CrossRepoRouting(t *testing.T) {
 	os.WriteFile(filepath.Join(targetRepo, "sentinel.txt"), []byte("here"), 0644)
 
 	configJSON := `{"repos":[{"name":"target-repo","path":"` + targetRepo + `"}]}`
-	os.WriteFile(filepath.Join(tmpDir, "saw.config.json"), []byte(configJSON), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "polywave.config.json"), []byte(configJSON), 0644)
 	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
 
 	manifest := &IMPLManifest{

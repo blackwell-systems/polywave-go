@@ -3,7 +3,7 @@ package pipeline
 import (
 	"context"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // StepFunc is a single pipeline step. It receives the shared pipeline
@@ -43,7 +43,7 @@ type State struct {
 	// via Values["wave_num"] if needed. Retained for future use.
 	WaveNum int
 	Values  map[string]any
-	Errors  []result.SAWError
+	Errors  []result.PolywaveError
 }
 
 // GetValue retrieves a typed value from state.Values.

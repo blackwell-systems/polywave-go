@@ -37,18 +37,18 @@ func ContextMDPath(repoPath string) string {
 	return filepath.Join(repoPath, "docs", "CONTEXT.md")
 }
 
-// SAWStateDir returns the path to the .saw-state directory.
-func SAWStateDir(repoPath string) string {
-	return filepath.Join(repoPath, ".saw-state")
+// PolywaveStateDir returns the path to the .polywave-state directory.
+func PolywaveStateDir(repoPath string) string {
+	return filepath.Join(repoPath, ".polywave-state")
 }
 
-// SAWStateArchiveDir returns the path to the .saw-state/archive directory.
-func SAWStateArchiveDir(repoPath string) string {
-	return filepath.Join(repoPath, ".saw-state", "archive")
+// PolywaveStateArchiveDir returns the path to the .polywave-state/archive directory.
+func PolywaveStateArchiveDir(repoPath string) string {
+	return filepath.Join(repoPath, ".polywave-state", "archive")
 }
 
-// SAWStateAgentDir returns the path to the per-agent state directory.
-// Format: {repoPath}/.saw-state/wave{N}/{agentID}
-func SAWStateAgentDir(repoPath string, waveNum int, agentID string) string {
-	return filepath.Join(repoPath, ".saw-state", fmt.Sprintf("wave%d", waveNum), agentID)
+// PolywaveStateAgentDir returns the path to the per-agent state directory.
+// Format: {repoPath}/.polywave-state/wave{N}/{agentID}
+func PolywaveStateAgentDir(repoPath string, waveNum int, agentID string) string {
+	return filepath.Join(repoPath, ".polywave-state", fmt.Sprintf("wave%d", waveNum), agentID)
 }

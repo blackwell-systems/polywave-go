@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
@@ -21,7 +21,7 @@ func TestScoutCorrectionLoop_SucceedsFirstTry(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.PolywaveError, error) {
 			// Passes on first try.
 			return nil, nil
 		},
@@ -68,10 +68,10 @@ func TestScoutCorrectionLoop_RetriesAndSucceeds(t *testing.T) {
 			}
 			return nil
 		},
-		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.PolywaveError, error) {
 			// Fail first time, pass second time.
 			if scoutCalls == 1 {
-				return []result.SAWError{
+				return []result.PolywaveError{
 					{Code: "E16_001", Message: "missing slug field"},
 				}, nil
 			}
@@ -110,9 +110,9 @@ func TestScoutCorrectionLoop_ExhaustsRetriesAndSetsState(t *testing.T) {
 			scoutCalls++
 			return nil
 		},
-		validateFn: func(ctx context.Context, implPath string) ([]result.SAWError, error) {
+		validateFn: func(ctx context.Context, implPath string) ([]result.PolywaveError, error) {
 			// Always fail.
-			return []result.SAWError{
+			return []result.PolywaveError{
 				{Code: "E16_001", Message: "missing slug field"},
 				{Code: "E16_002", Message: "no waves defined"},
 			}, nil
@@ -174,7 +174,7 @@ func TestScoutCorrectionLoop_ContextCancelled(t *testing.T) {
 }
 
 func TestBuildCorrectionPrompt(t *testing.T) {
-	errors := []result.SAWError{
+	errors := []result.PolywaveError{
 		{Code: "E16_001", Message: "missing slug", Field: "slug"},
 		{Code: "E16_002", Message: "no waves defined"},
 	}

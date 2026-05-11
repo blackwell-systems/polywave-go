@@ -1,6 +1,6 @@
 package deps
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+import "github.com/blackwell-systems/polywave-go/pkg/result"
 
 // LockFileParser interface for multi-language lock file parsing
 type LockFileParser interface {

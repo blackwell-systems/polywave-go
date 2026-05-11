@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // PoetryLockParser parses Python poetry.lock files (TOML format)
@@ -15,7 +15,7 @@ type PoetryLockParser struct{}
 func (p *PoetryLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open poetry.lock: "+err.Error())})
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open poetry.lock: "+err.Error())})
 	}
 	defer file.Close()
 
@@ -77,7 +77,7 @@ func (p *PoetryLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading poetry.lock: "+err.Error())})
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{result.NewError(result.CodeDepLockFileParse, "error reading poetry.lock: "+err.Error())})
 	}
 
 	// An empty poetry.lock is valid (project with no declared dependencies).

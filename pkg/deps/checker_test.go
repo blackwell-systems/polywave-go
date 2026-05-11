@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Ensure result package is marked as used for methods on result.Result[T]
-var _ = result.SAWError{}
+var _ = result.PolywaveError{}
 
 func TestRegisterParser(t *testing.T) {
 	// Save original parsers
@@ -428,7 +428,7 @@ func (p *failingParser) Detect(filePath string) bool {
 }
 
 func (p *failingParser) Parse(filePath string) result.Result[[]PackageInfo] {
-	return result.NewFailure[[]PackageInfo]([]result.SAWError{
+	return result.NewFailure[[]PackageInfo]([]result.PolywaveError{
 		result.NewError("D002_LOCK_FILE_PARSE", "simulated parse failure"),
 	})
 }
@@ -616,7 +616,7 @@ func (p *goSumParser) Detect(filePath string) bool {
 func (p *goSumParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{
 			result.NewFatal("D001_LOCK_FILE_OPEN", fmt.Sprintf("failed to read file: %v", err)),
 		})
 	}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CheckpointData holds the result data from a successful Checkpoint operation.
@@ -55,14 +55,14 @@ type CheckpointRecord struct {
 func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] {
 	// Validate checkpoint name (filesystem-safe, no slashes or spaces)
 	if strings.ContainsAny(name, "/\\ ") {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointInvalidName,
 			Message:  fmt.Sprintf("checkpoint name must be filesystem-safe (no slashes or spaces): %q", name),
 			Severity: "fatal",
 		}})
 	}
 	if name == "" {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointInvalidName,
 			Message:  "checkpoint name cannot be empty",
 			Severity: "fatal",
@@ -72,7 +72,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	// Create checkpoints directory if it doesn't exist
 	checkpointsDir := filepath.Join(o.JournalDir, "checkpoints")
 	if err := os.MkdirAll(checkpointsDir, 0755); err != nil {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to create checkpoints directory: %v", name, err),
 			Severity: "fatal",
@@ -82,7 +82,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	// Check if checkpoint already exists
 	metadataPath := filepath.Join(checkpointsDir, fmt.Sprintf("%s.json", name))
 	if _, err := os.Stat(metadataPath); err == nil {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointAlreadyExists,
 			Message:  fmt.Sprintf("checkpoint %q already exists", name),
 			Severity: "fatal",
@@ -92,7 +92,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	// Count entries in index.jsonl
 	entryCount, err := countJSONLLines(o.IndexPath)
 	if err != nil && !os.IsNotExist(err) {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to count entries: %v", name, err),
 			Severity: "fatal",
@@ -131,7 +131,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	// Write checkpoint metadata
 	metadataBytes, err := json.MarshalIndent(checkpoint, "", "  ")
 	if err != nil {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to marshal checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -139,7 +139,7 @@ func (o *JournalObserver) Checkpoint(name string) result.Result[CheckpointData] 
 	}
 
 	if err := os.WriteFile(metadataPath, metadataBytes, 0644); err != nil {
-		return result.NewFailure[CheckpointData]([]result.SAWError{{
+		return result.NewFailure[CheckpointData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to write checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -166,7 +166,7 @@ func (o *JournalObserver) ListCheckpoints() result.Result[[]CheckpointRecord] {
 	// Read all checkpoint metadata files
 	entries, err := os.ReadDir(checkpointsDir)
 	if err != nil {
-		return result.NewFailure[[]CheckpointRecord]([]result.SAWError{{
+		return result.NewFailure[[]CheckpointRecord]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("failed to read checkpoints directory: %v", err),
 			Severity: "fatal",
@@ -222,7 +222,7 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
-		return result.NewFailure[RestoreData]([]result.SAWError{{
+		return result.NewFailure[RestoreData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointNotFound,
 			Message:  fmt.Sprintf("checkpoint %q not found", name),
 			Severity: "fatal",
@@ -232,7 +232,7 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 	// Read checkpoint metadata
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		return result.NewFailure[RestoreData]([]result.SAWError{{
+		return result.NewFailure[RestoreData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -241,7 +241,7 @@ func (o *JournalObserver) RestoreCheckpoint(name string) result.Result[RestoreDa
 
 	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return result.NewFailure[RestoreData]([]result.SAWError{{
+		return result.NewFailure[RestoreData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -282,7 +282,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 
 	// Verify checkpoint exists
 	if _, err := os.Stat(metadataPath); os.IsNotExist(err) {
-		return result.NewFailure[DeleteData]([]result.SAWError{{
+		return result.NewFailure[DeleteData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointNotFound,
 			Message:  fmt.Sprintf("checkpoint %q not found", name),
 			Severity: "fatal",
@@ -292,7 +292,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 	// Read checkpoint metadata to get snapshot path
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
-		return result.NewFailure[DeleteData]([]result.SAWError{{
+		return result.NewFailure[DeleteData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to read checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -301,7 +301,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 
 	var checkpoint CheckpointRecord
 	if err := json.Unmarshal(data, &checkpoint); err != nil {
-		return result.NewFailure[DeleteData]([]result.SAWError{{
+		return result.NewFailure[DeleteData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCreateFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to parse checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -317,7 +317,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 
 	for _, file := range snapshotFiles {
 		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
-			return result.NewFailure[DeleteData]([]result.SAWError{{
+			return result.NewFailure[DeleteData]([]result.PolywaveError{{
 				Code:     result.CodeJournalCheckpointDeleteFailed,
 				Message:  fmt.Sprintf("checkpoint %q: failed to delete snapshot file %s: %v", name, file, err),
 				Severity: "fatal",
@@ -327,7 +327,7 @@ func (o *JournalObserver) DeleteCheckpoint(name string) result.Result[DeleteData
 
 	// Delete metadata file
 	if err := os.Remove(metadataPath); err != nil {
-		return result.NewFailure[DeleteData]([]result.SAWError{{
+		return result.NewFailure[DeleteData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointDeleteFailed,
 			Message:  fmt.Sprintf("checkpoint %q: failed to delete checkpoint metadata: %v", name, err),
 			Severity: "fatal",
@@ -379,7 +379,7 @@ func countJSONLLines(path string) (int, error) {
 func copyFileIfExists(src, dst string) result.Result[copyData] {
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return result.NewFailure[copyData]([]result.SAWError{{
+		return result.NewFailure[copyData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to open source file %q: %v", src, err),
 			Severity: "fatal",
@@ -390,7 +390,7 @@ func copyFileIfExists(src, dst string) result.Result[copyData] {
 	// Create parent directory for destination
 	dstDir := filepath.Dir(dst)
 	if err := os.MkdirAll(dstDir, 0755); err != nil {
-		return result.NewFailure[copyData]([]result.SAWError{{
+		return result.NewFailure[copyData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to create destination directory for %q: %v", dst, err),
 			Severity: "fatal",
@@ -399,7 +399,7 @@ func copyFileIfExists(src, dst string) result.Result[copyData] {
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return result.NewFailure[copyData]([]result.SAWError{{
+		return result.NewFailure[copyData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to create destination file %q: %v", dst, err),
 			Severity: "fatal",
@@ -409,7 +409,7 @@ func copyFileIfExists(src, dst string) result.Result[copyData] {
 
 	n, err := io.Copy(dstFile, srcFile)
 	if err != nil {
-		return result.NewFailure[copyData]([]result.SAWError{{
+		return result.NewFailure[copyData]([]result.PolywaveError{{
 			Code:     result.CodeJournalCheckpointCopyFailed,
 			Message:  fmt.Sprintf("failed to copy %q to %q: %v", src, dst, err),
 			Severity: "fatal",

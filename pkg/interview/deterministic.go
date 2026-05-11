@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DeterministicManager implements the Manager interface using a fixed question set.
@@ -38,7 +38,7 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) result.Result[StartDat
 
 	id, err := newID()
 	if err != nil {
-		return result.NewFailure[StartData]([]result.SAWError{
+		return result.NewFailure[StartData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInterviewSaveFailed,
 				fmt.Sprintf("generating interview ID: %s", err.Error())).
 				WithCause(err),
@@ -70,7 +70,7 @@ func (m *DeterministicManager) Start(cfg InterviewConfig) result.Result[StartDat
 func (m *DeterministicManager) Resume(docPath string) result.Result[ResumeData] {
 	doc, err := protocol.LoadYAML[InterviewDoc](docPath)
 	if err != nil {
-		return result.NewFailure[ResumeData]([]result.SAWError{
+		return result.NewFailure[ResumeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInterviewSaveFailed,
 				fmt.Sprintf("resume interview doc: %s", err.Error())).
 				WithContext("path", docPath).WithCause(err),
@@ -137,9 +137,9 @@ func (m *DeterministicManager) Answer(doc *InterviewDoc, answer string) result.R
 		doc.Progress = 1.0
 	}
 
-	// Check phase transition. checkPhaseTransition now returns *result.SAWError.
+	// Check phase transition. checkPhaseTransition now returns *result.PolywaveError.
 	if sawErr := checkPhaseTransition(doc); sawErr != nil {
-		return result.NewFailure[AnswerData]([]result.SAWError{*sawErr})
+		return result.NewFailure[AnswerData]([]result.PolywaveError{*sawErr})
 	}
 
 	// If phase is complete, mark status.
@@ -329,7 +329,7 @@ func (m *DeterministicManager) Compile(doc *InterviewDoc, outputPath string) res
 func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Result[SaveDocData] {
 	dir := filepath.Dir(docPath)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return result.NewFailure[SaveDocData]([]result.SAWError{
+		return result.NewFailure[SaveDocData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInterviewSaveFailed, fmt.Sprintf("creating directory %s: %s", dir, err.Error())).
 				WithContext("path", docPath).
 				WithCause(err),
@@ -337,7 +337,7 @@ func (m *DeterministicManager) Save(doc *InterviewDoc, docPath string) result.Re
 	}
 
 	if err := protocol.SaveYAML(docPath, doc); err != nil {
-		return result.NewFailure[SaveDocData]([]result.SAWError{
+		return result.NewFailure[SaveDocData]([]result.PolywaveError{
 			result.NewFatal(result.CodeInterviewSaveFailed, fmt.Sprintf("save interview doc: %s", err.Error())).
 				WithContext("path", docPath).
 				WithCause(err),

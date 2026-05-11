@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // loggerFrom returns the provided logger, or slog.Default() if nil.
@@ -25,7 +25,7 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // wave agent completion reports, invokes scan-stubs.sh, and appends the
 // ## Stub Report — Wave {N} section to the IMPL doc at implDocPath.
 //
-// sawRepoPath locates scan-stubs.sh: falls back to $SAW_REPO env var, then
+// sawRepoPath locates scan-stubs.sh: falls back to $POLYWAVE_REPO env var, then
 // ~/code/scout-and-wave (same fallback as RunScout).
 //
 // Always returns success — stub detection is informational only (E20).
@@ -58,7 +58,7 @@ func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports m
 
 	// 2. Resolve sawRepoPath.
 	if sawRepoPath == "" {
-		sawRepoPath = os.Getenv("SAW_REPO")
+		sawRepoPath = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepoPath == "" {
 		homeDir, err := os.UserHomeDir()
@@ -66,7 +66,7 @@ func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports m
 			log.Warn("RunStubScan: could not determine home dir", "err", err)
 			homeDir = "~"
 		}
-		sawRepoPath = filepath.Join(homeDir, "code", "scout-and-wave")
+		sawRepoPath = filepath.Join(homeDir, "code", "polywave")
 	}
 
 	// 3. Locate scan-stubs.sh.

@@ -3,13 +3,13 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ValidateCompletionStatuses checks that all completion report statuses are valid enum values.
 // Valid statuses: "complete", "partial", "blocked".
-func ValidateCompletionStatuses(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateCompletionStatuses(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	validStatuses := map[CompletionStatus]bool{
 		StatusComplete: true,
@@ -19,7 +19,7 @@ func ValidateCompletionStatuses(m *IMPLManifest) []result.SAWError {
 
 	for agentID, report := range m.CompletionReports {
 		if !validStatuses[report.Status] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidEnum,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s completion report has invalid status %q — must be one of: complete, partial, blocked", agentID, report.Status),
@@ -34,8 +34,8 @@ func ValidateCompletionStatuses(m *IMPLManifest) []result.SAWError {
 // ValidateFailureTypes checks that all non-empty failure_type fields are valid enum values.
 // Valid types: "transient", "fixable", "needs_replan", "escalate", "timeout".
 // Empty/omitted values are valid (backward compatibility — status=complete doesn't require failure_type).
-func ValidateFailureTypes(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidateFailureTypes(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	validTypes := map[string]bool{
 		"transient":    true,
@@ -52,7 +52,7 @@ func ValidateFailureTypes(m *IMPLManifest) []result.SAWError {
 		}
 
 		if !validTypes[report.FailureType] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidFailureType,
 				Severity: "error",
 				Message:  fmt.Sprintf("agent %s completion report has invalid failure_type %q — must be one of: transient, fixable, needs_replan, escalate, timeout", agentID, report.FailureType),
@@ -67,8 +67,8 @@ func ValidateFailureTypes(m *IMPLManifest) []result.SAWError {
 // ValidatePreMortemRisk checks that the pre-mortem overall_risk field is a valid enum value.
 // Valid values: "low", "medium", "high".
 // Empty/omitted values are valid (backward compatibility — pre-mortem may not exist).
-func ValidatePreMortemRisk(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func ValidatePreMortemRisk(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Nil pre-mortem is valid
 	if m.PreMortem == nil {
@@ -87,7 +87,7 @@ func ValidatePreMortemRisk(m *IMPLManifest) []result.SAWError {
 	}
 
 	if !validRisks[m.PreMortem.OverallRisk] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidPreMortemRisk,
 			Severity: "error",
 			Message:  fmt.Sprintf("pre_mortem overall_risk has invalid value %q — must be one of: low, medium, high", m.PreMortem.OverallRisk),

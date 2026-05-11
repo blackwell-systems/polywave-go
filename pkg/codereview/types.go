@@ -56,7 +56,7 @@ type ReviewOpts struct {
 	BaseURL    string   // optional API base URL override (used in tests)
 }
 
-// CodeReviewConfig mirrors the saw.config.json "code_review" section.
+// CodeReviewConfig mirrors the polywave.config.json "code_review" section.
 // Enabled gates whether any review runs.
 // Blocking controls whether a failing review stops progression to the next wave.
 // Model and Threshold override defaults when non-zero/non-empty.

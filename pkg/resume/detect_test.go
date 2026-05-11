@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 	"gopkg.in/yaml.v3"
 )
 
@@ -506,16 +506,16 @@ func TestDetectOrphanedWorktrees_ScopedBranch(t *testing.T) {
 HEAD abc123
 branch refs/heads/main
 
-worktree /repo/.claude/worktrees/saw/my-feature/wave1-agent-A
+worktree /repo/.claude/worktrees/polywave/my-feature/wave1-agent-A
 HEAD def456
-branch refs/heads/saw/my-feature/wave1-agent-A
+branch refs/heads/polywave/my-feature/wave1-agent-A
 
 `
 	entries := parseWorktreePorcelain([]byte(fake))
 	if len(entries) != 2 {
 		t.Fatalf("expected 2 entries, got %d", len(entries))
 	}
-	if entries[1].branch != "refs/heads/saw/my-feature/wave1-agent-A" {
+	if entries[1].branch != "refs/heads/polywave/my-feature/wave1-agent-A" {
 		t.Errorf("entries[1].branch = %q", entries[1].branch)
 	}
 
@@ -525,7 +525,7 @@ branch refs/heads/saw/my-feature/wave1-agent-A
 
 	// We can't call detectOrphanedWorktrees directly with fake git output,
 	// but we can verify the pattern matches the scoped format.
-	candidate := "refs/heads/saw/my-feature/wave1-agent-A"
+	candidate := "refs/heads/polywave/my-feature/wave1-agent-A"
 	candidate = strings.TrimPrefix(candidate, "refs/heads/")
 
 	m := worktreePattern.FindStringSubmatch(candidate)
@@ -551,8 +551,8 @@ func TestDetectOrphanedWorktrees_LegacyAndScopedMixed(t *testing.T) {
 		wantOK  bool
 	}{
 		{"wave1-agent-A", "1", "A", true},
-		{"saw/slug/wave2-agent-B3", "2", "B3", true},
-		{"saw/my-feature/wave3-agent-C", "3", "C", true},
+		{"polywave/slug/wave2-agent-B3", "2", "B3", true},
+		{"polywave/my-feature/wave3-agent-C", "3", "C", true},
 		{"feature-branch", "", "", false},
 		{"main", "", "", false},
 	}
@@ -676,10 +676,10 @@ func TestDetermineCurrentWave_FallbackToWorktrees(t *testing.T) {
 	// No completion reports at all.
 
 	// Simulate orphaned worktree paths that embed wave numbers in their path.
-	// SAW worktrees are stored at paths like .claude/worktrees/saw/{slug}/wave{N}-agent-{ID}.
+	// SAW worktrees are stored at paths like .claude/worktrees/polywave/{slug}/wave{N}-agent-{ID}.
 	orphaned := []string{
-		"/repo/.claude/worktrees/saw/test-feature/wave2-agent-A",
-		"/repo/.claude/worktrees/saw/test-feature/wave1-agent-B",
+		"/repo/.claude/worktrees/polywave/test-feature/wave2-agent-A",
+		"/repo/.claude/worktrees/polywave/test-feature/wave1-agent-B",
 	}
 
 	wave := determineCurrentWave(manifest, orphaned)
@@ -704,7 +704,7 @@ func TestBuildAction_DirtyWorktrees(t *testing.T) {
 
 	// Case 1: dirty worktree (HasChanges: true) -> "Resume wave N (agents have uncommitted work)"
 	dirtyWorktrees := []DirtyWorktree{
-		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: true},
+		{Path: "/some/worktree/path/wave1-agent-A", Branch: "polywave/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: true},
 	}
 	action, _ := buildActionAndCommandInternal(implPath, manifest, orphaned, dirtyWorktrees, nil, nil, 1)
 	wantDirty := "Resume wave 1 (agents have uncommitted work)"
@@ -714,7 +714,7 @@ func TestBuildAction_DirtyWorktrees(t *testing.T) {
 
 	// Case 2: clean worktree (HasChanges: false) -> "Clean up orphaned worktrees, then resume wave N"
 	cleanWorktrees := []DirtyWorktree{
-		{Path: "/some/worktree/path/wave1-agent-A", Branch: "saw/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: false},
+		{Path: "/some/worktree/path/wave1-agent-A", Branch: "polywave/test-feature/wave1-agent-A", AgentID: "A", WaveNum: 1, HasChanges: false},
 	}
 	action, _ = buildActionAndCommandInternal(implPath, manifest, orphaned, cleanWorktrees, nil, nil, 1)
 	wantClean := "Clean up orphaned worktrees, then resume wave 1"
@@ -774,11 +774,11 @@ func TestExtractSlugFromBranch(t *testing.T) {
 		wantSlug string
 		wantOK   bool
 	}{
-		{"saw/my-feature/wave1-agent-A", "my-feature", true},
-		{"saw/completed-slug/wave2-agent-B3", "completed-slug", true},
+		{"polywave/my-feature/wave1-agent-A", "my-feature", true},
+		{"polywave/completed-slug/wave2-agent-B3", "completed-slug", true},
 		{"wave1-agent-A", "", false},           // legacy, no slug
 		{"main", "", false},                    // not a SAW branch
-		{"saw//wave1-agent-A", "", false},      // empty slug
+		{"polywave//wave1-agent-A", "", false},      // empty slug
 	}
 	for _, tc := range tests {
 		slug, ok := extractSlugFromBranch(tc.input)
@@ -810,7 +810,7 @@ func TestDetectOrphanedWorktrees_SkipsCompletedIMPLSlugs(t *testing.T) {
 	}
 
 	// Simulate branch name processing for a completed-slug worktree.
-	candidate := "saw/completed-slug/wave1-agent-A"
+	candidate := "polywave/completed-slug/wave1-agent-A"
 	slug, ok := extractSlugFromBranch(candidate)
 	if !ok {
 		t.Fatalf("expected slug extraction to succeed for %q", candidate)
@@ -820,7 +820,7 @@ func TestDetectOrphanedWorktrees_SkipsCompletedIMPLSlugs(t *testing.T) {
 	}
 
 	// Simulate branch name processing for an active-slug worktree.
-	activeCandidate := "saw/active-slug/wave1-agent-A"
+	activeCandidate := "polywave/active-slug/wave1-agent-A"
 	activeSlug, activeOK := extractSlugFromBranch(activeCandidate)
 	if !activeOK {
 		t.Fatalf("expected slug extraction to succeed for %q", activeCandidate)
@@ -838,7 +838,7 @@ func TestDetectOrphanedWorktrees_ActiveSlugStillAppears(t *testing.T) {
 	// No files in docs/IMPL/complete/ — slug is active.
 	completedSlugs := loadCompletedSlugs(root)
 
-	candidate := "saw/active-slug/wave1-agent-A"
+	candidate := "polywave/active-slug/wave1-agent-A"
 	slug, ok := extractSlugFromBranch(candidate)
 	if !ok {
 		t.Fatalf("expected slug extraction to succeed for %q", candidate)
@@ -873,7 +873,7 @@ func TestDetectOrphanedWorktrees_LiveGitPath(t *testing.T) {
 	run("commit", "-m", "init")
 
 	// Create a SAW-patterned worktree.
-	wtPath := filepath.Join(repo, ".claude", "worktrees", "saw", "test-feature", "wave1-agent-A")
+	wtPath := filepath.Join(repo, ".claude", "worktrees", "polywave", "test-feature", "wave1-agent-A")
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -883,7 +883,7 @@ func TestDetectOrphanedWorktrees_LiveGitPath(t *testing.T) {
 			t.Fatalf("git worktree add: %v\n%s", err, out)
 		}
 	}
-	addWorktreeFn(repo, wtPath, "saw/test-feature/wave1-agent-A")
+	addWorktreeFn(repo, wtPath, "polywave/test-feature/wave1-agent-A")
 
 	manifest := simpleManifest() // wave 1 agents A and B, neither complete
 	orphaned, err := detectOrphanedWorktrees([]string{repo}, manifest)

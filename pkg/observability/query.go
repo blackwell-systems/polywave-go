@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // QueryData holds the result data returned by a Query operation.
@@ -33,7 +33,7 @@ type FailurePatternsData struct {
 func Query(ctx context.Context, store Store, filters QueryFilters) result.Result[QueryData] {
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
-		return result.NewFailure[QueryData]([]result.SAWError{
+		return result.NewFailure[QueryData]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -83,7 +83,7 @@ func GetAgentHistory(ctx context.Context, store Store, agentID string, limit int
 	}
 	rawEvents, err := store.QueryEvents(ctx, filters)
 	if err != nil {
-		return result.NewFailure[AgentHistoryData]([]result.SAWError{
+		return result.NewFailure[AgentHistoryData]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -115,7 +115,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 		Limit:      10000,
 	})
 	if err != nil {
-		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+		return result.NewFailure[IMPLMetrics]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -132,7 +132,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 		Limit:      10000,
 	})
 	if err != nil {
-		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+		return result.NewFailure[IMPLMetrics]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -158,7 +158,7 @@ func GetIMPLMetrics(ctx context.Context, store Store, implSlug string) result.Re
 		Limit:      10000,
 	})
 	if err != nil {
-		return result.NewFailure[IMPLMetrics]([]result.SAWError{
+		return result.NewFailure[IMPLMetrics]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -185,7 +185,7 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) res
 		Limit:        10000,
 	})
 	if err != nil {
-		return result.NewFailure[ProgramSummary]([]result.SAWError{
+		return result.NewFailure[ProgramSummary]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -202,7 +202,7 @@ func GetProgramSummary(ctx context.Context, store Store, programSlug string) res
 		Limit:        10000,
 	})
 	if err != nil {
-		return result.NewFailure[ProgramSummary]([]result.SAWError{
+		return result.NewFailure[ProgramSummary]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -235,7 +235,7 @@ func GetCostBreakdown(ctx context.Context, store Store, implSlug string) result.
 		Limit:      10000,
 	})
 	if err != nil {
-		return result.NewFailure[CostBreakdownData]([]result.SAWError{
+		return result.NewFailure[CostBreakdownData]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}
@@ -259,7 +259,7 @@ func GetFailurePatterns(ctx context.Context, store Store, filters QueryFilters) 
 
 	events, err := store.QueryEvents(ctx, filters)
 	if err != nil {
-		return result.NewFailure[FailurePatternsData]([]result.SAWError{
+		return result.NewFailure[FailurePatternsData]([]result.PolywaveError{
 			result.NewFatal(result.CodeObsQueryFailed, err.Error()).WithCause(err),
 		})
 	}

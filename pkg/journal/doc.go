@@ -24,7 +24,7 @@
 //
 // For each agent, the observer maintains:
 //
-//	.saw-state/wave{N}/agent-{ID}/
+//	.polywave-state/wave{N}/agent-{ID}/
 //	├── cursor.json              # SessionCursor: tracks read position
 //	├── index.jsonl              # ToolEntry per line (append-only)
 //	├── recent.json              # Last 30 entries (JSON array)

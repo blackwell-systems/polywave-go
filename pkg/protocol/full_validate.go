@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FullValidateData holds the result of a complete manifest validation.
 type FullValidateData struct {
 	Valid        bool              `json:"valid"`
 	ErrorCount   int               `json:"error_count"`
-	Errors       []result.SAWError `json:"errors"`
+	Errors       []result.PolywaveError `json:"errors"`
 	WarningCount int               `json:"warning_count,omitempty"`
-	Warnings     []result.SAWError `json:"warnings,omitempty"`
+	Warnings     []result.PolywaveError `json:"warnings,omitempty"`
 	Fixed        int               `json:"fixed,omitempty"`
 }
 
@@ -41,7 +41,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 	// Step 1: Load manifest
 	m, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[FullValidateData]([]result.SAWError{{
+		return result.NewFailure[FullValidateData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("failed to load manifest: %v", err),
 			Severity: "fatal",
@@ -65,7 +65,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 			cleaned, stripped, stripErr := StripUnknownKeys(rawFix)
 			if stripErr == nil && len(stripped) > 0 {
 				if writeErr := os.WriteFile(manifestPath, cleaned, 0644); writeErr != nil {
-					return result.NewFailure[FullValidateData]([]result.SAWError{{
+					return result.NewFailure[FullValidateData]([]result.PolywaveError{{
 						Code:     result.CodeManifestInvalid,
 						Message:  fmt.Sprintf("failed to write stripped YAML: %v", writeErr),
 						Severity: "fatal",
@@ -75,7 +75,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 				// Re-load manifest after stripping keys.
 				m, err = Load(ctx, manifestPath)
 				if err != nil {
-					return result.NewFailure[FullValidateData]([]result.SAWError{{
+					return result.NewFailure[FullValidateData]([]result.PolywaveError{{
 						Code:     result.CodeManifestInvalid,
 						Message:  fmt.Sprintf("reload after strip: %v", err),
 						Severity: "fatal",
@@ -85,7 +85,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 		}
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 
 	// Step 3: Read raw YAML for byte-level checks
 	rawData, readErr := os.ReadFile(manifestPath)
@@ -117,7 +117,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 	// Step 7: E16 typed-block validation
 	docErrs, docErr := ValidateIMPLDoc(manifestPath)
 	if docErr != nil {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("typed-block validation error: %v", docErr),
 			Severity: "error",
@@ -127,8 +127,8 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 	}
 
 	// Split errors by severity: warnings/info are advisory, others are blocking.
-	var blockingErrs []result.SAWError
-	var warnings []result.SAWError
+	var blockingErrs []result.PolywaveError
+	var warnings []result.PolywaveError
 	for _, e := range errs {
 		if e.Severity == "warning" || e.Severity == "info" {
 			warnings = append(warnings, e)
@@ -137,10 +137,10 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 		}
 	}
 	if blockingErrs == nil {
-		blockingErrs = []result.SAWError{}
+		blockingErrs = []result.PolywaveError{}
 	}
 	if warnings == nil {
-		warnings = []result.SAWError{}
+		warnings = []result.PolywaveError{}
 	}
 
 	data := FullValidateData{
@@ -162,9 +162,9 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 type FullValidateProgramData struct {
 	Valid        bool              `json:"valid"`
 	ErrorCount   int               `json:"error_count"`
-	Errors       []result.SAWError `json:"errors"`
+	Errors       []result.PolywaveError `json:"errors"`
 	WarningCount int               `json:"warning_count,omitempty"`
-	Warnings     []result.SAWError `json:"warnings,omitempty"`
+	Warnings     []result.PolywaveError `json:"warnings,omitempty"`
 }
 
 // FullValidateProgramOpts controls program validation behavior.
@@ -178,7 +178,7 @@ func FullValidateProgram(ctx context.Context, manifestPath string, opts FullVali
 	// Step 1: Parse manifest
 	manifest, err := ParseProgramManifest(manifestPath)
 	if err != nil {
-		return result.NewFailure[FullValidateProgramData]([]result.SAWError{{
+		return result.NewFailure[FullValidateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeParseError,
 			Message:  fmt.Sprintf("failed to parse program manifest: %v", err),
 			Severity: "fatal",
@@ -201,8 +201,8 @@ func FullValidateProgram(ctx context.Context, manifestPath string, opts FullVali
 	}
 
 	// Split errors by severity: warnings/info are advisory, others are blocking.
-	var blockingErrs []result.SAWError
-	var warnings []result.SAWError
+	var blockingErrs []result.PolywaveError
+	var warnings []result.PolywaveError
 	for _, e := range validationErrs {
 		if e.Severity == "warning" || e.Severity == "info" {
 			warnings = append(warnings, e)
@@ -211,10 +211,10 @@ func FullValidateProgram(ctx context.Context, manifestPath string, opts FullVali
 		}
 	}
 	if blockingErrs == nil {
-		blockingErrs = []result.SAWError{}
+		blockingErrs = []result.PolywaveError{}
 	}
 	if warnings == nil {
-		warnings = []result.SAWError{}
+		warnings = []result.PolywaveError{}
 	}
 
 	data := FullValidateProgramData{

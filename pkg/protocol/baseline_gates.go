@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"os/exec"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // BaselineData captures the outcome of baseline gate verification (E21A).
@@ -42,7 +42,7 @@ func RunBaselineGates(ctx context.Context, manifest *IMPLManifest, waveNumber in
 	// cache lookup/store.
 	res := RunPreMergeGates(ctx, manifest, waveNumber, repoDir, "", cache, nil)
 	if !res.IsSuccess() {
-		return result.NewFailure[*BaselineData]([]result.SAWError{{
+		return result.NewFailure[*BaselineData]([]result.PolywaveError{{
 			Code:     result.CodeBaselineError,
 			Message:  fmt.Sprintf("pre-merge gates failed: %v", res.Errors),
 			Severity: "fatal",
@@ -130,7 +130,7 @@ func RunCrossRepoBaselineGates(ctx context.Context, manifest *IMPLManifest, wave
 		// Fall back to IMPL quality_gates run in this repo's directory
 		repoRes := RunBaselineGates(ctx, manifest, waveNumber, repoPath, nil)
 		if repoRes.IsFatal() {
-			return result.NewFailure[*CrossRepoBaselineData]([]result.SAWError{{
+			return result.NewFailure[*CrossRepoBaselineData]([]result.PolywaveError{{
 				Code:     result.CodeBaselineError,
 				Message:  fmt.Sprintf("E21B: baseline gates for repo %s failed: %v", repoName, repoRes.Errors),
 				Severity: "fatal",

@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 )
 
 // deepRelativePathRe matches replace directive paths with 3+ levels of "../"

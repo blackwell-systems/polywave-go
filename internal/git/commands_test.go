@@ -183,7 +183,7 @@ func TestInstallHooks_Success(t *testing.T) {
 	}
 
 	// Create pre-commit hook in main repo
-	hookContent := "#!/bin/sh\necho 'SAW pre-commit hook'\n"
+	hookContent := "#!/bin/sh\necho 'Polywave pre-commit hook'\n"
 	hookPath := dir + "/.git/hooks/pre-commit"
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to create source hook: %v", err)

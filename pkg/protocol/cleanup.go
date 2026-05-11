@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // loggerFrom returns the provided logger if non-nil, otherwise returns slog.Default().
@@ -23,7 +23,7 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // CleanupAllStale removes all stale worktrees across all slugs.
 func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Result[*StaleCleanupData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+		return result.NewFailure[*StaleCleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("cleanup all stale: %v", err),
@@ -33,7 +33,7 @@ func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Res
 	}
 	stale, err := DetectStaleWorktrees(repoDir)
 	if err != nil {
-		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+		return result.NewFailure[*StaleCleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("detect stale worktrees: %v", err),
@@ -49,7 +49,7 @@ func CleanupAllStale(ctx context.Context, repoDir string, force bool) result.Res
 		})
 	}
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[*StaleCleanupData]([]result.SAWError{
+		return result.NewFailure[*StaleCleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("cleanup all stale: %v", err),
@@ -98,7 +98,7 @@ type CleanupData struct {
 // wave is not found.
 func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir string, logger *slog.Logger) result.Result[CleanupData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[CleanupData]([]result.SAWError{
+		return result.NewFailure[CleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("cleanup cancelled: %v", err),
@@ -110,7 +110,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	// Load manifest
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[CleanupData]([]result.SAWError{
+		return result.NewFailure[CleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -129,7 +129,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	}
 
 	if targetWave == nil {
-		return result.NewFailure[CleanupData]([]result.SAWError{
+		return result.NewFailure[CleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWaveNotReady,
 				Message:  fmt.Sprintf("wave %d not found in manifest", waveNum),
@@ -146,7 +146,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	// Resolve repoDir to absolute path for cross-repo resolution.
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[CleanupData]([]result.SAWError{
+		return result.NewFailure[CleanupData]([]result.PolywaveError{
 			{
 				Code:     result.CodeWorktreeCreateFailed,
 				Message:  fmt.Sprintf("failed to resolve repo dir: %v", err),
@@ -163,7 +163,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	for _, agent := range targetWave.Agents {
 		// Check for cancellation before each agent's cleanup.
 		if err := ctx.Err(); err != nil {
-			return result.NewPartial(data, []result.SAWError{
+			return result.NewPartial(data, []result.PolywaveError{
 				{
 					Code:     result.CodeWorktreeCreateFailed,
 					Message:  fmt.Sprintf("cleanup cancelled after %d agents: %v", len(data.Agents), err),
@@ -231,7 +231,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	// Worktree paths are: .claude/worktrees/saw/{slug}/wave{N}-agent-{ID}
 	// After removing all agent dirs, the slug dir is left empty.
 	for repo := range prunedRepos {
-		slugDir := filepath.Join(repo, ".claude", "worktrees", "saw", manifest.FeatureSlug)
+		slugDir := filepath.Join(repo, ".claude", "worktrees", "polywave", manifest.FeatureSlug)
 		entries, err := os.ReadDir(slugDir)
 		if err == nil && len(entries) == 0 {
 			_ = os.Remove(slugDir)

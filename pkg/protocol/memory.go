@@ -7,7 +7,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SaveMemoryData holds the result payload for a successful SaveProjectMemory call.
@@ -77,13 +77,13 @@ type CompletedFeature struct {
 // Returns a fatal result if the context is cancelled, the file cannot be read, or the YAML is invalid.
 func LoadProjectMemory(ctx context.Context, path string) result.Result[*ProjectMemory] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[*ProjectMemory]([]result.SAWError{
+		return result.NewFailure[*ProjectMemory]([]result.PolywaveError{
 			{Code: result.CodeContextCancelled, Message: "context cancelled", Severity: "fatal"},
 		})
 	}
 	pm, err := LoadYAML[ProjectMemory](path)
 	if err != nil {
-		return result.NewFailure[*ProjectMemory]([]result.SAWError{
+		return result.NewFailure[*ProjectMemory]([]result.PolywaveError{
 			result.NewFatal("MEMORY_LOAD_FAILED", fmt.Sprintf("failed to read project memory file: %v", err)),
 		})
 	}
@@ -95,12 +95,12 @@ func LoadProjectMemory(ctx context.Context, path string) result.Result[*ProjectM
 func SaveProjectMemory(path string, pm *ProjectMemory) result.Result[SaveMemoryData] {
 	data, err := yaml.Marshal(pm)
 	if err != nil {
-		return result.NewFailure[SaveMemoryData]([]result.SAWError{
+		return result.NewFailure[SaveMemoryData]([]result.PolywaveError{
 			result.NewFatal("MEMORY_SAVE_FAILED", fmt.Sprintf("failed to marshal project memory: %v", err)),
 		})
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
-		return result.NewFailure[SaveMemoryData]([]result.SAWError{
+		return result.NewFailure[SaveMemoryData]([]result.PolywaveError{
 			result.NewFatal("MEMORY_SAVE_FAILED", fmt.Sprintf("failed to write project memory file: %v", err)),
 		})
 	}

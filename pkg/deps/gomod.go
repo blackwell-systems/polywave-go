@@ -13,7 +13,7 @@ import (
 //
 // Example go.mod fragment handled:
 //
-//	replace github.com/blackwell-systems/scout-and-wave-go => ../scout-and-wave-go
+//	replace github.com/blackwell-systems/polywave-go => ../polywave-go
 //
 // The returned map key is the original module path (before "=>").
 func ParseGoModReplace(goModPath string) map[string]struct{} {

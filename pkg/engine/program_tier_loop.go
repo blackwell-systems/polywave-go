@@ -7,10 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/observability"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TierLoopOpts configures the tier execution loop.
@@ -72,7 +72,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 
 	manifest, err := protocol.ParseProgramManifest(opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[TierLoopResult]([]result.SAWError{
+		return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("RunTierLoop: parse manifest: %s", err)).
 				WithContext("manifest_path", opts.ManifestPath),
@@ -84,7 +84,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 		case <-ctx.Done():
 			loopResult.FinalState = "cancelled"
 			loopResult.Errors = append(loopResult.Errors, ctx.Err().Error())
-			return result.NewFailure[TierLoopResult]([]result.SAWError{
+			return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeContextCancelled,
 					fmt.Sprintf("RunTierLoop: context cancelled: %s", ctx.Err())),
 			})
@@ -116,7 +116,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 		if conflictErr != nil {
 			loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr))
 			loopResult.FinalState = "conflict_check_error"
-			return result.NewFailure[TierLoopResult]([]result.SAWError{
+			return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeP1Violation,
 					fmt.Sprintf("P1+ tier conflict check failed: %s", conflictErr)).
 					WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -128,7 +128,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 					fmt.Sprintf("file ownership conflict: %s claimed by %s", c.File, strings.Join(c.Impls, ", ")))
 			}
 			loopResult.FinalState = "conflict_detected"
-			return result.NewFailure[TierLoopResult]([]result.SAWError{
+			return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeP1Violation,
 					fmt.Sprintf("RunTierLoop: %d file ownership conflict(s) detected in tier %d", len(conflictReport.Conflicts), currentTier)).
 					WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -154,7 +154,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 			if scoutErr != nil {
 				loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("scout launch failed: %s", scoutErr))
 				loopResult.FinalState = "scout_failed"
-				return result.NewFailure[TierLoopResult]([]result.SAWError{
+				return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 					result.NewFatal(result.CodeScoutFailed,
 						fmt.Sprintf("RunTierLoop: launch scouts: %s", scoutErr)).
 						WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -165,7 +165,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("scout %s failed: %s", slug, errMsg))
 				}
 				loopResult.FinalState = "scout_partial_failure"
-				return result.NewFailure[TierLoopResult]([]result.SAWError{
+				return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 					result.NewFatal(result.CodeScoutFailed,
 						fmt.Sprintf("RunTierLoop: %d scouts failed", len(scoutResult.Failed))).
 						WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -229,7 +229,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 					loopResult.Errors = append(loopResult.Errors,
 						fmt.Sprintf("IMPL doc not found for %s", slug))
 					loopResult.FinalState = "impl_not_found"
-					return result.NewFailure[TierLoopResult]([]result.SAWError{
+					return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 						result.NewFatal(result.CodeIMPLNotFound,
 							fmt.Sprintf("RunTierLoop: IMPL doc not found for slug %q", slug)).
 							WithContext("slug", slug),
@@ -309,7 +309,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 		if advRes.IsFatal() {
 			loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("advance tier error: %s", advRes.Errors[0].Message))
 			loopResult.FinalState = "advance_error"
-			return result.NewFailure[TierLoopResult]([]result.SAWError{
+			return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 				result.NewFatal(advRes.Errors[0].Code,
 					fmt.Sprintf("RunTierLoop: advance tier: %s", advRes.Errors[0].Message)).
 					WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -348,7 +348,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 				if replanRes.IsFatal() {
 					loopResult.Errors = append(loopResult.Errors, fmt.Sprintf("replan failed: %s", replanRes.Errors[0].Message))
 					loopResult.FinalState = "replan_failed"
-					return result.NewFailure[TierLoopResult]([]result.SAWError{
+					return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 						result.NewFatal(replanRes.Errors[0].Code,
 							fmt.Sprintf("RunTierLoop: replan: %s", replanRes.Errors[0].Message)).
 							WithContext("tier", fmt.Sprintf("%d", currentTier)),
@@ -358,7 +358,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 				// Re-parse manifest after replan
 				manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
 				if err != nil {
-					return result.NewFailure[TierLoopResult]([]result.SAWError{
+					return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 						result.NewFatal(result.CodeIMPLParseFailed,
 							fmt.Sprintf("RunTierLoop: re-parse after replan: %s", err)).
 							WithContext("manifest_path", opts.ManifestPath),
@@ -424,7 +424,7 @@ func RunTierLoop(ctx context.Context, opts TierLoopOpts) result.Result[TierLoopR
 		// Re-parse manifest to pick up any status changes
 		manifest, err = protocol.ParseProgramManifest(opts.ManifestPath)
 		if err != nil {
-			return result.NewFailure[TierLoopResult]([]result.SAWError{
+			return result.NewFailure[TierLoopResult]([]result.PolywaveError{
 				result.NewFatal(result.CodeIMPLParseFailed,
 					fmt.Sprintf("RunTierLoop: re-parse manifest: %s", err)).
 					WithContext("manifest_path", opts.ManifestPath),

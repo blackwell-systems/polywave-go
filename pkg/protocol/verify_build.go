@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // VerifyBuildData captures the outcome of running test and lint commands
@@ -41,7 +41,7 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 	// Load the manifest
 	manifest, err := Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[VerifyBuildData]([]result.SAWError{
+		return result.NewFailure[VerifyBuildData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -70,7 +70,7 @@ func VerifyBuild(ctx context.Context, manifestPath string, repoDir string) resul
 			}
 		}
 	}
-	configRepos := loadSAWConfigRepos(filepath.Dir(manifestPath))
+	configRepos := loadPolywaveConfigRepos(filepath.Dir(manifestPath))
 	testDir := repoDir
 	if testGateRepo != "" {
 		if p, ok := configRepos[testGateRepo]; ok {

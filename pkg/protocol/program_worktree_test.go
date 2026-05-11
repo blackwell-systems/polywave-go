@@ -55,14 +55,14 @@ func TestProgramWorktreeDir(t *testing.T) {
 			programSlug: "my-program",
 			tierNumber:  1,
 			implSlug:    "auth-service",
-			want:        "/home/user/myrepo/.claude/worktrees/saw/program/my-program/tier1-impl-auth-service",
+			want:        "/home/user/myrepo/.claude/worktrees/polywave/program/my-program/tier1-impl-auth-service",
 		},
 		{
 			repoDir:     "/repos/project",
 			programSlug: "big-refactor",
 			tierNumber:  3,
 			implSlug:    "api-gateway",
-			want:        "/repos/project/.claude/worktrees/saw/program/big-refactor/tier3-impl-api-gateway",
+			want:        "/repos/project/.claude/worktrees/polywave/program/big-refactor/tier3-impl-api-gateway",
 		},
 	}
 

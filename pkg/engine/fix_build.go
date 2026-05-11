@@ -6,12 +6,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	openaibackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/openai"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	openaibackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/openai"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FixBuildFailure uses an AI agent to diagnose and fix a build/test/gate failure.
@@ -19,31 +19,31 @@ import (
 // It streams progress via OnOutput and OnToolCall callbacks.
 func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBuildData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: RepoPath is required"),
 		})
 	}
 	if opts.ErrorLog == "" {
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildInvalidOpts, "engine.FixBuildFailure: ErrorLog is required"),
 		})
 	}
 
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: load manifest failed").WithCause(err),
 		})
 	}
 
 	b, err := selectFixBuildBackend(opts.ChatModel, opts.OnToolCall)
 	if err != nil {
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: select backend failed").WithCause(err),
 		})
 	}
@@ -58,11 +58,11 @@ func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBu
 	}, opts.OnToolCall)
 	if err != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[FixBuildData]([]result.SAWError{
+			return result.NewFailure[FixBuildData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.FixBuildFailure: context cancelled", Severity: "fatal", Cause: err},
 			})
 		}
-		return result.NewFailure[FixBuildData]([]result.SAWError{
+		return result.NewFailure[FixBuildData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFixBuildFailed, "engine.FixBuildFailure: agent execution failed").WithCause(err),
 		})
 	}
@@ -152,7 +152,7 @@ func selectFixBuildBackend(chatModel string, onToolCall func(ev backend.ToolCall
 
 	model := chatModel
 	if model == "" {
-		model = os.Getenv("SAW_FIX_BUILD_MODEL")
+		model = os.Getenv("POLYWAVE_FIX_BUILD_MODEL")
 	}
 	if model == "" {
 		model = defaultModel

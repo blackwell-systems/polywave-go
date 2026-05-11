@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // TestCascadeError represents an orphaned test file found during cascade check.
@@ -45,14 +45,14 @@ var changeKeywords = []string{
 // Returns FATAL when repoDir is unreadable or manifest is nil.
 func CheckTestCascade(ctx context.Context, m *IMPLManifest, repoDir string) result.Result[[]TestCascadeError] {
 	if m == nil {
-		return result.NewFailure[[]TestCascadeError]([]result.SAWError{
+		return result.NewFailure[[]TestCascadeError]([]result.PolywaveError{
 			result.NewFatal(result.CodeCheckCallerInvalidInput, "manifest is nil"),
 		})
 	}
 
 	// Verify repoDir is readable
 	if _, err := os.ReadDir(repoDir); err != nil {
-		return result.NewFailure[[]TestCascadeError]([]result.SAWError{
+		return result.NewFailure[[]TestCascadeError]([]result.PolywaveError{
 			result.NewFatal(result.CodeCheckCallerFileRead, fmt.Sprintf("cannot read repoDir %q: %v", repoDir, err)),
 		})
 	}

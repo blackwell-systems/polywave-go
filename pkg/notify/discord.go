@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Discord adapter error codes (not registered in pkg/result/codes.go because
@@ -89,7 +89,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 
 	body, err := json.Marshal(p)
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "DISCORD_MARSHAL_ERROR", Message: fmt.Sprintf("discord: marshal payload: %v", err), Severity: "fatal"},
 		})
 	}
@@ -97,7 +97,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 	reqURL := a.webhookURL + "?wait=true"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, bytes.NewReader(body))
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "DISCORD_REQUEST_ERROR", Message: fmt.Sprintf("discord: create request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -107,11 +107,11 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 	if err != nil {
 		// Context cancellation surfaces here.
 		if ctx.Err() != nil {
-			return result.NewFailure[SendData]([]result.SAWError{
+			return result.NewFailure[SendData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: ctx.Err().Error(), Severity: "fatal"},
 			})
 		}
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "DISCORD_SEND_ERROR", Message: fmt.Sprintf("discord: send request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -119,7 +119,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := resp.Header.Get("Retry-After")
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "DISCORD_RATE_LIMITED",
 				Message:  "discord: rate limited",
@@ -130,7 +130,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, msg Message) result.Result[Se
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "DISCORD_HTTP_ERROR",
 				Message:  fmt.Sprintf("discord: unexpected status %d", resp.StatusCode),

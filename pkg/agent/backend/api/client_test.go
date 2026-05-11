@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
 )
 
 // TestNew_ExplicitAPIKey verifies that New() with an explicit apiKey stores it

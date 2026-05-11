@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // ErrToolNotFound is returned when a tool name is not registered in the Workshop.

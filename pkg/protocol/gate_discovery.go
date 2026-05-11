@@ -10,7 +10,7 @@ import (
 
 // DiscoverLintGate searches for an active IMPL doc under repoDir/docs/IMPL/
 // and extracts the first gate of type "lint". If no IMPL doc is found or
-// none defines a lint gate, it falls back to saw.config.json's lint_command
+// none defines a lint gate, it falls back to polywave.config.json's lint_command
 // field. Returns ("", nil) if nothing is configured (silent pass).
 func DiscoverLintGate(ctx context.Context, repoDir string) (string, error) {
 	// Step 1: Check active IMPL docs for a lint gate.
@@ -65,21 +65,21 @@ func DiscoverLintGate(ctx context.Context, repoDir string) (string, error) {
 		}
 	}
 
-	// Step 2: Fall back to saw.config.json.
+	// Step 2: Fall back to polywave.config.json.
 	return discoverFromConfig(repoDir)
 }
 
-// sawConfig represents the minimal structure of saw.config.json relevant
+// sawConfig represents the minimal structure of polywave.config.json relevant
 // to gate discovery.
 type sawConfig struct {
 	LintCommand  string `json:"lint_command"`
 	BuildCommand string `json:"build_command"`
 }
 
-// discoverFromConfig reads repoDir/saw.config.json and returns the
+// discoverFromConfig reads repoDir/polywave.config.json and returns the
 // lint_command field if present and non-empty.
 func discoverFromConfig(repoDir string) (string, error) {
-	configPath := filepath.Join(repoDir, "saw.config.json")
+	configPath := filepath.Join(repoDir, "polywave.config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -97,10 +97,10 @@ func discoverFromConfig(repoDir string) (string, error) {
 	return cfg.LintCommand, nil
 }
 
-// discoverBuildFromConfig reads repoDir/saw.config.json and returns the
+// discoverBuildFromConfig reads repoDir/polywave.config.json and returns the
 // build_command field if present and non-empty.
 func discoverBuildFromConfig(repoDir string) (string, error) {
-	configPath := filepath.Join(repoDir, "saw.config.json")
+	configPath := filepath.Join(repoDir, "polywave.config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -119,7 +119,7 @@ func discoverBuildFromConfig(repoDir string) (string, error) {
 }
 
 // DiscoverBuildGate searches for an active IMPL doc under repoDir/docs/IMPL/
-// and extracts the first gate of type "build". Falls back to saw.config.json
+// and extracts the first gate of type "build". Falls back to polywave.config.json
 // build_command field. Returns ("", nil) if nothing is configured.
 func DiscoverBuildGate(ctx context.Context, repoDir string) (string, error) {
 	// Step 1: Check active IMPL docs for a build gate.
@@ -174,6 +174,6 @@ func DiscoverBuildGate(ctx context.Context, repoDir string) (string, error) {
 		}
 	}
 
-	// Step 2: Fall back to saw.config.json.
+	// Step 2: Fall back to polywave.config.json.
 	return discoverBuildFromConfig(repoDir)
 }

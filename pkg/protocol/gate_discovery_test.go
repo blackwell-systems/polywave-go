@@ -65,7 +65,7 @@ quality_gates:
 			want: "go vet ./...",
 		},
 		{
-			name: "active IMPL without lint gate falls back to saw.config.json",
+			name: "active IMPL without lint gate falls back to polywave.config.json",
 			setup: func(t *testing.T, dir string) {
 				implDir := filepath.Join(dir, "docs", "IMPL")
 				if err := os.MkdirAll(implDir, 0o755); err != nil {
@@ -82,7 +82,7 @@ quality_gates:
       command: "go build ./..."
       required: true
 `)
-				writeJSON(t, filepath.Join(dir, "saw.config.json"), `{"lint_command": "eslint ."}`)
+				writeJSON(t, filepath.Join(dir, "polywave.config.json"), `{"lint_command": "eslint ."}`)
 			},
 			want: "eslint .",
 		},
@@ -208,7 +208,7 @@ quality_gates:
       required: true
       repo: some-other-repo
 `)
-				writeJSON(t, filepath.Join(dir, "saw.config.json"), `{"lint_command": "echo ok"}`)
+				writeJSON(t, filepath.Join(dir, "polywave.config.json"), `{"lint_command": "echo ok"}`)
 			},
 			want: "echo ok",
 		},
@@ -280,7 +280,7 @@ quality_gates:
 			want: "go build ./...",
 		},
 		{
-			name: "active IMPL without build gate but saw.config.json has build_command returns config value",
+			name: "active IMPL without build gate but polywave.config.json has build_command returns config value",
 			setup: func(t *testing.T, dir string) {
 				implDir := filepath.Join(dir, "docs", "IMPL")
 				if err := os.MkdirAll(implDir, 0o755); err != nil {
@@ -297,7 +297,7 @@ quality_gates:
       command: "go vet ./..."
       required: true
 `)
-				writeJSON(t, filepath.Join(dir, "saw.config.json"), `{"build_command": "make build"}`)
+				writeJSON(t, filepath.Join(dir, "polywave.config.json"), `{"build_command": "make build"}`)
 			},
 			want: "make build",
 		},

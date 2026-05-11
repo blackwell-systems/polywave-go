@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Mock CI parser for testing
@@ -17,7 +17,7 @@ type mockCIParser struct {
 
 func (m *mockCIParser) ParseCI(repoRoot string) result.Result[ParseCIData] {
 	if m.err != nil {
-		return result.NewFailure[ParseCIData]([]result.SAWError{result.NewFatal("MOCK_ERROR", m.err.Error())})
+		return result.NewFailure[ParseCIData]([]result.PolywaveError{result.NewFatal("MOCK_ERROR", m.err.Error())})
 	}
 	return result.NewSuccess(ParseCIData{CommandSet: m.commandSet})
 }
@@ -35,7 +35,7 @@ type mockBuildSystemParser struct {
 
 func (m *mockBuildSystemParser) ParseBuildSystem(repoRoot string) result.Result[ParseBuildSystemData] {
 	if m.err != nil {
-		return result.NewFailure[ParseBuildSystemData]([]result.SAWError{result.NewFatal("MOCK_ERROR", m.err.Error())})
+		return result.NewFailure[ParseBuildSystemData]([]result.PolywaveError{result.NewFatal("MOCK_ERROR", m.err.Error())})
 	}
 	return result.NewSuccess(ParseBuildSystemData{CommandSet: m.commandSet})
 }
@@ -352,7 +352,7 @@ func TestExtractor_LanguageDefaultsError(t *testing.T) {
 	// Setup: Replace LanguageDefaults with error-returning mock
 	defer func() { LanguageDefaults = originalLanguageDefaults }()
 	LanguageDefaults = func(repoRoot string) result.Result[LanguageDefaultsData] {
-		return result.NewFailure[LanguageDefaultsData]([]result.SAWError{
+		return result.NewFailure[LanguageDefaultsData]([]result.PolywaveError{
 			result.NewFatal("LANG_DETECT_FAILED", "language detection failed"),
 		})
 	}

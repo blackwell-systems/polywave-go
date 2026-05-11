@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	obs "github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
+	obs "github.com/blackwell-systems/polywave-go/pkg/observability"
 )
 
 func tempDB(t *testing.T) string {

@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -76,7 +76,7 @@ func (p *GoBuildParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -92,7 +92,7 @@ func (p *GoBuildParser) Parse(stdout, stderr string) *ParseResult {
 		col, _ := strconv.Atoi(m[3]) // 0 if not present
 		message := strings.TrimSpace(m[4])
 
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
@@ -136,7 +136,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -153,7 +153,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		// Detect FAIL lines
 		if m := failRe.FindStringSubmatch(line); m != nil {
 			currentTest = m[1]
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				Severity: "error",
 				Message:  "FAIL: " + currentTest,
@@ -167,7 +167,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 		if m := panicRe.FindStringSubmatch(line); m != nil {
 			inPanic = true
 			panicMsg = m[1]
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				Severity: "error",
 				Message:  "panic: " + panicMsg,
@@ -203,7 +203,7 @@ func (p *GoTestParser) Parse(stdout, stderr string) *ParseResult {
 				message = "test failure"
 			}
 			rule := currentTest
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     file,
 				Line:     lineNum,
@@ -234,7 +234,7 @@ func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -250,7 +250,7 @@ func (p *GoVetParser) Parse(stdout, stderr string) *ParseResult {
 		col, _ := strconv.Atoi(m[3])
 		message := strings.TrimSpace(m[4])
 
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     file,
 			Line:     lineNum,
@@ -298,7 +298,7 @@ func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -336,7 +336,7 @@ func (p *GolangciLintParser) Parse(stdout, stderr string) *ParseResult {
 			rule = rm[2]
 		}
 
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:       result.CodeToolError,
 			File:       file,
 			Line:       lineNum,

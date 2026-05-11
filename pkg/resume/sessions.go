@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SaveSessionData contains the output of a successful SaveAgentSession call.
@@ -22,7 +22,7 @@ func sessionsFilePath(stateDir, slug string) string {
 	return filepath.Join(stateDir, "sessions", slug+".json")
 }
 
-// SaveAgentSession persists an AgentSession to .saw-state/sessions/{slug}.json.
+// SaveAgentSession persists an AgentSession to .polywave-state/sessions/{slug}.json.
 // It reads the existing file (if any), updates the entry for session.AgentID,
 // and writes back atomically using a temp file + os.Rename.
 // Returns a result.Result[SaveSessionData] with the session path and timestamp on success,
@@ -30,7 +30,7 @@ func sessionsFilePath(stateDir, slug string) string {
 func SaveAgentSession(stateDir string, slug string, session AgentSession) result.Result[SaveSessionData] {
 	sessionsDir := filepath.Join(stateDir, "sessions")
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
-		return result.NewFailure[SaveSessionData]([]result.SAWError{
+		return result.NewFailure[SaveSessionData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: creating sessions dir: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
@@ -49,7 +49,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 
 	data, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return result.NewFailure[SaveSessionData]([]result.SAWError{
+		return result.NewFailure[SaveSessionData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: marshalling JSON: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
@@ -57,7 +57,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	// Write to a temp file in the same directory to allow atomic rename.
 	tmp := dest + ".tmp"
 	if err := os.WriteFile(tmp, data, 0o644); err != nil {
-		return result.NewFailure[SaveSessionData]([]result.SAWError{
+		return result.NewFailure[SaveSessionData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: writing temp file: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
@@ -65,7 +65,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	if err := os.Rename(tmp, dest); err != nil {
 		// Clean up temp file on failure.
 		_ = os.Remove(tmp)
-		return result.NewFailure[SaveSessionData]([]result.SAWError{
+		return result.NewFailure[SaveSessionData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.SaveAgentSession: renaming temp file: %v", err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
@@ -76,7 +76,7 @@ func SaveAgentSession(stateDir string, slug string, session AgentSession) result
 	})
 }
 
-// LoadAgentSessions loads agent sessions from .saw-state/sessions/{slug}.json.
+// LoadAgentSessions loads agent sessions from .polywave-state/sessions/{slug}.json.
 // Returns a successful Result with an empty map when the file does not exist.
 // Returns a fatal Result with CodeSessionSaveFailed on I/O or JSON parse failures.
 func LoadAgentSessions(stateDir string, slug string) result.Result[map[string]AgentSession] {
@@ -87,14 +87,14 @@ func LoadAgentSessions(stateDir string, slug string) result.Result[map[string]Ag
 		if os.IsNotExist(err) {
 			return result.NewSuccess(map[string]AgentSession{})
 		}
-		return result.NewFailure[map[string]AgentSession]([]result.SAWError{
+		return result.NewFailure[map[string]AgentSession]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.LoadAgentSessions: reading %s: %v", path, err)).WithContext("slug", slug).WithCause(err),
 		})
 	}
 
 	var sessions map[string]AgentSession
 	if err := json.Unmarshal(data, &sessions); err != nil {
-		return result.NewFailure[map[string]AgentSession]([]result.SAWError{
+		return result.NewFailure[map[string]AgentSession]([]result.PolywaveError{
 			result.NewFatal(result.CodeSessionSaveFailed, fmt.Sprintf("resume.LoadAgentSessions: parsing %s: %v", path, err)).WithContext("slug", slug).WithCause(err),
 		})
 	}

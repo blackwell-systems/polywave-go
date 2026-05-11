@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 var (
@@ -26,23 +26,23 @@ func AnalyzeSuitability(requirementsFile string, repoRoot string) result.Result[
 	if _, err := os.Stat(requirementsFile); os.IsNotExist(err) {
 		return result.NewSuccess(SuitabilityResult{}) // Non-fatal: requirements file not found
 	} else if err != nil {
-		sawErr := result.SAWError{
+		sawErr := result.PolywaveError{
 			Code:     result.CodeSuitabilityFileStatFailed,
 			Message:  "failed to stat requirements file",
 			Severity: "fatal",
 		}.WithCause(err)
-		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
+		return result.NewFailure[SuitabilityResult]([]result.PolywaveError{sawErr})
 	}
 
 	// Read requirements document
 	reqData, err := os.ReadFile(requirementsFile)
 	if err != nil {
-		sawErr := result.SAWError{
+		sawErr := result.PolywaveError{
 			Code:     result.CodeSuitabilityRequirementsRead,
 			Message:  "failed to read requirements file",
 			Severity: "fatal",
 		}.WithCause(err)
-		return result.NewFailure[SuitabilityResult]([]result.SAWError{sawErr})
+		return result.NewFailure[SuitabilityResult]([]result.PolywaveError{sawErr})
 	}
 
 	// Parse requirements

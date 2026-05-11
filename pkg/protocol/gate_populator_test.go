@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/commands"
+	"github.com/blackwell-systems/polywave-go/pkg/commands"
 )
 
 func TestPopulateVerificationGates_GoProject(t *testing.T) {

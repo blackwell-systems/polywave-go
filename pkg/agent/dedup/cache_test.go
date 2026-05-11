@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // TestCheckMiss verifies that the first read of a file returns (false, "").

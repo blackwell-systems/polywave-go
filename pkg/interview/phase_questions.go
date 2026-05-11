@@ -3,7 +3,7 @@ package interview
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // phaseOrder maps each InterviewPhase to its sequential position (0-indexed).
@@ -147,10 +147,10 @@ func fieldIsPopulated(doc *InterviewDoc, phase InterviewPhase, field string) boo
 
 // checkPhaseTransition checks if all required fields for the current phase
 // are filled and advances to the next phase if so.
-// Guard: if the transition would skip more than one phase forward, returns a SAWError.
+// Guard: if the transition would skip more than one phase forward, returns a PolywaveError.
 // Backward transitions are NOT guarded here — they are handled by
 // recalculatePhase (which resets to PhaseOverview and replays forward-only).
-func checkPhaseTransition(doc *InterviewDoc) *result.SAWError {
+func checkPhaseTransition(doc *InterviewDoc) *result.PolywaveError {
 	prevPhase := doc.Phase
 
 	switch doc.Phase {

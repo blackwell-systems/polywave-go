@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -21,7 +21,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	// Step 1: Find wave in IMPL doc.
 	wave := o.IMPLDoc().FindWave(waveNum)
 	if wave == nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveNotReady,
 				fmt.Sprintf("executeMergeWave: wave %d not found in IMPL doc", waveNum)),
 		})
@@ -30,7 +30,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	// Step 2: Load manifest and check completion reports; abort if any agent is partial or blocked.
 	manifest, err := protocol.Load(ctx, o.implDocPath)
 	if err != nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("executeMergeWave: loading manifest: %s", err.Error())),
 		})
@@ -40,7 +40,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	for _, agent := range wave.Agents {
 		protoReport, ok := manifest.CompletionReports[agent.ID]
 		if !ok {
-			return result.NewFailure[MergeData]([]result.SAWError{
+			return result.NewFailure[MergeData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCompletionReportMissing,
 					fmt.Sprintf("executeMergeWave: no completion report for agent %s", agent.ID)),
 			})
@@ -49,7 +49,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 		report := &protoReport
 
 		if report.Status == protocol.StatusPartial || report.Status == protocol.StatusBlocked {
-			return result.NewFailure[MergeData]([]result.SAWError{
+			return result.NewFailure[MergeData]([]result.PolywaveError{
 				result.NewFatal(result.CodeInvalidMergeState, fmt.Sprintf(
 					"executeMergeWave: agent %s has status %q — merge aborted", agent.ID, report.Status)),
 			})
@@ -60,7 +60,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	// Step 3: Record base commit before any merges.
 	baseCommit, err := git.RevParse(o.repoPath, "HEAD")
 	if err != nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeCommitMissing,
 				fmt.Sprintf("executeMergeWave: resolving HEAD: %s", err.Error())),
 		})
@@ -69,7 +69,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	// Build per-agent repo map for cross-repo support.
 	absRepoDir, err := filepath.Abs(o.repoPath)
 	if err != nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal("MERGE_PATH_ERROR", fmt.Sprintf("executeMergeWave: resolving repo path: %v", err)),
 		})
 	}
@@ -86,7 +86,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 	// merged and deleted.
 	mergeLog, err := protocol.LoadMergeLog(o.implDocPath, waveNum)
 	if err != nil {
-		return result.NewFailure[MergeData]([]result.SAWError{
+		return result.NewFailure[MergeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLParseFailed,
 				fmt.Sprintf("executeMergeWave: loading merge-log: %s", err.Error())),
 		})
@@ -167,7 +167,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 		mergeMsg := fmt.Sprintf("Merge %s: %s", branch, agent.ID)
 
 		if err := git.MergeNoFF(mergeRepo, branch, mergeMsg); err != nil {
-			return result.NewFailure[MergeData]([]result.SAWError{
+			return result.NewFailure[MergeData]([]result.PolywaveError{
 				result.NewFatal(result.CodeMergeConflict, fmt.Sprintf(
 					"executeMergeWave: merging %s in %s: %s", branch, mergeRepo, err.Error())),
 			})
@@ -176,7 +176,7 @@ func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.
 		// Get merge commit SHA
 		mergeSHA, err := git.RevParse(mergeRepo, "HEAD")
 		if err != nil {
-			return result.NewFailure[MergeData]([]result.SAWError{
+			return result.NewFailure[MergeData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
 					"executeMergeWave: getting merge SHA for %s: %s", agent.ID, err.Error())),
 			})
@@ -226,7 +226,7 @@ func predictConflicts(reports map[string]*protocol.CompletionReport) result.Resu
 			filesChecked++
 			if prev, exists := seen[f]; exists {
 				if prev != letter {
-					return result.NewFailure[ConflictData]([]result.SAWError{
+					return result.NewFailure[ConflictData]([]result.PolywaveError{
 						result.NewFatal(result.CodeMergeConflict, fmt.Sprintf(
 							"predictConflicts: file %q claimed by both agent %s and agent %s", f, prev, letter)),
 					})
@@ -252,7 +252,7 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 
 		branch := report.Branch
 		if branch == "" {
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
 					"verifyAgentCommits: agent %s report has empty branch field", letter)),
 			})
@@ -276,7 +276,7 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 				agentsVerified++
 				continue // already merged
 			}
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
 					"verifyAgentCommits: agent %s branch %q does not exist in %s and commit %q is not merged into HEAD",
 					letter, branch, checkRepo, report.Commit)),
@@ -292,13 +292,13 @@ func verifyAgentCommits(repoPath, baseCommit string, reports map[string]*protoco
 
 		files, err := git.DiffNameOnly(checkRepo, diffBase, branch)
 		if err != nil {
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommitMissing, fmt.Sprintf(
 					"verifyAgentCommits: diffing agent %s branch %q: %s", letter, branch, err.Error())),
 			})
 		}
 		if len(files) == 0 {
-			return result.NewFailure[VerifyCommitsData]([]result.SAWError{
+			return result.NewFailure[VerifyCommitsData]([]result.PolywaveError{
 				result.NewFatal(result.CodeIsolationVerifyFailed, fmt.Sprintf(
 					"verifyAgentCommits: ISOLATION FAILURE — agent %s branch %q has no commits beyond %s",
 					letter, branch, diffBase)),

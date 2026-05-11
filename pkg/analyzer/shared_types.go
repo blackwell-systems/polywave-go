@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SharedTypeCandidate represents a type that should be scaffolded because
@@ -37,14 +37,14 @@ type SharedTypeCandidate struct {
 // - Types mentioned in only one agent's task
 func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]SharedTypeCandidate] {
 	if manifest == nil {
-		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+		return result.NewFailure[[]SharedTypeCandidate]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest cannot be nil"),
 		})
 	}
 
 	// Check for context cancellation before starting work
 	if ctx.Err() != nil {
-		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+		return result.NewFailure[[]SharedTypeCandidate]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
 		})
 	}
@@ -167,7 +167,7 @@ func DetectSharedTypes(ctx context.Context, manifest *protocol.IMPLManifest, rep
 	// Check for circular dependencies
 	circularDeps := detectCircularDeps(manifest)
 	if len(circularDeps) > 0 {
-		return result.NewFailure[[]SharedTypeCandidate]([]result.SAWError{
+		return result.NewFailure[[]SharedTypeCandidate]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeCircularAgentDep,
 				fmt.Sprintf("circular dependency detected: %s", strings.Join(circularDeps, "; "))),
 		})

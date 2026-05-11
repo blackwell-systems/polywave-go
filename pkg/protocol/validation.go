@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -27,8 +27,8 @@ var featureSlugRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 //
 // Called by: FullValidate (full pipeline), ValidateBytes (in-memory shortcut).
 // Do not call directly unless you have already loaded the manifest yourself.
-func Validate(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func Validate(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	errs = append(errs, validateI1DisjointOwnership(m, m.FeatureSlug)...)
 	errs = append(errs, validateI2AgentDependencies(m, m.FeatureSlug)...)
@@ -59,12 +59,12 @@ func Validate(m *IMPLManifest) []result.SAWError {
 }
 
 // validateKnownIssueTitles checks that all KnownIssue entries have a non-empty title.
-func validateKnownIssueTitles(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateKnownIssueTitles(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	for i, issue := range m.KnownIssues {
 		if issue.Title == "" {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeKnownIssueMissingTitle,
 				Message:  fmt.Sprintf("known_issues[%d]: title is required", i),
 				Severity: "error",
@@ -78,8 +78,8 @@ func validateKnownIssueTitles(m *IMPLManifest) []result.SAWError {
 
 // validateI1DisjointOwnership checks that no file is owned by multiple agents within the same wave.
 // Files may be owned by different agents across different waves (sequential modification).
-func validateI1DisjointOwnership(m *IMPLManifest, slug string) []result.SAWError {
-	var errs []result.SAWError
+func validateI1DisjointOwnership(m *IMPLManifest, slug string) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build map of (wave, file) -> agents
 	type waveFile struct {
@@ -114,7 +114,7 @@ func validateI1DisjointOwnership(m *IMPLManifest, slug string) []result.SAWError
 // ValidateI1DisjointOwnership is a public wrapper around validateI1DisjointOwnership
 // for use by prepare-wave runtime enforcement. It validates I1 compliance for a
 // specific wave number by filtering the file_ownership table.
-func ValidateI1DisjointOwnership(m *IMPLManifest, waveNum int) []result.SAWError {
+func ValidateI1DisjointOwnership(m *IMPLManifest, waveNum int) []result.PolywaveError {
 	// Build a filtered manifest with only this wave's ownership entries
 	filtered := &IMPLManifest{
 		FeatureSlug:   m.FeatureSlug,
@@ -130,8 +130,8 @@ func ValidateI1DisjointOwnership(m *IMPLManifest, waveNum int) []result.SAWError
 
 // validateI2AgentDependencies checks that all agent dependencies reference agents in prior waves only.
 // An agent in wave N may only depend on agents in waves 1..(N-1).
-func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError {
-	var errs []result.SAWError
+func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build map of agent -> wave
 	agentWave := make(map[string]int)
@@ -210,8 +210,8 @@ func validateI2AgentDependencies(m *IMPLManifest, slug string) []result.SAWError
 }
 
 // validateI3WaveOrdering checks that wave numbers are sequential starting from 1.
-func validateI3WaveOrdering(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateI3WaveOrdering(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if len(m.Waves) == 0 {
 		return errs
@@ -221,7 +221,7 @@ func validateI3WaveOrdering(m *IMPLManifest) []result.SAWError {
 	for i, wave := range m.Waves {
 		expected := i + 1
 		if wave.Number != expected {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeWaveNotOneIndexed,
 				Message:  fmt.Sprintf("wave number mismatch: expected wave %d, got wave %d", expected, wave.Number),
 				Severity: "error",
@@ -234,11 +234,11 @@ func validateI3WaveOrdering(m *IMPLManifest) []result.SAWError {
 }
 
 // validateI4RequiredFields checks that all required manifest fields are present and non-empty.
-func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateI4RequiredFields(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if strings.TrimSpace(m.Title) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "title is required",
 			Severity: "error",
@@ -247,14 +247,14 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 	}
 
 	if strings.TrimSpace(m.FeatureSlug) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "feature_slug is required",
 			Severity: "error",
 			Field:    "feature_slug",
 		})
 	} else if !featureSlugRegex.MatchString(m.FeatureSlug) {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidFieldValue,
 			Message:  fmt.Sprintf("feature_slug %q must be kebab-case (lowercase letters, digits, hyphens; no leading/trailing hyphens)", m.FeatureSlug),
 			Severity: "error",
@@ -263,7 +263,7 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 	}
 
 	if strings.TrimSpace(m.Verdict) == "" {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "verdict is required",
 			Severity: "error",
@@ -277,7 +277,7 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 			"SUITABLE_WITH_CAVEATS": true,
 		}
 		if !validVerdicts[m.Verdict] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidFieldValue,
 				Message:  fmt.Sprintf("verdict must be SUITABLE, NOT_SUITABLE, or SUITABLE_WITH_CAVEATS, got %q", m.Verdict),
 				Severity: "error",
@@ -290,8 +290,8 @@ func validateI4RequiredFields(m *IMPLManifest) []result.SAWError {
 }
 
 // validateI5FileOwnershipComplete checks that all files referenced in agent.Files are present in FileOwnership table.
-func validateI5FileOwnershipComplete(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateI5FileOwnershipComplete(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build set of files in ownership table
 	ownedFiles := make(map[string]bool)
@@ -304,7 +304,7 @@ func validateI5FileOwnershipComplete(m *IMPLManifest) []result.SAWError {
 		for _, agent := range wave.Agents {
 			for _, file := range agent.Files {
 				if !ownedFiles[file] {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     result.CodeOrphanFile,
 						Message:  fmt.Sprintf("agent %s (wave %d) references file %q which is not in file_ownership table", agent.ID, wave.Number, file),
 						Severity: "error",
@@ -320,8 +320,8 @@ func validateI5FileOwnershipComplete(m *IMPLManifest) []result.SAWError {
 
 // validateI6NoCycles checks that the dependency graph is acyclic.
 // Uses depth-first search with a recursion stack to detect cycles.
-func validateI6NoCycles(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateI6NoCycles(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build adjacency list: agent -> dependencies
 	deps := make(map[string][]string)
@@ -370,7 +370,7 @@ func validateI6NoCycles(m *IMPLManifest) []result.SAWError {
 	for agent := range deps {
 		if !visited[agent] {
 			if cycle := dfs(agent, nil); cycle != nil {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeDependencyCycle,
 					Message:  fmt.Sprintf("dependency cycle detected: %s", strings.Join(cycle, " -> ")),
 					Severity: "error",
@@ -387,12 +387,12 @@ func validateI6NoCycles(m *IMPLManifest) []result.SAWError {
 
 // validateI5CommitBeforeReport checks that all completion reports have a valid commit hash.
 // Enforces I5: agents must commit before reporting (commit field must be non-empty and not "uncommitted").
-func validateI5CommitBeforeReport(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateI5CommitBeforeReport(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	for agentID, report := range m.CompletionReports {
 		if strings.TrimSpace(report.Commit) == "" || report.Commit == "uncommitted" {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("agent %s completion report has no valid commit (commit=%q) — agents must commit before reporting", agentID, report.Commit),
 				Severity: "error",
@@ -407,8 +407,8 @@ func validateI5CommitBeforeReport(m *IMPLManifest) []result.SAWError {
 // validateE9MergeState checks that merge_state field contains a valid value.
 // Valid values: "idle", "in_progress", "completed", "failed".
 // Empty/omitted values are valid (backward compatibility).
-func validateE9MergeState(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateE9MergeState(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Empty is valid (backward compat)
 	if strings.TrimSpace(string(m.MergeState)) == "" {
@@ -423,7 +423,7 @@ func validateE9MergeState(m *IMPLManifest) []result.SAWError {
 	}
 
 	if !validStates[m.MergeState] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidMergeState,
 			Message:  fmt.Sprintf("merge_state has invalid value %q — must be one of: idle, in_progress, completed, failed", m.MergeState),
 			Severity: "error",
@@ -436,8 +436,8 @@ func validateE9MergeState(m *IMPLManifest) []result.SAWError {
 
 // validateSM01StateValid checks that state field contains a valid ProtocolState value.
 // Empty/omitted values are valid (backward compatibility).
-func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateSM01StateValid(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Empty is valid (backward compat)
 	if strings.TrimSpace(string(m.State)) == "" {
@@ -460,7 +460,7 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 	}
 
 	if !validStates[m.State] {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInvalidState,
 			Message:  fmt.Sprintf("state has invalid value %q — must be one of: INTERVIEWING, SCOUT_PENDING, SCOUT_VALIDATING, REVIEWED, SCAFFOLD_PENDING, WAVE_PENDING, WAVE_EXECUTING, WAVE_MERGING, WAVE_VERIFIED, BLOCKED, COMPLETE, NOT_SUITABLE", m.State),
 			Severity: "error",
@@ -474,8 +474,8 @@ func validateSM01StateValid(m *IMPLManifest) []result.SAWError {
 // validateStateMergeStateConsistency checks that State and MergeState are not
 // in an illegal combination. For example, MergeState=in_progress requires
 // State=WAVE_MERGING, and State=REVIEWED cannot have MergeState=completed.
-func validateStateMergeStateConsistency(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateStateMergeStateConsistency(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Skip if either field is empty (backward compat)
 	if strings.TrimSpace(string(m.State)) == "" || strings.TrimSpace(string(m.MergeState)) == "" {
@@ -485,7 +485,7 @@ func validateStateMergeStateConsistency(m *IMPLManifest) []result.SAWError {
 	switch m.MergeState {
 	case MergeStateInProgress:
 		if m.State != StateWaveMerging {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidMergeState,
 				Message:  fmt.Sprintf("merge_state is %q but state is %q — in_progress requires WAVE_MERGING", m.MergeState, m.State),
 				Severity: "error",
@@ -499,7 +499,7 @@ func validateStateMergeStateConsistency(m *IMPLManifest) []result.SAWError {
 			StateComplete:     true,
 		}
 		if !allowed[m.State] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidMergeState,
 				Message:  fmt.Sprintf("merge_state is %q but state is %q — completed requires WAVE_VERIFIED, WAVE_PENDING, or COMPLETE", m.MergeState, m.State),
 				Severity: "error",
@@ -514,14 +514,14 @@ func validateStateMergeStateConsistency(m *IMPLManifest) []result.SAWError {
 // validateAgentIDs checks that all agent IDs conform to the protocol regex: ^[A-Z][2-9]?$
 // Valid examples: "A", "B", "C2", "D9"
 // Invalid examples: "a", "AB", "A1", "A10", "1A", ""
-func validateAgentIDs(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateAgentIDs(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Check agent IDs in wave definitions
 	for _, wave := range m.Waves {
 		for _, agent := range wave.Agents {
 			if !agentIDRegex.MatchString(agent.ID) {
-				errs = append(errs, result.SAWError{
+				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidAgentID,
 					Message:  fmt.Sprintf("agent ID %q in wave %d does not match protocol pattern ^[A-Z][2-9]?$ (one uppercase letter, optionally followed by digit 2-9)", agent.ID, wave.Number),
 					Severity: "error",
@@ -538,7 +538,7 @@ func validateAgentIDs(m *IMPLManifest) []result.SAWError {
 			continue
 		}
 		if !agentIDRegex.MatchString(fo.Agent) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("agent ID %q in file_ownership entry %d (file=%q) does not match protocol pattern ^[A-Z][2-9]?$", fo.Agent, i, fo.File),
 				Severity: "error",
@@ -550,7 +550,7 @@ func validateAgentIDs(m *IMPLManifest) []result.SAWError {
 	// Check agent IDs in CompletionReports map keys
 	for agentID := range m.CompletionReports {
 		if !agentIDRegex.MatchString(agentID) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("agent ID %q in completion_reports does not match protocol pattern ^[A-Z][2-9]?$", agentID),
 				Severity: "error",
@@ -591,8 +591,8 @@ func FixGateTypes(m *IMPLManifest) int {
 // validateMultiRepoConsistency checks that when any file_ownership entry has a repo: field,
 // ALL entries have an explicit repo: field. Mixing explicit and implicit repo tags causes
 // the web GUI to misdetect multi-repo IMPLs.
-func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateMultiRepoConsistency(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	if len(m.FileOwnership) == 0 {
 		return errs
@@ -623,7 +623,7 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 		if len(missing) >= 3 {
 			suffix = " ..."
 		}
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeInconsistentRepo,
 			Message:  fmt.Sprintf("file_ownership has mixed repo tags: some entries have repo: and some don't — add explicit repo: to all entries (missing on: %s%s)", strings.Join(missing, ", "), suffix),
 			Severity: "error",
@@ -644,7 +644,7 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 		if len(repoSet) >= 2 && m.QualityGates != nil {
 			for i, gate := range m.QualityGates.Gates {
 				if gate.Repo == "" {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     result.CodeUnscopedGate,
 						Message:  fmt.Sprintf("quality_gates.gates[%d] (%s): multi-repo IMPL requires repo: on every gate — without it, '%s' runs in all repos including docs-only repos with no build system", i, gate.Type, gate.Command),
 						Severity: "error",
@@ -660,12 +660,12 @@ func validateMultiRepoConsistency(m *IMPLManifest) []result.SAWError {
 
 // ValidateBytes unmarshals raw YAML into an IMPLManifest, runs Validate(), and
 // also runs DetectUnknownKeys() on the raw bytes to catch keys silently dropped
-// by Go's YAML unmarshaler. Returns the combined set of SAWErrors.
+// by Go's YAML unmarshaler. Returns the combined set of PolywaveErrors.
 //
 // Use ValidateBytes when you have the raw YAML source (e.g., reading from disk).
 // Use Validate when you already have a parsed *IMPLManifest and only need
 // structural/invariant checks (unknown-key detection will not run).
-func ValidateBytes(ctx context.Context, yamlData []byte) ([]result.SAWError, error) {
+func ValidateBytes(ctx context.Context, yamlData []byte) ([]result.PolywaveError, error) {
 	_ = ctx // reserved for future context-aware validation (e.g., cancellation)
 	// Cannot use LoadYAML: yamlData is a []byte parameter, not a file path.
 	var m IMPLManifest
@@ -673,7 +673,7 @@ func ValidateBytes(ctx context.Context, yamlData []byte) ([]result.SAWError, err
 		return nil, fmt.Errorf("ValidateBytes: unmarshal YAML: %w", err)
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	errs = append(errs, Validate(&m)...)
 	errs = append(errs, DetectUnknownKeys(yamlData)...)
 	return errs, nil
@@ -681,8 +681,8 @@ func ValidateBytes(ctx context.Context, yamlData []byte) ([]result.SAWError, err
 
 // validateGateTypes checks that all quality gate types are valid.
 // Valid types: "build", "lint", "test", "typecheck", "custom"
-func validateGateTypes(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateGateTypes(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// If no quality gates defined, return empty
 	if m.QualityGates == nil {
@@ -694,7 +694,7 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 
 	for i, gate := range m.QualityGates.Gates {
 		if !ValidGateTypes[gate.Type] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidGateType,
 				Message:  fmt.Sprintf("quality gate type %q is invalid — must be one of: build, lint, test, typecheck, format, custom", gate.Type),
 				Severity: "error",
@@ -702,7 +702,7 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if !validTimings[gate.Timing] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidGateType,
 				Message:  fmt.Sprintf("quality gate timing %q is invalid — must be one of: pre-merge, post-merge (or empty for pre-merge default)", gate.Timing),
 				Severity: "error",
@@ -710,7 +710,7 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if !validPhases[gate.Phase] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeInvalidGateType,
 				Message:  fmt.Sprintf("quality gate phase %q is invalid — must be one of: PRE_VALIDATION, VALIDATION, POST_VALIDATION (or empty for VALIDATION default)", gate.Phase),
 				Severity: "error",
@@ -734,7 +734,7 @@ func validateGateTypes(m *IMPLManifest) []result.SAWError {
 			}
 			for path := range newFilePaths {
 				if strings.Contains(gate.Command, path) {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code: result.CodeGateTargetsNewFile,
 						Message: fmt.Sprintf(
 							"quality_gates.gates[%d]: required gate references action:new file %q — "+

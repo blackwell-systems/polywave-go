@@ -3,7 +3,7 @@ package engine
 import (
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // EventCallback is the composable event hook for engine step functions.
@@ -102,7 +102,7 @@ type PrepareWaveResult struct {
 // the brief artifact and its associated resources, not the brief content itself.
 type AgentBriefInfo struct {
 	Agent string `json:"agent"`
-	// BriefPath is the absolute path to the written .saw-agent-brief.md file.
+	// BriefPath is the absolute path to the written .polywave-agent-brief.md file.
 	BriefPath string `json:"brief_path"`
 	// BriefLength is the character count of the brief content.
 	BriefLength int `json:"brief_length"`

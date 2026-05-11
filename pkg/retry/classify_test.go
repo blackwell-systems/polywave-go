@@ -3,7 +3,7 @@ package retry_test
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
+	"github.com/blackwell-systems/polywave-go/pkg/retry"
 )
 
 // ---------------------------------------------------------------------------

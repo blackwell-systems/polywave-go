@@ -5,8 +5,8 @@ import (
 	"log/slog"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ProgramBranchName returns the slug-scoped branch name for a program-tier IMPL.
@@ -18,7 +18,7 @@ func ProgramBranchName(programSlug string, tierNumber int, implSlug string) stri
 // ProgramWorktreeDir returns the worktree directory path for a program-tier IMPL.
 // Format: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
 func ProgramWorktreeDir(repoDir, programSlug string, tierNumber int, implSlug string) string {
-	return filepath.Join(repoDir, ".claude", "worktrees", "saw", "program", programSlug,
+	return filepath.Join(repoDir, ".claude", "worktrees", "polywave", "program", programSlug,
 		fmt.Sprintf("tier%d-impl-%s", tierNumber, implSlug))
 }
 
@@ -47,7 +47,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	log := loggerFrom(logger)
 	manifest, err := ParseProgramManifest(programManifestPath)
 	if err != nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.PolywaveError{{
 			Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("failed to parse program manifest: %v", err), Severity: "fatal",
 		}})
 	}
@@ -62,7 +62,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	}
 
 	if targetTier == nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.PolywaveError{{
 			Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("tier %d not found in program manifest", tierNumber), Severity: "fatal",
 		}})
 	}
@@ -70,7 +70,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 	// Resolve absolute path for repoDir
 	absRepoDir, err := filepath.Abs(repoDir)
 	if err != nil {
-		return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
+		return result.NewFailure[*CreateProgramWorktreesData]([]result.PolywaveError{{
 			Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("failed to resolve repo path: %v", err), Severity: "fatal",
 		}})
 	}
@@ -88,7 +88,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 				_ = git.DeleteBranch(absRepoDir, branchName)
 				log.Debug("protocol: cleaned up stale merged branch", "branch", branchName)
 			} else {
-				return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
+				return result.NewFailure[*CreateProgramWorktreesData]([]result.PolywaveError{{
 					Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("branch %q already exists and is not merged into HEAD; delete it manually or merge first", branchName), Severity: "fatal",
 				}})
 			}
@@ -96,7 +96,7 @@ func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir 
 
 		// Create the worktree
 		if err := git.WorktreeAdd(absRepoDir, worktreePath, branchName); err != nil {
-			return result.NewFailure[*CreateProgramWorktreesData]([]result.SAWError{{
+			return result.NewFailure[*CreateProgramWorktreesData]([]result.PolywaveError{{
 				Code: result.CodeWorktreeCreateFailed, Message: fmt.Sprintf("failed to create worktree for impl %s: %v", implSlug, err), Severity: "fatal",
 			}})
 		}

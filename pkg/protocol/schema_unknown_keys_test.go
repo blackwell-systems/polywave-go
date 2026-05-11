@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestDetectUnknownKeys_ValidManifest(t *testing.T) {
@@ -215,7 +215,7 @@ quality_gates:
     - type: build
       command: "go build ./..."
       required: true
-      repo: scout-and-wave-go
+      repo: polywave-go
 `)
 	errs := DetectUnknownKeys(yamlData)
 	if len(errs) != 0 {

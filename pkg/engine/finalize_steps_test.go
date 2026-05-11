@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // collectStepEvents returns an EventCallback that records all events and the collected events.
@@ -400,24 +400,24 @@ waves:
   - number: 1
     agents:
       - id: A
-        branch: saw/test-on-event/wave1-agent-A
+        branch: polywave/test-on-event/wave1-agent-A
         files:
           - pkg/foo/foo.go
       - id: B
-        branch: saw/test-on-event/wave1-agent-B
+        branch: polywave/test-on-event/wave1-agent-B
         files:
           - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc1234567890
-    branch: saw/test-on-event/wave1-agent-A
+    branch: polywave/test-on-event/wave1-agent-A
     files_changed:
       - pkg/foo/foo.go
   B:
     status: complete
     commit: def1234567890
-    branch: saw/test-on-event/wave1-agent-B
+    branch: polywave/test-on-event/wave1-agent-B
     files_changed:
       - pkg/bar/bar.go
 `)
@@ -893,24 +893,24 @@ waves:
   - number: 1
     agents:
       - id: A
-        branch: saw/test-backward-compat/wave1-agent-A
+        branch: polywave/test-backward-compat/wave1-agent-A
         files:
           - pkg/foo/foo.go
       - id: B
-        branch: saw/test-backward-compat/wave1-agent-B
+        branch: polywave/test-backward-compat/wave1-agent-B
         files:
           - pkg/bar/bar.go
 completion_reports:
   A:
     status: complete
     commit: abc1234567890
-    branch: saw/test-backward-compat/wave1-agent-A
+    branch: polywave/test-backward-compat/wave1-agent-A
     files_changed:
       - pkg/foo/foo.go
   B:
     status: complete
     commit: def1234567890
-    branch: saw/test-backward-compat/wave1-agent-B
+    branch: polywave/test-backward-compat/wave1-agent-B
     files_changed:
       - pkg/bar/bar.go
 `)

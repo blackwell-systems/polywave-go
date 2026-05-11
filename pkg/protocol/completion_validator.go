@@ -5,8 +5,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CompletionValidationData captures the outcome of cross-validating a
@@ -36,7 +36,7 @@ func ValidateCompletionReportClaims(
 	repoDir string,
 ) result.Result[CompletionValidationData] {
 	data := CompletionValidationData{Valid: true}
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	var warnings []string
 
 	// --- Commit SHA verification ---
@@ -46,7 +46,7 @@ func ValidateCompletionReportClaims(
 		_, err := git.Run(repoDir, "cat-file", "-e", report.Commit)
 		if err != nil {
 			data.Valid = false
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCommitMissing,
 				Message:  fmt.Sprintf("commit %s does not exist in repository: %v", report.Commit, err),
 				Severity: "fatal",
@@ -109,7 +109,7 @@ func ValidateCompletionReportClaims(
 	for _, f := range report.FilesChanged {
 		if !ownedFiles[f] && !frozenPaths[f] {
 			data.Valid = false
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeDisjointOwnership,
 				Message:  fmt.Sprintf("file %s in files_changed is not in agent %s owned files or frozen scaffold paths", f, agentID),
 				Severity: "fatal",
@@ -124,7 +124,7 @@ func ValidateCompletionReportClaims(
 		fullPath := repoDir + "/" + f
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			data.Valid = false
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCompletionReportMissing,
 				Message:  fmt.Sprintf("file %s in files_created does not exist on disk at %s", f, fullPath),
 				Severity: "fatal",
@@ -148,7 +148,7 @@ func ValidateCompletionReportClaims(
 		return result.NewFailure[CompletionValidationData](errs)
 	}
 	if len(warnings) > 0 {
-		warnErrs := make([]result.SAWError, len(warnings))
+		warnErrs := make([]result.PolywaveError, len(warnings))
 		for i, w := range warnings {
 			warnErrs[i] = result.NewWarning("COMPLETION_WARN", w)
 		}

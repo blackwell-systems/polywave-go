@@ -36,7 +36,7 @@ func TestLoadMergeLog_ValidFile(t *testing.T) {
 	// Create temp directory and merge log file
 	tmpDir := t.TempDir()
 	manifestPath := filepath.Join(tmpDir, "IMPL-test.yaml")
-	logDir := filepath.Join(tmpDir, ".saw-state", "test", "wave1")
+	logDir := filepath.Join(tmpDir, ".polywave-state", "test", "wave1")
 	logPath := filepath.Join(logDir, "merge-log.json")
 
 	if err := os.MkdirAll(logDir, 0755); err != nil {
@@ -101,7 +101,7 @@ func TestLoadMergeLog_ValidFile(t *testing.T) {
 }
 
 func TestSaveMergeLog_CreatesDirectory(t *testing.T) {
-	// Create temp directory (without .saw-state subdirectory)
+	// Create temp directory (without .polywave-state subdirectory)
 	tmpDir := t.TempDir()
 	manifestPath := filepath.Join(tmpDir, "IMPL-test.yaml")
 
@@ -120,7 +120,7 @@ func TestSaveMergeLog_CreatesDirectory(t *testing.T) {
 	}
 
 	// Verify directory was created
-	logDir := filepath.Join(tmpDir, ".saw-state", "test", "wave1")
+	logDir := filepath.Join(tmpDir, ".polywave-state", "test", "wave1")
 	if _, err := os.Stat(logDir); os.IsNotExist(err) {
 		t.Errorf("expected directory to be created: %s", logDir)
 	}
@@ -154,7 +154,7 @@ func TestSaveMergeLog_WritesJSON(t *testing.T) {
 	}
 
 	// Read file and verify content
-	logPath := filepath.Join(tmpDir, ".saw-state", "test", "wave1", "merge-log.json")
+	logPath := filepath.Join(tmpDir, ".polywave-state", "test", "wave1", "merge-log.json")
 	data, err := os.ReadFile(logPath)
 	if err != nil {
 		t.Fatalf("failed to read merge log: %v", err)

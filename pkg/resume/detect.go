@@ -14,9 +14,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // SessionState describes the state of an interrupted SAW session.
@@ -82,7 +82,7 @@ func DetectWithConfig(ctx context.Context, repoPaths []string) result.Result[[]S
 			if os.IsNotExist(err) {
 				continue
 			}
-			return result.NewFailure[[]SessionState]([]result.SAWError{
+			return result.NewFailure[[]SessionState]([]result.PolywaveError{
 				result.NewFatal(result.CodeSessionSaveFailed,
 					fmt.Sprintf("resume.DetectWithConfig: reading %s: %v", implDir, err)).
 					WithContext("implDir", implDir).WithCause(err),
@@ -186,10 +186,10 @@ func buildSessionState(repoPaths []string, implPath string, manifest *protocol.I
 	canAutoResume := len(failed) == 0 && isCurrentWaveFullyComplete(manifest, currentWave, completed)
 
 	// Step 4: Load agent sessions if available (Agent C provides LoadAgentSessions).
-	// Use the first repo path as the state dir base (where .saw-state/ lives).
+	// Use the first repo path as the state dir base (where .polywave-state/ lives).
 	var agentSessions map[string]AgentSession
 	if len(repoPaths) > 0 {
-		stateDir := protocol.SAWStateDir(repoPaths[0])
+		stateDir := protocol.PolywaveStateDir(repoPaths[0])
 		if loadRes := LoadAgentSessions(stateDir, manifest.FeatureSlug); loadRes.IsSuccess() {
 			agentSessions = loadRes.GetData()
 		}
@@ -332,18 +332,18 @@ func buildActionAndCommandInternal(
 	}
 }
 
-// worktreePattern matches SAW worktree branch names in both legacy and slug-scoped formats:
+// worktreePattern matches polywave worktree branch names in both legacy and slug-scoped formats:
 //   - Legacy: wave1-agent-A, wave2-agent-B3
-//   - New: saw/my-slug/wave1-agent-A, saw/my-slug/wave2-agent-B3
+//   - New: polywave/my-slug/wave1-agent-A, polywave/my-slug/wave2-agent-B3
 //
 // Note: This is a search pattern (no anchors) because it's used to find branch names
 // within git worktree list output (which includes refs/heads/ prefixes and paths).
 // It intentionally allows lowercase for backward compat with existing worktrees.
-var worktreePattern = regexp.MustCompile(`(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z0-9]+)`)
+var worktreePattern = regexp.MustCompile(`(?:polywave/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Za-z0-9]+)`)
 
-// slugPattern extracts the IMPL slug from a slug-scoped SAW branch name.
+// slugPattern extracts the IMPL slug from a slug-scoped polywave branch name.
 // Input should already have refs/heads/ stripped. Captures the slug portion.
-var slugPattern = regexp.MustCompile(`^saw/([a-z0-9][-a-z0-9]*)/wave\d+-agent-`)
+var slugPattern = regexp.MustCompile(`^polywave/([a-z0-9][-a-z0-9]*)/wave\d+-agent-`)
 
 // loadCompletedSlugs scans the docs/IMPL/complete/ directory for IMPL-*.yaml files
 // and returns a set of slugs extracted from filenames (strip "IMPL-" prefix and ".yaml" suffix).
@@ -448,8 +448,8 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 			// Filter by IMPL slug: only consider worktrees that belong to this manifest.
 			// Slug-scoped branches contain "saw/{slug}/" — if present, must match.
 			// Legacy branches (no slug prefix) are attributed to any manifest (backward compat).
-			if manifest.FeatureSlug != "" && strings.Contains(candidate, "saw/") {
-				expectedPrefix := "saw/" + manifest.FeatureSlug + "/"
+			if manifest.FeatureSlug != "" && strings.Contains(candidate, "polywave/") {
+				expectedPrefix := "polywave/" + manifest.FeatureSlug + "/"
 				if !strings.Contains(candidate, expectedPrefix) {
 					continue // belongs to a different IMPL
 				}

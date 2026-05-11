@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 var typeDefCache sync.Map // map[string][]*regexp.Regexp

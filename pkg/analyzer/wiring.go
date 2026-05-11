@@ -5,8 +5,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DetectWiring analyzes an IMPL manifest's agent task prompts for cross-agent
@@ -20,19 +20,19 @@ import (
 func DetectWiring(ctx context.Context, manifest *protocol.IMPLManifest, repoRoot string) result.Result[[]protocol.WiringDeclaration] {
 	// Check context cancellation first
 	if ctx.Err() != nil {
-		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeWalkFailed, ctx.Err().Error()),
 		})
 	}
 
 	if manifest == nil {
-		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest is nil"),
 		})
 	}
 
 	if len(manifest.FileOwnership) == 0 {
-		return result.NewFailure[[]protocol.WiringDeclaration]([]result.SAWError{
+		return result.NewFailure[[]protocol.WiringDeclaration]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeManifestNil, "manifest file_ownership is empty"),
 		})
 	}

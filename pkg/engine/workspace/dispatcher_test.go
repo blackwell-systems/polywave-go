@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // TestDetectAndSetup_SkipsAllWhenEmptyDir verifies that an empty directory
@@ -105,7 +105,7 @@ func TestDetectAndSetup_MultiLanguage(t *testing.T) {
 		t.Fatal("expected non-nil StepResult")
 	}
 
-	// TypeScript manager should have backed up tsconfig.json to .saw-state/wave1/tsconfig.json.backup.
+	// TypeScript manager should have backed up tsconfig.json to .polywave-state/wave1/tsconfig.json.backup.
 	backupPath := filepath.Join(BackupDir(dir, 1), "tsconfig.json.backup")
 	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
 		t.Errorf("expected tsconfig.json.backup to exist at %s (evidence TypeScript manager ran)", backupPath)

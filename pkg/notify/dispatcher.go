@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Dispatcher fans out formatted messages to N adapters concurrently,
@@ -35,7 +35,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	d.mu.RUnlock()
 
 	if len(snapshot) == 0 {
-		return result.NewFailure[DispatchData]([]result.SAWError{
+		return result.NewFailure[DispatchData]([]result.PolywaveError{
 			{
 				Code:     result.CodeDispatchNoAdapters,
 				Message:  "dispatch: no adapters registered",
@@ -47,7 +47,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	// Check context before spawning goroutines.
 	select {
 	case <-ctx.Done():
-		return result.NewFailure[DispatchData]([]result.SAWError{
+		return result.NewFailure[DispatchData]([]result.PolywaveError{
 			{
 				Code:     result.CodeContextCancelled,
 				Message:  ctx.Err().Error(),
@@ -75,7 +75,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 			case <-ctx.Done():
 				results <- sendResult{
 					adapterName: adapter.Name(),
-					res: result.NewFailure[SendData]([]result.SAWError{
+					res: result.NewFailure[SendData]([]result.PolywaveError{
 						{
 							Code:     result.CodeContextCancelled,
 							Message:  ctx.Err().Error(),
@@ -101,7 +101,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	var (
 		sentCount   int
 		failedCount int
-		errs        []result.SAWError
+		errs        []result.PolywaveError
 	)
 
 	for sr := range results {
@@ -124,7 +124,7 @@ func (d *Dispatcher) Dispatch(ctx context.Context, event Event, formatter Format
 	}
 
 	if sentCount == 0 {
-		return result.NewFailure[DispatchData]([]result.SAWError{
+		return result.NewFailure[DispatchData]([]result.PolywaveError{
 			{
 				Code:     result.CodeDispatchAllFailed,
 				Message:  fmt.Sprintf("all %d adapters failed", failedCount),

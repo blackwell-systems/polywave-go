@@ -13,7 +13,7 @@ import (
 func TestArchive_CreatesTarGz(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-A")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-A")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestArchive_CreatesTarGz(t *testing.T) {
 	}
 
 	// Verify archive file exists
-	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-A.tar.gz")
+	archivePath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-A.tar.gz")
 	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
 		t.Fatalf("archive file not created: %s", archivePath)
 	}
@@ -58,7 +58,7 @@ func TestArchive_CreatesTarGz(t *testing.T) {
 func TestArchive_SavesMetadata(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave2", "agent-B")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave2", "agent-B")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestArchive_SavesMetadata(t *testing.T) {
 	}
 
 	// Read metadata
-	metadataPath := filepath.Join(tmpDir, ".saw-state", "archive", "wave2-agent-B.json")
+	metadataPath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave2-agent-B.json")
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("reading metadata: %v", err)
@@ -117,7 +117,7 @@ func TestArchive_SavesMetadata(t *testing.T) {
 func TestArchive_CalculatesCompressionRatio(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-C")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-C")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -142,7 +142,7 @@ func TestArchive_CalculatesCompressionRatio(t *testing.T) {
 	}
 
 	// Read metadata
-	metadataPath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-C.json")
+	metadataPath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-C.json")
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("reading metadata: %v", err)
@@ -172,7 +172,7 @@ func TestArchive_CalculatesCompressionRatio(t *testing.T) {
 
 func TestListArchives_ReturnsAll(t *testing.T) {
 	tmpDir := t.TempDir()
-	archiveDir := filepath.Join(tmpDir, ".saw-state", "archive")
+	archiveDir := filepath.Join(tmpDir, ".polywave-state", "archive")
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		t.Fatalf("creating archive dir: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestListArchives_ReturnsAll(t *testing.T) {
 func TestExtract_DecompressesArchive(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-D")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-D")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestExtract_DecompressesArchive(t *testing.T) {
 
 	// Extract to new location
 	extractDir := filepath.Join(tmpDir, "extracted")
-	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-D.tar.gz")
+	archivePath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-D.tar.gz")
 
 	re := Extract(archivePath, extractDir)
 	if !re.IsSuccess() {
@@ -291,7 +291,7 @@ func TestExtract_DecompressesArchive(t *testing.T) {
 
 func TestCleanupExpired_DeletesOldArchives(t *testing.T) {
 	tmpDir := t.TempDir()
-	archiveDir := filepath.Join(tmpDir, ".saw-state", "archive")
+	archiveDir := filepath.Join(tmpDir, ".polywave-state", "archive")
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		t.Fatalf("creating archive dir: %v", err)
 	}
@@ -344,7 +344,7 @@ func TestCleanupExpired_DeletesOldArchives(t *testing.T) {
 
 func TestCleanupExpired_PreservesRecent(t *testing.T) {
 	tmpDir := t.TempDir()
-	archiveDir := filepath.Join(tmpDir, ".saw-state", "archive")
+	archiveDir := filepath.Join(tmpDir, ".polywave-state", "archive")
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		t.Fatalf("creating archive dir: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestCleanupExpired_PreservesRecent(t *testing.T) {
 func TestArchive_CountsEntries(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-E")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-E")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -424,7 +424,7 @@ func TestArchive_CountsEntries(t *testing.T) {
 	}
 
 	// Read metadata
-	metadataPath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-E.json")
+	metadataPath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-E.json")
 	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		t.Fatalf("reading metadata: %v", err)
@@ -445,7 +445,7 @@ func TestArchive_CountsEntries(t *testing.T) {
 func TestArchive_IncludesCheckpoints(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-F")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-F")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -483,7 +483,7 @@ func TestArchive_IncludesCheckpoints(t *testing.T) {
 
 	// Extract and verify checkpoints are included
 	extractDir := filepath.Join(tmpDir, "extracted")
-	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-F.tar.gz")
+	archivePath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-F.tar.gz")
 
 	re := Extract(archivePath, extractDir)
 	if !re.IsSuccess() {
@@ -502,7 +502,7 @@ func TestArchive_IncludesCheckpoints(t *testing.T) {
 func TestArchive_ExcludesToolResults(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-G")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-G")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -537,7 +537,7 @@ func TestArchive_ExcludesToolResults(t *testing.T) {
 
 	// Extract and verify tool-results is excluded
 	extractDir := filepath.Join(tmpDir, "extracted")
-	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-G.tar.gz")
+	archivePath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-G.tar.gz")
 
 	re := Extract(archivePath, extractDir)
 	if !re.IsSuccess() {
@@ -558,8 +558,8 @@ func TestArchive_ExcludesToolResults(t *testing.T) {
 func TestArchive_ReturnsErrorIfExists(t *testing.T) {
 	// Setup temp directory structure
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-H")
-	archiveDir := filepath.Join(tmpDir, ".saw-state", "archive")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-H")
+	archiveDir := filepath.Join(tmpDir, ".polywave-state", "archive")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -600,7 +600,7 @@ func TestArchive_ReturnsErrorIfExists(t *testing.T) {
 
 func TestCleanupExpired_Idempotent(t *testing.T) {
 	tmpDir := t.TempDir()
-	archiveDir := filepath.Join(tmpDir, ".saw-state", "archive")
+	archiveDir := filepath.Join(tmpDir, ".polywave-state", "archive")
 	if err := os.MkdirAll(archiveDir, 0755); err != nil {
 		t.Fatalf("creating archive dir: %v", err)
 	}
@@ -658,7 +658,7 @@ func TestListArchives_EmptyDirectory(t *testing.T) {
 func TestArchive_ResultDataMatchesMetadata(t *testing.T) {
 	// Verify that the ArchiveData returned matches the written metadata
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave3", "agent-Z")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave3", "agent-Z")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestArchive_ResultDataMatchesMetadata(t *testing.T) {
 func TestArchive_PathParsingExact(t *testing.T) {
 	// Verify that agent-C2 is parsed correctly from wave3/agent-C2 path
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave3", "agent-C2")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave3", "agent-C2")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestArchive_PathParsingNoFallback(t *testing.T) {
 	// Verify that a directory following "wave1" that does NOT start with "agent-"
 	// does NOT set the agent (so Archive returns a parse failure).
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "somedir")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "somedir")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -764,7 +764,7 @@ func TestArchive_PathParsingNoFallback(t *testing.T) {
 func TestExtract_ReturnsData(t *testing.T) {
 	// Verify Extract result data is populated
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-X")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-X")
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("creating journal dir: %v", err)
 	}
@@ -788,7 +788,7 @@ func TestExtract_ReturnsData(t *testing.T) {
 	}
 
 	extractDir := filepath.Join(tmpDir, "extracted")
-	archivePath := filepath.Join(tmpDir, ".saw-state", "archive", "wave1-agent-X.tar.gz")
+	archivePath := filepath.Join(tmpDir, ".polywave-state", "archive", "wave1-agent-X.tar.gz")
 
 	er := Extract(archivePath, extractDir)
 	if !er.IsSuccess() {

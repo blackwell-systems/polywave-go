@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // TestCheckConstraints_I1_OwnedFiles verifies that writing a path not in OwnedFiles

@@ -77,9 +77,9 @@ func ValidateBriefs(ctx context.Context, implPath string) (BriefValidationData, 
 		repoRoot = manifest.Repositories[0]
 	}
 
-	// Build repo name -> absolute path lookup from saw.config.json.
-	// Walk up from the IMPL doc location to find saw.config.json.
-	configRepos := loadSAWConfigRepos(filepath.Dir(implPath))
+	// Build repo name -> absolute path lookup from polywave.config.json.
+	// Walk up from the IMPL doc location to find polywave.config.json.
+	configRepos := loadPolywaveConfigRepos(filepath.Dir(implPath))
 
 	// Build a set of files owned by each agent for quick lookup.
 	// Also track action:new files so we can skip existence checks.
@@ -296,7 +296,7 @@ func extractWaveAgentRefs(taskText string) []waveAgentRef {
 }
 
 // sawConfigReposJSON is a minimal struct for unmarshalling only the repos field
-// from saw.config.json — avoids importing pkg/config which imports pkg/protocol.
+// from polywave.config.json — avoids importing pkg/config which imports pkg/protocol.
 type sawConfigReposJSON struct {
 	Repos []struct {
 		Name string `json:"name"`
@@ -304,13 +304,13 @@ type sawConfigReposJSON struct {
 	} `json:"repos"`
 }
 
-// loadSAWConfigRepos walks up from startDir looking for saw.config.json and returns
+// loadPolywaveConfigRepos walks up from startDir looking for polywave.config.json and returns
 // a map of repo name -> absolute path. Returns an empty map if not found or on error.
-func loadSAWConfigRepos(startDir string) map[string]string {
+func loadPolywaveConfigRepos(startDir string) map[string]string {
 	repos := make(map[string]string)
 	dir := startDir
 	for {
-		candidate := filepath.Join(dir, "saw.config.json")
+		candidate := filepath.Join(dir, "polywave.config.json")
 		data, err := os.ReadFile(candidate)
 		if err == nil {
 			var cfg sawConfigReposJSON

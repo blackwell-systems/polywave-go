@@ -5,8 +5,8 @@ package config
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // WaveState consolidates all state for a wave from the IMPL manifest.
@@ -21,10 +21,10 @@ type WaveState struct {
 }
 
 // getWaveState derives the complete state of a wave from the IMPL manifest.
-// This is the single query function -- no .saw-state/ directory needed.
+// This is the single query function -- no .polywave-state/ directory needed.
 func getWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*WaveState] {
 	if manifest == nil {
-		return result.NewFailure[*WaveState]([]result.SAWError{
+		return result.NewFailure[*WaveState]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
 		})
 	}
@@ -37,7 +37,7 @@ func getWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 		}
 	}
 	if wave == nil {
-		return result.NewFailure[*WaveState]([]result.SAWError{
+		return result.NewFailure[*WaveState]([]result.PolywaveError{
 			result.NewError(result.CodeWaveNotReady,
 				fmt.Sprintf("wave %d not found in manifest", waveNum)),
 		})
@@ -100,7 +100,7 @@ func getWaveState(manifest *protocol.IMPLManifest, waveNum int) result.Result[*W
 // getAllWaveStates derives the state of all waves from the IMPL manifest.
 func getAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState] {
 	if manifest == nil {
-		return result.NewFailure[[]WaveState]([]result.SAWError{
+		return result.NewFailure[[]WaveState]([]result.PolywaveError{
 			result.NewError(result.CodeConfigInvalid, "manifest is nil"),
 		})
 	}
@@ -108,7 +108,7 @@ func getAllWaveStates(manifest *protocol.IMPLManifest) result.Result[[]WaveState
 	for _, w := range manifest.Waves {
 		r := getWaveState(manifest, w.Number)
 		if r.IsFatal() {
-			wrapped := make([]result.SAWError, len(r.Errors))
+			wrapped := make([]result.PolywaveError, len(r.Errors))
 			for i, e := range r.Errors {
 				wrapped[i] = result.NewError(e.Code,
 					fmt.Sprintf("wave %d: %s", w.Number, e.Message))

@@ -23,7 +23,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Verdict values for CriticData and AgentCriticReview.
@@ -108,7 +108,7 @@ func WriteCriticReview(ctx context.Context, implPath string, data CriticData) er
 func WriteCriticReviewResult(ctx context.Context, implPath string, data CriticData) result.Result[CriticData] {
 	manifest, err := Load(ctx, implPath)
 	if err != nil {
-		return result.NewFailure[CriticData]([]result.SAWError{
+		return result.NewFailure[CriticData]([]result.PolywaveError{
 			{
 				Code:     result.CodeIMPLParseFailed,
 				Message:  err.Error(),
@@ -141,7 +141,7 @@ func GetCriticReview(_ context.Context, manifest *IMPLManifest) *CriticData {
 // protocol.Load.
 func GetCriticReviewResult(_ context.Context, manifest *IMPLManifest) result.Result[CriticData] {
 	if manifest.CriticReport == nil {
-		return result.NewFailure[CriticData]([]result.SAWError{
+		return result.NewFailure[CriticData]([]result.PolywaveError{
 			{
 				Code:     result.CodeCompletionReportMissing,
 				Message:  "no critic review found in manifest",

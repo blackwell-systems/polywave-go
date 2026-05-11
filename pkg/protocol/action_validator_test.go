@@ -3,7 +3,7 @@ package protocol
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func TestValidateActionEnums_AllValid(t *testing.T) {

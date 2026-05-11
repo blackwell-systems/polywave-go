@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/builddiag"
+	"github.com/blackwell-systems/polywave-go/pkg/collision"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/observability"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // emitStepEvent is a nil-safe helper for calling an EventCallback.
@@ -130,7 +130,7 @@ func StepRunGates(ctx context.Context, opts FinalizeWaveOpts, manifest *protocol
 	const stepName = "run-gates"
 	emitStepEvent(onEvent, stepName, "running", "")
 
-	stateDir := protocol.SAWStateDir(opts.RepoPath)
+	stateDir := protocol.PolywaveStateDir(opts.RepoPath)
 	cache := gatecache.New(ctx, stateDir, 5*time.Minute)
 	gateRes := protocol.RunGatesWithCache(ctx, manifest, opts.WaveNum, opts.RepoPath, opts.IMPLPath, cache, opts.Logger)
 	if !gateRes.IsSuccess() {
@@ -862,7 +862,7 @@ func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, ma
 }
 
 // StepCommitState commits uncommitted SAW-owned state files (IMPL docs,
-// .saw-state/) before merge-agents runs. Non-fatal on failure — reports
+// .polywave-state/) before merge-agents runs. Non-fatal on failure — reports
 // warning and continues. This prevents dirty working directory from blocking
 // git merge.
 func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,

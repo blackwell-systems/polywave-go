@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CleanupData holds data returned by PostMergeCleanup.
@@ -22,7 +22,7 @@ type CleanupData struct {
 // api.handleResolveConflicts.
 func PostMergeCleanup(ctx context.Context, implPath string, waveNum int, repoPath string, onEvent EventCallback) result.Result[CleanupData] {
 	data := CleanupData{}
-	var warnings []result.SAWError
+	var warnings []result.PolywaveError
 
 	// Step 1: Fix go.mod replace paths (deep relative paths from worktree agents).
 	if onEvent != nil {

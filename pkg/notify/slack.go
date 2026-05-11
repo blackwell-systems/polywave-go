@@ -9,7 +9,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 type slackText struct {
@@ -103,7 +103,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 
 	body, err := json.Marshal(p)
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "SLACK_MARSHAL_ERROR", Message: fmt.Sprintf("slack: marshal payload: %v", err), Severity: "fatal"},
 		})
 	}
@@ -118,7 +118,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, bytes.NewReader(body))
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "SLACK_REQUEST_ERROR", Message: fmt.Sprintf("slack: create request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -131,11 +131,11 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	resp, err := s.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[SendData]([]result.SAWError{
+			return result.NewFailure[SendData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: ctx.Err().Error(), Severity: "fatal"},
 			})
 		}
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "SLACK_SEND_ERROR", Message: fmt.Sprintf("slack: send request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -143,7 +143,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := resp.Header.Get("Retry-After")
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "SLACK_RATE_LIMITED",
 				Message:  "slack: rate limited",
@@ -154,7 +154,7 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "SLACK_HTTP_ERROR",
 				Message:  fmt.Sprintf("slack: unexpected status %d", resp.StatusCode),
@@ -171,12 +171,12 @@ func (s *SlackAdapter) Send(ctx context.Context, msg Message) result.Result[Send
 	}
 	if s.token != "" {
 		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			return result.NewFailure[SendData]([]result.SAWError{
+			return result.NewFailure[SendData]([]result.PolywaveError{
 				{Code: "SLACK_DECODE_ERROR", Message: fmt.Sprintf("slack: decode API response: %v", err), Severity: "fatal"},
 			})
 		}
 		if !apiResp.OK {
-			return result.NewFailure[SendData]([]result.SAWError{
+			return result.NewFailure[SendData]([]result.PolywaveError{
 				{Code: "SLACK_API_ERROR", Message: fmt.Sprintf("slack: API error: %s", apiResp.Error), Severity: "fatal"},
 			})
 		}

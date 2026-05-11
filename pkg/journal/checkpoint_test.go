@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // JournalObserver is defined in observer.go - no need to redefine for tests
@@ -16,7 +16,7 @@ import (
 // setupTestObserver creates a test observer with temporary directories
 func setupTestObserver(t *testing.T) (*JournalObserver, func()) {
 	tmpDir := t.TempDir()
-	journalDir := filepath.Join(tmpDir, ".saw-state", "wave1", "agent-test")
+	journalDir := filepath.Join(tmpDir, ".polywave-state", "wave1", "agent-test")
 
 	if err := os.MkdirAll(journalDir, 0755); err != nil {
 		t.Fatalf("failed to create journal dir: %v", err)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Telegram adapter error codes (not registered in pkg/result/codes.go because
@@ -64,14 +64,14 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "TELEGRAM_MARSHAL_ERROR", Message: fmt.Sprintf("telegram: marshal payload: %v", err), Severity: "fatal"},
 		})
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "TELEGRAM_REQUEST_ERROR", Message: fmt.Sprintf("telegram: create request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -80,11 +80,11 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	resp, err := a.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[SendData]([]result.SAWError{
+			return result.NewFailure[SendData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: ctx.Err().Error(), Severity: "fatal"},
 			})
 		}
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "TELEGRAM_SEND_ERROR", Message: fmt.Sprintf("telegram: send request: %v", err), Severity: "fatal"},
 		})
 	}
@@ -92,7 +92,7 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		retryAfter := resp.Header.Get("Retry-After")
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "TELEGRAM_RATE_LIMITED",
 				Message:  "telegram: rate limited",
@@ -103,7 +103,7 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{
 				Code:     "TELEGRAM_HTTP_ERROR",
 				Message:  fmt.Sprintf("telegram: unexpected status %d", resp.StatusCode),
@@ -120,14 +120,14 @@ func (a *TelegramAdapter) Send(ctx context.Context, msg Message) result.Result[S
 		} `json:"result"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&telegramResp); err != nil {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "TELEGRAM_DECODE_ERROR", Message: fmt.Sprintf("telegram: decode response: %v", err), Severity: "fatal"},
 		})
 	}
 	// Telegram returns HTTP 200 for application-level errors (ok=false).
 	// Mirror the Slack bot token path: treat ok=false as a fatal failure.
 	if !telegramResp.OK {
-		return result.NewFailure[SendData]([]result.SAWError{
+		return result.NewFailure[SendData]([]result.PolywaveError{
 			{Code: "TELEGRAM_API_ERROR", Message: fmt.Sprintf("telegram: API error: %s", telegramResp.Description), Severity: "fatal"},
 		})
 	}

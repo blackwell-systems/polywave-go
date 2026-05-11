@@ -3,7 +3,7 @@ package errparse
 import (
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -29,7 +29,7 @@ func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -39,7 +39,7 @@ func (p *GofmtParser) Parse(stdout, stderr string) *ParseResult {
 		if line == "" {
 			continue
 		}
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     line,
 			Severity: "warning",
@@ -78,7 +78,7 @@ func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -96,7 +96,7 @@ func (p *PrettierFormatParser) Parse(stdout, stderr string) *ParseResult {
 			if file == "" || strings.HasPrefix(file, "Code style issues") || strings.HasPrefix(file, "Forgot to run") {
 				continue
 			}
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "warning",
@@ -135,7 +135,7 @@ func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -149,7 +149,7 @@ func (p *RuffFormatParser) Parse(stdout, stderr string) *ParseResult {
 			if file == "" {
 				continue
 			}
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     file,
 				Severity: "warning",
@@ -177,7 +177,7 @@ func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 	raw := combined(stdout, stderr)
 	pr := &ParseResult{
 		Tool:   p.Name(),
-		Errors: []result.SAWError{},
+		Errors: []result.PolywaveError{},
 		Raw:    raw,
 	}
 
@@ -195,7 +195,7 @@ func (p *CargoFmtParser) Parse(stdout, stderr string) *ParseResult {
 				if file == "" {
 					continue
 				}
-				pr.Errors = append(pr.Errors, result.SAWError{
+				pr.Errors = append(pr.Errors, result.PolywaveError{
 					Code:     result.CodeToolError,
 					File:     file,
 					Severity: "warning",

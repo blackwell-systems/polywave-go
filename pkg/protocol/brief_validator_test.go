@@ -708,12 +708,12 @@ waves:
 
 // TestValidateBriefs_CrossRepoResolution verifies that when file_ownership entries
 // have a repo: field, briefResolveFilePath looks up the repo name in configRepos
-// (loaded from saw.config.json) to get the absolute path, not treating the name
+// (loaded from polywave.config.json) to get the absolute path, not treating the name
 // as a relative path prefix.
 func TestValidateBriefs_CrossRepoResolution(t *testing.T) {
 	// Create a temp workspace with two repos.
 	workspace := t.TempDir()
-	repoA := filepath.Join(workspace, "repo-a") // the IMPL lives here (saw.config.json)
+	repoA := filepath.Join(workspace, "repo-a") // the IMPL lives here (polywave.config.json)
 	repoB := filepath.Join(workspace, "repo-b") // the file lives here
 	for _, d := range []string{repoA, filepath.Join(repoA, "docs"), repoB} {
 		if err := os.MkdirAll(d, 0755); err != nil {
@@ -721,9 +721,9 @@ func TestValidateBriefs_CrossRepoResolution(t *testing.T) {
 		}
 	}
 
-	// Write saw.config.json in repoA mapping "repo-b" -> absolute path of repoB.
+	// Write polywave.config.json in repoA mapping "repo-b" -> absolute path of repoB.
 	sawConfig := fmt.Sprintf(`{"repos":[{"name":"repo-b","path":%q}]}`, repoB)
-	if err := os.WriteFile(filepath.Join(repoA, "saw.config.json"), []byte(sawConfig), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(repoA, "polywave.config.json"), []byte(sawConfig), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -764,7 +764,7 @@ waves:
 		t.Fatalf("ValidateBriefs returned error: %v", err)
 	}
 
-	// Agent A's file (repo-b/bar.go) should resolve correctly via saw.config.json.
+	// Agent A's file (repo-b/bar.go) should resolve correctly via polywave.config.json.
 	// CrossRepoFunc exists so no symbol_missing error expected.
 	agentA, ok := result.AgentResults["A"]
 	if !ok {

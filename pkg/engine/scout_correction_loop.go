@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // MaxScoutCorrectionRetries is the default number of correction retries before giving up.
@@ -32,7 +32,7 @@ type ScoutCorrectionOpts struct {
 	// runScoutFn overrides RunScout for testing. If nil, uses the real RunScout.
 	runScoutFn func(ctx context.Context, opts RunScoutOpts, onChunk func(string)) error
 	// validateFn overrides IMPL doc validation for testing. If nil, uses validateIMPLDoc.
-	validateFn func(ctx context.Context, implPath string) ([]result.SAWError, error)
+	validateFn func(ctx context.Context, implPath string) ([]result.PolywaveError, error)
 	// setStateFn overrides state-setting for testing. If nil, uses setIMPLStateBlocked.
 	setStateFn func(ctx context.Context, implPath string) result.Result[SetBlockedData]
 }
@@ -73,14 +73,14 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		setState = setIMPLStateBlocked
 	}
 
-	var lastErrors []result.SAWError
+	var lastErrors []result.PolywaveError
 	attempts := 0
 
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		// Check context before each attempt.
 		select {
 		case <-ctx.Done():
-			return result.NewFailure[CorrectionData]([]result.SAWError{
+			return result.NewFailure[CorrectionData]([]result.PolywaveError{
 				result.NewFatal(result.CodeContextCancelled,
 					fmt.Sprintf("context cancelled: %v", ctx.Err())),
 			})
@@ -107,7 +107,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		// Run the Scout agent.
 		err := runScout(ctx, scoutOpts, onChunk)
 		if err != nil {
-			return result.NewFailure[CorrectionData]([]result.SAWError{
+			return result.NewFailure[CorrectionData]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutRunnerFailed,
 					fmt.Sprintf("scout correction loop: RunScout failed on attempt %d: %v", attempts, err)).
 					WithContext("attempt", fmt.Sprintf("%d", attempts)),
@@ -117,7 +117,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 		// Validate the output IMPL doc.
 		validationErrors, err := validate(ctx, scoutOpts.IMPLOutPath)
 		if err != nil {
-			return result.NewFailure[CorrectionData]([]result.SAWError{
+			return result.NewFailure[CorrectionData]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutValidationFailed,
 					fmt.Sprintf("scout correction loop: validation failed on attempt %d: %v", attempts, err)).
 					WithContext("attempt", fmt.Sprintf("%d", attempts)),
@@ -146,7 +146,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 	for i, e := range lastErrors {
 		errorMsgs[i] = e.Message
 	}
-	return result.NewFailure[CorrectionData]([]result.SAWError{
+	return result.NewFailure[CorrectionData]([]result.PolywaveError{
 		result.NewFatal(result.CodeScoutCorrectionExhausted,
 			fmt.Sprintf("scout correction loop: validation failed after %d retries: %s",
 				maxRetries, strings.Join(errorMsgs, "; "))).
@@ -156,7 +156,7 @@ func ScoutCorrectionLoop(ctx context.Context, opts ScoutCorrectionOpts, onChunk 
 
 // buildCorrectionPrompt constructs a prompt describing validation errors for
 // the Scout agent to fix on retry.
-func buildCorrectionPrompt(errors []result.SAWError) string {
+func buildCorrectionPrompt(errors []result.PolywaveError) string {
 	var sb strings.Builder
 	sb.WriteString("The IMPL doc you produced has validation errors. Fix the following issues:\n")
 	for i, e := range errors {
@@ -170,7 +170,7 @@ func buildCorrectionPrompt(errors []result.SAWError) string {
 }
 
 // validateIMPLDoc loads an IMPL doc and runs E16 validation, returning any errors.
-func validateIMPLDoc(ctx context.Context, implPath string) ([]result.SAWError, error) {
+func validateIMPLDoc(ctx context.Context, implPath string) ([]result.PolywaveError, error) {
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load IMPL doc: %w", err)
@@ -183,7 +183,7 @@ func validateIMPLDoc(ctx context.Context, implPath string) ([]result.SAWError, e
 func setIMPLStateBlocked(ctx context.Context, implPath string) result.Result[SetBlockedData] {
 	manifest, err := protocol.Load(ctx, implPath)
 	if err != nil {
-		return result.NewFailure[SetBlockedData]([]result.SAWError{
+		return result.NewFailure[SetBlockedData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSetBlockedLoadFailed,
 				fmt.Sprintf("failed to load manifest: %v", err)).
 				WithContext("impl_path", implPath),
@@ -195,7 +195,7 @@ func setIMPLStateBlocked(ctx context.Context, implPath string) result.Result[Set
 		if len(saveRes.Errors) > 0 {
 			errMsg = saveRes.Errors[0].Message
 		}
-		return result.NewFailure[SetBlockedData]([]result.SAWError{
+		return result.NewFailure[SetBlockedData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSetBlockedSaveFailed, errMsg).
 				WithContext("impl_path", implPath),
 		})

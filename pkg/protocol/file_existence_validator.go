@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ValidateFileExistence warns when file_ownership entries with action=modify
@@ -15,7 +15,7 @@ import (
 // validation). If a FileOwnership entry has a non-empty Repo field that does
 // not match the basename of repoPath, the entry belongs to a different
 // repository and is skipped.
-func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.SAWError {
+func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.PolywaveError {
 	// Skip entirely when no repoPath provided
 	if repoPath == "" {
 		return nil
@@ -23,7 +23,7 @@ func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.SAWError {
 
 	repoBasename := filepath.Base(repoPath)
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	for i, fo := range m.FileOwnership {
 		// Only check "modify" entries
 		if fo.Action != "modify" {
@@ -37,7 +37,7 @@ func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.SAWError {
 
 		fullPath := filepath.Join(repoPath, fo.File)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeFileMissing,
 				Message:  fmt.Sprintf("file '%s' marked action=modify but does not exist", fo.File),
 				Severity: "error",
@@ -54,7 +54,7 @@ func ValidateFileExistence(m *IMPLManifest, repoPath string) []result.SAWError {
 // It checks that action=modify files exist in their resolved target repos.
 // If ALL action=modify entries are missing, it also returns a
 // E16_REPO_MISMATCH_SUSPECTED error.
-func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, configRepos []RepoEntry) []result.SAWError {
+func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, configRepos []RepoEntry) []result.PolywaveError {
 	if primaryRepoPath == "" {
 		return nil
 	}
@@ -65,7 +65,7 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 		configLookup[r.Name] = r.Path
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	modifyCount := 0
 	missingCount := 0
 
@@ -89,7 +89,7 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 		fullPath := filepath.Join(repoPath, fo.File)
 		if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 			missingCount++
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeFileMissing,
 				Message:  fmt.Sprintf("file '%s' marked action=modify but does not exist in repo '%s'", fo.File, filepath.Base(repoPath)),
 				Severity: "error",
@@ -100,7 +100,7 @@ func ValidateFileExistenceMultiRepo(m *IMPLManifest, primaryRepoPath string, con
 
 	// If ALL modify entries are missing, suspect a repo mismatch
 	if modifyCount > 0 && missingCount == modifyCount {
-		errs = append(errs, result.SAWError{
+		errs = append(errs, result.PolywaveError{
 			Code:     result.CodeRepoMismatch,
 			Message:  fmt.Sprintf("all %d action=modify files are missing - this IMPL may target a different repository", modifyCount),
 			Severity: "error",

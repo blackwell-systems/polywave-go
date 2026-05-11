@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// writeConfig writes a minimal saw.config.json with the given anthropic API key
+// writeConfig writes a minimal polywave.config.json with the given anthropic API key
 // into the specified directory.
 func writeConfig(t *testing.T, dir, apiKey string) {
 	t.Helper()
@@ -22,13 +22,13 @@ func writeConfig(t *testing.T, dir, apiKey string) {
 	if err != nil {
 		t.Fatalf("failed to marshal test config: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "saw.config.json"), data, 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "polywave.config.json"), data, 0600); err != nil {
 		t.Fatalf("failed to write test config: %v", err)
 	}
 }
 
 // TestLoadProvidersFromConfig_NotFound verifies that a missing config file
-// returns a zero-value SAWProviders struct.
+// returns a zero-value PolywaveProviders struct.
 func TestLoadProvidersFromConfig_NotFound(t *testing.T) {
 	dir := t.TempDir()
 	got := LoadProvidersFromConfig(dir)
@@ -54,7 +54,7 @@ func TestLoadProvidersFromConfig_Found(t *testing.T) {
 }
 
 // TestLoadProvidersFromConfig_WalksUp verifies that LoadProvidersFromConfig
-// walks up parent directories to find saw.config.json.
+// walks up parent directories to find polywave.config.json.
 func TestLoadProvidersFromConfig_WalksUp(t *testing.T) {
 	parentDir := t.TempDir()
 	subDir := filepath.Join(parentDir, "sub")

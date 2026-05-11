@@ -17,9 +17,9 @@ import (
 	"github.com/anthropics/anthropic-sdk-go/option"
 	"github.com/anthropics/anthropic-sdk-go/packages/param"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/dedup"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/dedup"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 const (
@@ -54,7 +54,7 @@ func New(apiKey string, cfg backend.Config) *Client {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
-	// Fall back to saw.config.json
+	// Fall back to polywave.config.json
 	if apiKey == "" {
 		cwd, _ := os.Getwd()
 		providers := backend.LoadProvidersFromConfig(cwd)

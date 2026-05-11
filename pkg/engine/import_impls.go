@@ -9,8 +9,8 @@ import (
 
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ImportImplsOpts configures an ImportImpls run.
@@ -36,7 +36,7 @@ func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protoc
 		for _, pattern := range patterns {
 			matches, err := filepath.Glob(pattern)
 			if err != nil {
-				return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+				return result.NewFailure[protocol.ImportIMPLsData]([]result.PolywaveError{
 					result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("import-impls: glob error: %v", err)),
 				})
 			}
@@ -48,7 +48,7 @@ func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protoc
 	}
 
 	if len(implPaths) == 0 {
-		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.PolywaveError{
 			result.NewFatal(result.CodeIMPLNotFound, "import-impls: no IMPL docs found"),
 		})
 	}
@@ -68,7 +68,7 @@ func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protoc
 			}
 			created = true
 		} else {
-			return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+			return result.NewFailure[protocol.ImportIMPLsData]([]result.PolywaveError{
 				result.NewFatal(result.CodeIMPLParseFailed, fmt.Sprintf("import-impls: failed to parse program manifest: %v", err)),
 			})
 		}
@@ -195,12 +195,12 @@ func ImportImpls(ctx context.Context, opts ImportImplsOpts) result.Result[protoc
 
 	// Write updated manifest
 	if err := os.MkdirAll(filepath.Dir(opts.ProgramPath), 0755); err != nil {
-		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWriteManifestFailed, fmt.Sprintf("import-impls: failed to create directory: %v", err)),
 		})
 	}
 	if err := protocol.SaveYAML(opts.ProgramPath, manifest); err != nil {
-		return result.NewFailure[protocol.ImportIMPLsData]([]result.SAWError{
+		return result.NewFailure[protocol.ImportIMPLsData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWriteManifestFailed, fmt.Sprintf("import-impls: failed to save manifest: %v", err)),
 		})
 	}

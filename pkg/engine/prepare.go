@@ -9,26 +9,26 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/deps"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/hooks"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/journal"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/collision"
+	"github.com/blackwell-systems/polywave-go/pkg/deps"
+	"github.com/blackwell-systems/polywave-go/pkg/engine/workspace"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/hooks"
+	"github.com/blackwell-systems/polywave-go/pkg/journal"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/resume"
 )
 
 // gitCommitAllowMain runs "git -C repoPath commit <args...>" with
-// SAW_ALLOW_MAIN_COMMIT=1 injected only into that subprocess's environment.
+// POLYWAVE_ALLOW_MAIN_COMMIT=1 injected only into that subprocess's environment.
 // This avoids the process-wide os.Setenv race when two PrepareWave calls
 // run concurrently (program-tier parallelism).
 func gitCommitAllowMain(repoPath string, args ...string) error {
 	cmdArgs := append([]string{"-C", repoPath, "commit"}, args...)
 	cmd := exec.Command("git", cmdArgs...)
-	cmd.Env = append(os.Environ(), "SAW_ALLOW_MAIN_COMMIT=1")
+	cmd.Env = append(os.Environ(), "POLYWAVE_ALLOW_MAIN_COMMIT=1")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
@@ -63,10 +63,10 @@ func recordStepWithData(res *PrepareWaveResult, cb EventCallback, step, status, 
 	fireEvent(cb, step, status, detail)
 }
 
-// loadSAWConfigRepos reads saw.config.json from configPath and returns the repos array.
+// loadPolywaveConfigRepos reads polywave.config.json from configPath and returns the repos array.
 // Returns nil (not an error) if the file is absent or unparseable; callers treat nil
 // as "single-repo mode".
-func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
+func loadPolywaveConfigRepos(configPath string) []protocol.RepoEntry {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil
@@ -83,7 +83,7 @@ func loadSAWConfigRepos(configPath string) []protocol.RepoEntry {
 // isSAWOwnedPath reports whether the given git-porcelain relative path
 // is a SAW-managed state file that is safe to auto-commit in program context.
 // A path is SAW-owned if it matches any of: the IMPL yaml file (repo-relative),
-// any path under .saw-state/, any path under docs/IMPL/, docs/CONTEXT.md,
+// any path under .polywave-state/, any path under docs/IMPL/, docs/CONTEXT.md,
 // go.work, or go.work.sum.
 func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 	// Normalize implPath to repo-relative
@@ -97,8 +97,8 @@ func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 		trimmed = strings.TrimSpace(trimmed[2:])
 	}
 	return trimmed == rel ||
-		strings.HasPrefix(trimmed, ".saw-state/") ||
-		strings.HasPrefix(trimmed, ".saw-state\\") ||
+		strings.HasPrefix(trimmed, ".polywave-state/") ||
+		strings.HasPrefix(trimmed, ".polywave-state\\") ||
 		strings.HasPrefix(trimmed, "docs/IMPL/") ||
 		trimmed == "docs/CONTEXT.md" ||
 		trimmed == "go.work" ||
@@ -138,7 +138,7 @@ func isSAWOwnedPath(path, implPath, projectRoot string) bool {
 // populated up to the failure point. Callers can inspect Steps to surface the
 // failed step name.
 //
-// Side effect: writes .saw-state/active-impl with opts.IMPLPath so SubagentStop
+// Side effect: writes .polywave-state/active-impl with opts.IMPLPath so SubagentStop
 // hooks can find the active IMPL doc.
 func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult, error) {
 	res := &PrepareWaveResult{
@@ -159,7 +159,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	projectRoot := opts.RepoPath
 
 	// Write active-impl marker so SubagentStop hooks can find the IMPL doc.
-	sawStateDir := protocol.SAWStateDir(projectRoot)
+	sawStateDir := protocol.PolywaveStateDir(projectRoot)
 	_ = os.MkdirAll(sawStateDir, 0o755)
 	_ = os.WriteFile(filepath.Join(sawStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
 
@@ -190,7 +190,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	recordStep(res, opts.OnEvent, "dep_check", "success", "no conflicts")
 
 	// Load repos config for multi-repo agent routing
-	repos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
+	repos := loadPolywaveConfigRepos(filepath.Join(projectRoot, "polywave.config.json"))
 
 	// Step: Load and validate manifest
 	doc, err := protocol.Load(ctx, opts.IMPLPath)
@@ -459,7 +459,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 				return res, fmt.Errorf("failed to stage baseline fixes: %w", addErr)
 			}
 
-			// Commit with descriptive message; pass SAW_ALLOW_MAIN_COMMIT per-subprocess
+			// Commit with descriptive message; pass POLYWAVE_ALLOW_MAIN_COMMIT per-subprocess
 			// to avoid the process-wide env race under concurrent PrepareWave calls.
 			commitMsg := fmt.Sprintf("chore: fix baseline for wave %d\n\nAuto-committed %d modified file(s) before worktree creation.",
 				opts.WaveNum, fileCount)
@@ -497,7 +497,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 						trimmed = strings.TrimSpace(trimmed[2:])
 					}
 					// Use AddForce so gitignored-but-tracked files (e.g.
-					// .saw-state/gate-cache.json committed before the path was
+					// .polywave-state/gate-cache.json committed before the path was
 					// added to .gitignore) can still be staged without deadlock.
 					if addErr := git.AddForce(projectRoot, trimmed); addErr != nil {
 						recordStep(res, opts.OnEvent, "commit_state", "failed",
@@ -507,7 +507,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 				}
 				commitMsg := fmt.Sprintf("chore: update SAW state for wave %d preparation\n\nAuto-committed %d SAW state file(s): %s",
 					opts.WaveNum, len(sawFiles), strings.Join(sawFiles, ", "))
-				// Pass SAW_ALLOW_MAIN_COMMIT per-subprocess to avoid the process-wide
+				// Pass POLYWAVE_ALLOW_MAIN_COMMIT per-subprocess to avoid the process-wide
 				// env race under concurrent PrepareWave calls.
 				if commitErr := gitCommitAllowMain(projectRoot, "-m", commitMsg); commitErr != nil {
 					recordStep(res, opts.OnEvent, "commit_state", "failed",
@@ -530,7 +530,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Step: Baseline quality gates (E21A) with gate cache
 	var cache *gatecache.Cache
 	if !opts.NoCache {
-		stateDir := protocol.SAWStateDir(projectRoot)
+		stateDir := protocol.PolywaveStateDir(projectRoot)
 		cache = gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 	}
 
@@ -610,7 +610,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 
 	// Step: I1 disjoint ownership verification (E3)
 	if allErrs := protocol.Validate(doc); len(allErrs) > 0 {
-		var i1Errs []result.SAWError
+		var i1Errs []result.PolywaveError
 		for _, e := range allErrs {
 			if e.Code == result.CodeDisjointOwnership {
 				i1Errs = append(i1Errs, e)
@@ -657,8 +657,8 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	// Auto-advance SCOUT_PENDING → REVIEWED now that validation + critic have cleared.
 	// finalize-wave needs the state to be at least REVIEWED to reach WAVE_VERIFIED.
 	if doc.State == protocol.StateScoutPending || doc.State == protocol.StateScoutValidating {
-		// SAW_ALLOW_MAIN_COMMIT is not needed here: the pre-commit hook exits 0 when
-		// .saw-agent-brief.md is absent (orchestrator context, not an agent worktree).
+		// POLYWAVE_ALLOW_MAIN_COMMIT is not needed here: the pre-commit hook exits 0 when
+		// .polywave-agent-brief.md is absent (orchestrator context, not an agent worktree).
 		stateRes := protocol.SetImplState(ctx, opts.IMPLPath, protocol.StateReviewed, protocol.SetImplStateOpts{
 			Commit:    true,
 			CommitMsg: "chore: advance IMPL state to REVIEWED (pre-wave gate passed)",
@@ -723,7 +723,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 		fmt.Sprintf("prepared %d agent(s)", len(agentBriefs)))
 
 	// Write result to state file for automation-friendly access
-	stateDir := protocol.SAWStateDir(projectRoot)
+	stateDir := protocol.PolywaveStateDir(projectRoot)
 	waveStateDir := filepath.Join(stateDir, fmt.Sprintf("wave%d", opts.WaveNum))
 	if err := os.MkdirAll(waveStateDir, 0o755); err == nil {
 		resultPath := filepath.Join(waveStateDir, "prepare-result.json")
@@ -754,7 +754,7 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) resu
 		}
 	}
 	if prevWave == nil {
-		return result.NewFailure[CheckData]([]result.SAWError{
+		return result.NewFailure[CheckData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveSequencingFailed,
 				fmt.Sprintf("wave %d not found in manifest — cannot verify sequencing", prevWaveNum)),
 		})
@@ -763,14 +763,14 @@ func checkPreviousWaveVerified(doc *protocol.IMPLManifest, prevWaveNum int) resu
 	for _, agent := range prevWave.Agents {
 		report, exists := doc.CompletionReports[agent.ID]
 		if !exists {
-			return result.NewFailure[CheckData]([]result.SAWError{
+			return result.NewFailure[CheckData]([]result.PolywaveError{
 				result.NewFatal(result.CodeWaveSequencingFailed,
 					fmt.Sprintf("wave %d agent %s has no completion report — wave must be merged and verified before wave %d launches",
 						prevWaveNum, agent.ID, prevWaveNum+1)),
 			})
 		}
 		if report.Status != protocol.StatusComplete {
-			return result.NewFailure[CheckData]([]result.SAWError{
+			return result.NewFailure[CheckData]([]result.PolywaveError{
 				result.NewFatal(result.CodeWaveSequencingFailed,
 					fmt.Sprintf("wave %d agent %s status is %q (expected \"complete\") — wave must be fully merged and verified before wave %d launches",
 						prevWaveNum, agent.ID, report.Status, prevWaveNum+1)),
@@ -806,7 +806,7 @@ func checkDependencies(implPath string, wave int) (*deps.ConflictReport, error) 
 func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	absPath, err := filepath.Abs(worktreePath)
 	if err != nil {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "failed to resolve worktree path").WithCause(err),
 		})
 	}
@@ -814,7 +814,7 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 	gitDir := filepath.Join(absPath, ".git")
 	gitStat, err := os.Stat(gitDir)
 	if err != nil {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "failed to stat .git").WithCause(err),
 		})
 	}
@@ -826,13 +826,13 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 		// Worktree: .git is a file pointing to actual git dir
 		content, err := os.ReadFile(gitDir)
 		if err != nil {
-			return result.NewFailure[VerifyHookData]([]result.SAWError{
+			return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 				result.NewFatal(result.CodeHookVerifyFailed, "failed to read .git file").WithCause(err),
 			})
 		}
 		line := strings.TrimSpace(string(content))
 		if !strings.HasPrefix(line, "gitdir: ") {
-			return result.NewFailure[VerifyHookData]([]result.SAWError{
+			return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 				result.NewFatal(result.CodeHookVerifyFailed, fmt.Sprintf("invalid .git file format: %s", line)),
 			})
 		}
@@ -842,32 +842,32 @@ func verifyHookInWorktree(worktreePath string) result.Result[VerifyHookData] {
 
 	stat, err := os.Stat(hookPath)
 	if os.IsNotExist(err) {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, fmt.Sprintf("pre-commit hook does not exist at %s", hookPath)),
 		})
 	}
 	if err != nil {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "failed to stat hook").WithCause(err),
 		})
 	}
 
 	if stat.Mode()&0111 == 0 {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "pre-commit hook exists but is not executable"),
 		})
 	}
 
 	hookContent, err := os.ReadFile(hookPath)
 	if err != nil {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "failed to read hook").WithCause(err),
 		})
 	}
 
-	if !strings.Contains(string(hookContent), "SAW_ALLOW_MAIN_COMMIT") &&
-		!strings.Contains(string(hookContent), "SAW pre-commit guard") {
-		return result.NewFailure[VerifyHookData]([]result.SAWError{
+	if !strings.Contains(string(hookContent), "POLYWAVE_ALLOW_MAIN_COMMIT") &&
+		!strings.Contains(string(hookContent), "Polywave pre-commit guard") {
+		return result.NewFailure[VerifyHookData]([]result.PolywaveError{
 			result.NewFatal(result.CodeHookVerifyFailed, "pre-commit hook missing isolation logic"),
 		})
 	}
@@ -882,7 +882,7 @@ func extractBriefsAndInitJournals(
 	worktrees []protocol.WorktreeInfo,
 	opts PrepareWaveOpts,
 ) ([]AgentBriefInfo, error) {
-	repos := loadSAWConfigRepos(filepath.Join(opts.RepoPath, "saw.config.json"))
+	repos := loadPolywaveConfigRepos(filepath.Join(opts.RepoPath, "polywave.config.json"))
 	agentBriefs := make([]AgentBriefInfo, 0, len(worktrees))
 
 	for _, wtInfo := range worktrees {
@@ -956,7 +956,7 @@ func extractBriefsAndInitJournals(
 		}
 
 		// Build the agent brief with YAML frontmatter (E44: saw_name for Orchestrator naming)
-		sawName := fmt.Sprintf("[SAW:wave%d:agent-%s] %s", opts.WaveNum, agentID, briefTaskSummary(agentTask))
+		sawName := fmt.Sprintf("[polywave:wave%d:agent-%s] %s", opts.WaveNum, agentID, briefTaskSummary(agentTask))
 		brief := fmt.Sprintf("---\nsaw_name: %q\n---\n\n# Agent %s Brief - Wave %d\n\n**IMPL Doc:** %s\n\n## Files Owned\n\n%s\n\n## Task\n\n%s\n%s%s%s%s\n",
 			sawName,
 			agentID,
@@ -971,16 +971,16 @@ func extractBriefsAndInitJournals(
 		)
 
 		// Write brief to worktree root
-		briefPath := filepath.Join(wtInfo.Path, ".saw-agent-brief.md")
+		briefPath := filepath.Join(wtInfo.Path, ".polywave-agent-brief.md")
 		if err := os.WriteFile(briefPath, []byte(brief), 0644); err != nil {
 			return nil, fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
 		}
 
 		// Write .saw-worktree-env for PreToolUse hook enforcement (E43 / saw-worktree-boundary.sh).
-		// SAW_WORKTREE_ROOT is read by hooks/saw-worktree-boundary.sh to hard-deny writes
+		// POLYWAVE_WORKTREE_ROOT is read by hooks/saw-worktree-boundary.sh to hard-deny writes
 		// targeting the main repo instead of the agent's assigned worktree.
 		worktreeEnvPath := filepath.Join(wtInfo.Path, ".saw-worktree-env")
-		worktreeEnvContent := fmt.Sprintf("SAW_WORKTREE_ROOT=%s\n", wtInfo.Path)
+		worktreeEnvContent := fmt.Sprintf("POLYWAVE_WORKTREE_ROOT=%s\n", wtInfo.Path)
 		if err := os.WriteFile(worktreeEnvPath, []byte(worktreeEnvContent), 0644); err != nil {
 			// Non-fatal: log warning but don't abort — boundary hook will be no-op without this file
 			fmt.Fprintf(os.Stderr, "prepare-wave: warning: failed to write .saw-worktree-env for agent %s: %v\n", agentID, err)

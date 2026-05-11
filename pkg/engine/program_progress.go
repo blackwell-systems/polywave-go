@@ -3,8 +3,8 @@ package engine
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // UpdateProgData holds data returned by UpdateProgramIMPLStatus.
@@ -34,7 +34,7 @@ type WriteManifestData struct {
 func UpdateProgramIMPLStatus(manifestPath string, implSlug string, newStatus string) result.Result[UpdateProgData] {
 	manifest, err := protocol.ParseProgramManifest(manifestPath)
 	if err != nil {
-		return result.NewFailure[UpdateProgData]([]result.SAWError{
+		return result.NewFailure[UpdateProgData]([]result.PolywaveError{
 			result.NewFatal(result.CodeUpdateProgParseFailed,
 				fmt.Sprintf("UpdateProgramIMPLStatus: failed to parse manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
@@ -51,7 +51,7 @@ func UpdateProgramIMPLStatus(manifestPath string, implSlug string, newStatus str
 		}
 	}
 	if !found {
-		return result.NewFailure[UpdateProgData]([]result.SAWError{
+		return result.NewFailure[UpdateProgData]([]result.PolywaveError{
 			result.NewFatal(result.CodeUpdateProgSlugNotFound,
 				fmt.Sprintf("UpdateProgramIMPLStatus: IMPL slug %q not found in manifest", implSlug)).
 				WithContext("impl_slug", implSlug).
@@ -83,7 +83,7 @@ func UpdateProgramIMPLStatus(manifestPath string, implSlug string, newStatus str
 func SyncProgramStatusFromDisk(manifestPath string, repoPath string) result.Result[SyncData] {
 	manifest, err := protocol.ParseProgramManifest(manifestPath)
 	if err != nil {
-		return result.NewFailure[SyncData]([]result.SAWError{
+		return result.NewFailure[SyncData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSyncParseFailed,
 				fmt.Sprintf("SyncProgramStatusFromDisk: failed to parse manifest: %v", err)).
 				WithContext("manifest_path", manifestPath),
@@ -93,7 +93,7 @@ func SyncProgramStatusFromDisk(manifestPath string, repoPath string) result.Resu
 	// Use GetProgramStatus to get enriched statuses from disk
 	statusRes := protocol.GetProgramStatus(manifest, repoPath)
 	if statusRes.IsFatal() {
-		return result.NewFailure[SyncData]([]result.SAWError{
+		return result.NewFailure[SyncData]([]result.PolywaveError{
 			result.NewFatal(result.CodeSyncStatusFailed,
 				fmt.Sprintf("SyncProgramStatusFromDisk: failed to get program status: %s", statusRes.Errors[0].Message)).
 				WithContext("manifest_path", manifestPath),
@@ -178,7 +178,7 @@ func recalculateCompletion(manifest *protocol.PROGRAMManifest) {
 // writeManifest marshals the manifest to YAML and writes it to disk.
 func writeManifest(path string, manifest *protocol.PROGRAMManifest) result.Result[WriteManifestData] {
 	if err := protocol.SaveYAML(path, manifest); err != nil {
-		return result.NewFailure[WriteManifestData]([]result.SAWError{
+		return result.NewFailure[WriteManifestData]([]result.PolywaveError{
 			result.NewFatal(result.CodeWriteManifestFailed,
 				fmt.Sprintf("writeManifest: %v", err)).
 				WithContext("path", path),

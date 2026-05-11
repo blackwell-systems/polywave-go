@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RetryLoop manages the E24 verification loop. When a quality gate fails after
@@ -50,7 +50,7 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	// Check for cancellation before doing any work.
 	select {
 	case <-ctx.Done():
-		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+		return result.NewFailure[*RetryAttempt]([]result.PolywaveError{
 			result.NewFatal("RETRY_CONTEXT_CANCELLED", ctx.Err().Error()).WithCause(ctx.Err()),
 		})
 	default:
@@ -106,7 +106,7 @@ func (rl *RetryLoop) Run(ctx context.Context, failedGate QualityGateFailure, onE
 	retrySlug := fmt.Sprintf("%s-retry-%d", parentSlug, rl.attempt)
 	saveRes := rl.saveRetryIMPL(ctx, retryManifest, retrySlug)
 	if saveRes.IsFatal() {
-		return result.NewFailure[*RetryAttempt]([]result.SAWError{
+		return result.NewFailure[*RetryAttempt]([]result.PolywaveError{
 			result.NewFatal(result.CodeRetrySaveIMPLFailed, fmt.Sprintf("failed to save retry IMPL: %s", saveRes.Errors[0].Message)).WithCause(saveRes.Errors[0]),
 		})
 	}
@@ -141,7 +141,7 @@ func (rl *RetryLoop) GenerateRetryIMPL(ctx context.Context, failedFiles []string
 func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest, slug string) result.Result[string] {
 	implDir := protocol.IMPLDir(rl.cfg.RepoPath)
 	if err := os.MkdirAll(implDir, 0755); err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeRetryIMPLDirCreateFailed, fmt.Sprintf("cannot create IMPL dir %s: %s", implDir, err.Error())).WithCause(err),
 		})
 	}
@@ -149,11 +149,11 @@ func (rl *RetryLoop) saveRetryIMPL(ctx context.Context, m *protocol.IMPLManifest
 	absPath := protocol.IMPLPath(rl.cfg.RepoPath, slug)
 	if saveRes := protocol.Save(ctx, m, absPath); saveRes.IsFatal() {
 		if len(saveRes.Errors) > 0 {
-			return result.NewFailure[string]([]result.SAWError{
+			return result.NewFailure[string]([]result.PolywaveError{
 				result.NewFatal(result.CodeRetrySaveIMPLFailed, saveRes.Errors[0].Message).WithCause(saveRes.Errors[0]),
 			})
 		}
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeRetrySaveIMPLFailed, fmt.Sprintf("failed to save IMPL manifest to %s", absPath)),
 		})
 	}

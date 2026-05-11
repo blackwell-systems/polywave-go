@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Severity represents the importance level of a notification event.
@@ -43,7 +43,7 @@ type SendData struct {
 type DispatchData struct {
 	SentCount   int
 	FailedCount int
-	Errors      []result.SAWError
+	Errors      []result.PolywaveError
 }
 
 // Adapter delivers a formatted Message to an external service.

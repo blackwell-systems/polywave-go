@@ -7,10 +7,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
-	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
-	bedrockbackend "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/bedrock"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/polywave-go/pkg/agent/backend/api"
+	bedrockbackend "github.com/blackwell-systems/polywave-go/pkg/agent/backend/bedrock"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // runWaveAgentStructuredAPI is a seam for tests: constructs the API backend call

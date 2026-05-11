@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 func init() {
@@ -46,7 +46,7 @@ func (p *TscParser) Parse(stdout, stderr string) *ParseResult {
 		}
 		lineNum, _ := strconv.Atoi(m[2])
 		colNum, _ := strconv.Atoi(m[3])
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:     result.CodeToolError,
 			File:     m[1],
 			Line:     lineNum,
@@ -113,7 +113,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 					if msg.Fix != nil {
 						suggestion = "--fix available: " + msg.Fix.Text
 					}
-					pr.Errors = append(pr.Errors, result.SAWError{
+					pr.Errors = append(pr.Errors, result.PolywaveError{
 						Code:       result.CodeToolError,
 						File:       file.FilePath,
 						Line:       msg.Line,
@@ -159,7 +159,7 @@ func (p *EslintParser) Parse(stdout, stderr string) *ParseResult {
 			suggestion = "Run eslint --fix to apply automatic fixes for rule " + m[5]
 		}
 
-		pr.Errors = append(pr.Errors, result.SAWError{
+		pr.Errors = append(pr.Errors, result.PolywaveError{
 			Code:       result.CodeToolError,
 			File:       m[1],
 			Line:       lineNum,
@@ -250,7 +250,7 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 			if f == "" {
 				f = "unknown"
 			}
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     f,
 				Line:     refLine,
@@ -286,7 +286,7 @@ func (p *NpmTestParser) Parse(stdout, stderr string) *ParseResult {
 			if f == "" {
 				f = "unknown"
 			}
-			pr.Errors = append(pr.Errors, result.SAWError{
+			pr.Errors = append(pr.Errors, result.PolywaveError{
 				Code:     result.CodeToolError,
 				File:     f,
 				Line:     refLine,

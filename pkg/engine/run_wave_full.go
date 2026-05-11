@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RunWaveFullOpts configures a full wave lifecycle execution.
@@ -47,7 +47,7 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) result.Result[RunWav
 	// Step 1: Create worktrees for all agents in the wave
 	wtRes := protocol.CreateWorktrees(ctx, opts.ManifestPath, opts.WaveNum, opts.RepoPath, opts.Logger)
 	if !wtRes.IsSuccess() {
-		return result.NewFailure[RunWaveFullResult]([]result.SAWError{
+		return result.NewFailure[RunWaveFullResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeWaveFailed, fmt.Sprintf("create worktrees: %v", wtRes.Errors)),
 		})
 	}
@@ -83,7 +83,7 @@ func RunWaveFull(ctx context.Context, opts RunWaveFullOpts) result.Result[RunWav
 		// Return partial result: worktrees created but finalize failed
 		errs := finalizeRes.Errors
 		if len(errs) == 0 {
-			errs = []result.SAWError{result.NewFatal(result.CodeWaveFailed, "finalize wave failed")}
+			errs = []result.PolywaveError{result.NewFatal(result.CodeWaveFailed, "finalize wave failed")}
 		}
 		return result.NewPartial(res, errs)
 	}

@@ -314,7 +314,7 @@ const (
 type ContextSource string
 
 const (
-	ContextSourcePreparedBrief      ContextSource = "prepared-brief"        // .saw-agent-brief.md used (normal path)
+	ContextSourcePreparedBrief      ContextSource = "prepared-brief"        // .polywave-agent-brief.md used (normal path)
 	ContextSourceFallbackFullContext ContextSource = "fallback-full-context" // full IMPL context passed inline (brief inaccessible)
 	ContextSourceCrossRepoFull      ContextSource = "cross-repo-full"       // cross-repo agent, full context payload
 )

@@ -5,16 +5,16 @@ import (
 	"path/filepath"
 	"regexp"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/internal/git"
 )
 
 // BranchName returns the slug-scoped branch name for an agent.
-// Format: saw/<slug>/wave{N}-agent-{ID}
+// Format: polywave/<slug>/wave{N}-agent-{ID}
 //
 // This is the primary format for all new branches created after v0.39.0.
 // The slug prefix prevents collision across different IMPL documents.
 func BranchName(slug string, waveNum int, agentID string) string {
-	return fmt.Sprintf("saw/%s/wave%d-agent-%s", slug, waveNum, agentID)
+	return fmt.Sprintf("polywave/%s/wave%d-agent-%s", slug, waveNum, agentID)
 }
 
 // LegacyBranchName returns the old-format branch name for backward compatibility.
@@ -26,12 +26,12 @@ func LegacyBranchName(waveNum int, agentID string) string {
 }
 
 // WorktreeDir returns the slug-scoped worktree directory path.
-// Format: {repoDir}/.claude/worktrees/saw/{slug}/wave{N}-agent-{ID}
+// Format: {repoDir}/.claude/worktrees/polywave/{slug}/wave{N}-agent-{ID}
 //
 // This matches the branch naming structure and prevents worktree path collisions
 // when multiple IMPL documents are active in the same repository.
 func WorktreeDir(repoDir, slug string, waveNum int, agentID string) string {
-	return filepath.Join(repoDir, ".claude", "worktrees", "saw", slug,
+	return filepath.Join(repoDir, ".claude", "worktrees", "polywave", slug,
 		fmt.Sprintf("wave%d-agent-%s", waveNum, agentID))
 }
 
@@ -40,18 +40,18 @@ func WorktreeDir(repoDir, slug string, waveNum int, agentID string) string {
 //
 // Accepts:
 //   - "wave1-agent-A" (legacy format, pre-v0.39.0)
-//   - "saw/my-slug/wave1-agent-A" (new slug-scoped format)
+//   - "polywave/my-slug/wave1-agent-A" (new slug-scoped format)
 //
 // The optional slug prefix allows backward compatibility during transition.
 var ScopedBranchRegex = regexp.MustCompile(
-	`^(?:saw/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Z][2-9]?)$`)
+	`^(?:polywave/[a-z0-9][-a-z0-9]*/)?wave(\d+)-agent-([A-Z][2-9]?)$`)
 
 // ParseBranch extracts wave number and agent ID from either format.
 // Returns (wave, agentID, ok).
 //
 // Examples:
 //   - "wave1-agent-A" -> (1, "A", true)
-//   - "saw/my-slug/wave2-agent-B3" -> (2, "B3", true)
+//   - "polywave/my-slug/wave2-agent-B3" -> (2, "B3", true)
 //   - "invalid" -> (0, "", false)
 func ParseBranch(branch string) (int, string, bool) {
 	m := ScopedBranchRegex.FindStringSubmatch(branch)
@@ -67,12 +67,13 @@ func ParseBranch(branch string) (int, string, bool) {
 // Returns empty string for legacy format branches.
 //
 // Examples:
-//   - "saw/my-slug/wave1-agent-A" -> "my-slug"
+//   - "polywave/my-slug/wave1-agent-A" -> "my-slug"
 //   - "wave1-agent-A" -> ""
 func ExtractSlug(branch string) string {
-	// Pattern: saw/<slug>/wave...-agent-...
-	if len(branch) > 4 && branch[:4] == "saw/" {
-		rest := branch[4:]
+	// Pattern: polywave/<slug>/wave...-agent-...
+	const prefix = "polywave/"
+	if len(branch) > len(prefix) && branch[:len(prefix)] == prefix {
+		rest := branch[len(prefix):]
 		for i, c := range rest {
 			if c == '/' {
 				return rest[:i]

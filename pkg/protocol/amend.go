@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // AmendImplOpts controls which amend operation to perform.
@@ -41,7 +41,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 	// Step 1: Load manifest
 	m, err := Load(ctx, opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to load manifest: %v", err),
@@ -52,7 +52,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 
 	// Step 2: Check completion_date field
 	if m.CompletionDate != "" {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("IMPL is complete (completion_date=%s); cannot amend", m.CompletionDate),
@@ -64,7 +64,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 	// Step 3: Check raw file for SAW:COMPLETE marker
 	rawBytes, err := os.ReadFile(opts.ManifestPath)
 	if err != nil {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeManifestInvalid,
 				Message:  fmt.Sprintf("failed to read manifest file: %v", err),
@@ -73,7 +73,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 		})
 	}
 	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
 				Message:  "IMPL is complete (SAW:COMPLETE marker present); cannot amend",
@@ -125,7 +125,7 @@ func amendAddWave(ctx context.Context, opts AmendImplOpts, m *IMPLManifest) resu
 		for i, e := range errs {
 			msgs[i] = e.Message
 		}
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("validation failed after adding wave: %s", strings.Join(msgs, "; ")),
@@ -168,7 +168,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 	}
 
 	if waveIdx == -1 || agentIdx == -1 {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("agent %s not found in wave %d", opts.AgentID, opts.WaveNum),
@@ -179,7 +179,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 
 	// Step 2: Reject if agent has a complete completion report
 	if cr, ok := m.CompletionReports[opts.AgentID]; ok && cr.Status == StatusComplete {
-		return result.NewFailure[AmendImplData]([]result.SAWError{
+		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
 				Message:  fmt.Sprintf("agent %s has a complete completion report; cannot redirect a completed agent", opts.AgentID),
@@ -205,7 +205,7 @@ func amendRedirectAgent(ctx context.Context, opts AmendImplOpts, m *IMPLManifest
 			// Check for commits on the agent's branch since base commit
 			lines, _ := git.LogOneline(repoRoot, wave.BaseCommit+".."+branchName)
 			if len(lines) > 0 {
-				return result.NewFailure[AmendImplData]([]result.SAWError{
+				return result.NewFailure[AmendImplData]([]result.PolywaveError{
 					{
 						Code:     result.CodeAmendBlocked,
 						Message:  fmt.Sprintf("agent %s has commits on branch %s; cannot redirect a committed agent", opts.AgentID, branchName),

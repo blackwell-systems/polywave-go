@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ---------------------------------------------------------------------------
@@ -173,7 +173,7 @@ func TestCriticThresholdMet_EmptyManifest(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCountAgentsFromErrors_Found(t *testing.T) {
-	errs := []result.SAWError{
+	errs := []result.PolywaveError{
 		{Code: "agent-id", Line: 10, Message: "bad agent ID"},
 		{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
 	}
@@ -184,7 +184,7 @@ func TestCountAgentsFromErrors_Found(t *testing.T) {
 }
 
 func TestCountAgentsFromErrors_NotFound(t *testing.T) {
-	errs := []result.SAWError{
+	errs := []result.PolywaveError{
 		{Code: "other", Line: 1, Message: "some other error"},
 	}
 	got := countAgentsFromErrors(errs)

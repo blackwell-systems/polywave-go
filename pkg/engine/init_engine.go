@@ -6,14 +6,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/config"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // InitOpts holds options for RunInit.
 type InitOpts struct {
 	RepoDir string       // absolute path to target directory (required)
-	Force   bool         // overwrite existing saw.config.json
+	Force   bool         // overwrite existing polywave.config.json
 	Logger  *slog.Logger // optional
 }
 
@@ -36,7 +36,7 @@ type detectedProject struct {
 	Detected bool
 }
 
-// RunInit detects project language, generates saw.config.json, runs install
+// RunInit detects project language, generates polywave.config.json, runs install
 // checks, and returns a structured InitResult. The cmd file handles --force
 // validation and printing next-step messages. Calls RunVerifyInstall
 // internally (both defined in pkg/engine/).
@@ -44,7 +44,7 @@ func RunInit(opts InitOpts) result.Result[InitResult] {
 	// 1. Resolve absDir from opts.RepoDir via filepath.Abs
 	absDir, err := filepath.Abs(opts.RepoDir)
 	if err != nil {
-		return result.NewFailure[InitResult]([]result.SAWError{
+		return result.NewFailure[InitResult]([]result.PolywaveError{
 			result.NewFatal("N091_ENGINE_INIT_FAILED",
 				"init: cannot resolve path \""+opts.RepoDir+"\": "+err.Error()).
 				WithCause(err),
@@ -52,13 +52,13 @@ func RunInit(opts InitOpts) result.Result[InitResult] {
 	}
 
 	// 2. Compute configPath
-	configPath := filepath.Join(absDir, "saw.config.json")
+	configPath := filepath.Join(absDir, "polywave.config.json")
 
-	// 3. Check if saw.config.json exists; if so and !opts.Force: return partial with AlreadyExists
+	// 3. Check if polywave.config.json exists; if so and !opts.Force: return partial with AlreadyExists
 	if _, err := os.Stat(configPath); err == nil && !opts.Force {
-		return result.NewPartial(InitResult{AlreadyExists: true}, []result.SAWError{
+		return result.NewPartial(InitResult{AlreadyExists: true}, []result.PolywaveError{
 			result.NewError("N092_ENGINE_ALREADY_INITIALIZED",
-				"saw.config.json already exists at "+absDir+". Use --force to overwrite."),
+				"polywave.config.json already exists at "+absDir+". Use --force to overwrite."),
 		})
 	}
 
@@ -75,14 +75,14 @@ func RunInit(opts InitOpts) result.Result[InitResult] {
 		if len(saveResult.Errors) > 0 {
 			msg += ": " + saveResult.Errors[0].Message
 		}
-		return result.NewFailure[InitResult]([]result.SAWError{
+		return result.NewFailure[InitResult]([]result.PolywaveError{
 			result.NewFatal("N091_ENGINE_INIT_FAILED", msg),
 		})
 	}
 
 	// 7. Add build/test top-level keys; return error on failure
 	if err := addBuildTestKeysInternal(configPath, project); err != nil {
-		return result.NewFailure[InitResult]([]result.SAWError{
+		return result.NewFailure[InitResult]([]result.PolywaveError{
 			result.NewFatal("N091_ENGINE_INIT_FAILED",
 				"init: failed to add build/test keys: "+err.Error()).
 				WithCause(err),
@@ -152,9 +152,9 @@ func detectProjectInternal(repoDir string) detectedProject {
 	}
 }
 
-// generateConfigInternal creates a SAWConfig from a detectedProject.
-func generateConfigInternal(repoDir string, project detectedProject) *config.SAWConfig {
-	return &config.SAWConfig{
+// generateConfigInternal creates a PolywaveConfig from a detectedProject.
+func generateConfigInternal(repoDir string, project detectedProject) *config.PolywaveConfig {
+	return &config.PolywaveConfig{
 		Repos: []config.RepoEntry{
 			{Name: project.Name, Path: repoDir},
 		},

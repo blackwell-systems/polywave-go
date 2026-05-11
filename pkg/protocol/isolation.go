@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // IsolationData reports whether an agent is running in the correct worktree.
@@ -34,7 +34,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	// Get absolute path of repoDir (resolves "." and relative paths)
 	absPath, err := git.Run(repoDir, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return result.NewFailure[*IsolationData]([]result.SAWError{{
+		return result.NewFailure[*IsolationData]([]result.PolywaveError{{
 			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not determine repository path: %v", err),
 			Severity: "fatal",
@@ -54,7 +54,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	// Check current branch
 	out, err := git.Run(repoDir, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
-		return result.NewFailure[*IsolationData]([]result.SAWError{{
+		return result.NewFailure[*IsolationData]([]result.PolywaveError{{
 			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not determine current branch: %v", err),
 			Severity: "fatal",
@@ -72,7 +72,7 @@ func VerifyIsolation(repoDir, expectedBranch string) result.Result[*IsolationDat
 	// Verify this worktree is registered (not running on main by accident)
 	worktrees, err := git.WorktreeList(repoDir)
 	if err != nil {
-		return result.NewFailure[*IsolationData]([]result.SAWError{{
+		return result.NewFailure[*IsolationData]([]result.PolywaveError{{
 			Code:     result.CodeIsolationVerifyFailed,
 			Message:  fmt.Sprintf("could not list worktrees: %v", err),
 			Severity: "fatal",

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // validManifest returns a minimal valid manifest for testing.
@@ -139,8 +139,8 @@ func TestPreLaunchGate_UncommittedScaffolds(t *testing.T) {
 func TestPreLaunchGate_AllAgentsCompleted(t *testing.T) {
 	m := validManifest()
 	m.CompletionReports = map[string]protocol.CompletionReport{
-		"A": {Status: "complete", Commit: "abc1234", Branch: "saw/test-feature/wave1-agent-A"},
-		"B": {Status: "complete", Commit: "def5678", Branch: "saw/test-feature/wave1-agent-B"},
+		"A": {Status: "complete", Commit: "abc1234", Branch: "polywave/test-feature/wave1-agent-A"},
+		"B": {Status: "complete", Commit: "def5678", Branch: "polywave/test-feature/wave1-agent-B"},
 	}
 	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
 
@@ -325,7 +325,7 @@ func TestPreLaunchGate_WorktreeBranch(t *testing.T) {
 	}
 
 	// Create and checkout the expected branch
-	branchName := "saw/test-feature/wave1-agent-A"
+	branchName := "polywave/test-feature/wave1-agent-A"
 	checkout := exec.Command("git", "-C", dir, "checkout", "-b", branchName)
 	if out, err := checkout.CombinedOutput(); err != nil {
 		t.Fatalf("git checkout failed: %v\n%s", err, out)
@@ -426,8 +426,8 @@ func TestPreLaunchGate_ReadyOnlyFalseOnFail(t *testing.T) {
 	// Verify that "warn" status doesn't make Ready=false
 	m := validManifest()
 	m.CompletionReports = map[string]protocol.CompletionReport{
-		"A": {Status: "complete", Commit: "abc1234", Branch: "saw/test-feature/wave1-agent-A"},
-		"B": {Status: "complete", Commit: "def5678", Branch: "saw/test-feature/wave1-agent-B"},
+		"A": {Status: "complete", Commit: "abc1234", Branch: "polywave/test-feature/wave1-agent-A"},
+		"B": {Status: "complete", Commit: "def5678", Branch: "polywave/test-feature/wave1-agent-B"},
 	}
 	res := PreLaunchGate(m, 1, "A", "/tmp/repo", "")
 

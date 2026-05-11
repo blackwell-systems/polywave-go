@@ -158,7 +158,7 @@ func TestVerifyBuild_CrossRepoGateRouting(t *testing.T) {
 	os.WriteFile(filepath.Join(targetRepo, "sentinel.txt"), []byte("here"), 0644)
 
 	configJSON := `{"repos":[{"name":"target-repo","path":"` + targetRepo + `"}]}`
-	os.WriteFile(filepath.Join(tmpDir, "saw.config.json"), []byte(configJSON), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "polywave.config.json"), []byte(configJSON), 0644)
 	manifestPath := filepath.Join(tmpDir, "IMPL.yaml")
 
 	manifestContent := `

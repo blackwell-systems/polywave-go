@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // CargoLockParser implements LockFileParser for Rust Cargo.lock files
@@ -21,7 +21,7 @@ type CargoLockParser struct{}
 func (p *CargoLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{
 			result.NewFatal(result.CodeDepLockFileOpen, "failed to open Cargo.lock: "+err.Error()),
 		})
 	}
@@ -64,7 +64,7 @@ func (p *CargoLockParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{
 			result.NewError(result.CodeDepLockFileParse, "error reading Cargo.lock: "+err.Error()),
 		})
 	}

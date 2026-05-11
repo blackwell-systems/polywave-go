@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RegisterData holds the result of a successful tool registration.
@@ -37,7 +37,7 @@ func (w *DefaultWorkshop) Register(tool Tool) result.Result[RegisterData] {
 	defer w.mu.Unlock()
 
 	if _, exists := w.tools[tool.Name]; exists {
-		return result.NewFailure[RegisterData]([]result.SAWError{
+		return result.NewFailure[RegisterData]([]result.PolywaveError{
 			{
 				Code:     result.CodeToolAlreadyRegistered,
 				Message:  fmt.Sprintf("tool %q already registered", tool.Name),

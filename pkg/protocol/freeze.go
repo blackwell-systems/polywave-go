@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FreezeViolation represents a detected modification to frozen sections of the manifest.
@@ -28,7 +28,7 @@ type FreezeData struct {
 // future modifications.
 func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) result.Result[FreezeData] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[FreezeData]([]result.SAWError{
+		return result.NewFailure[FreezeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextCancelled, err.Error()),
 		})
 	}
@@ -37,7 +37,7 @@ func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) resul
 	// Compute and store hash of interface contracts
 	contractsHash, err := computeHash(m.InterfaceContracts)
 	if err != nil {
-		return result.NewFailure[FreezeData]([]result.SAWError{
+		return result.NewFailure[FreezeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFreezeError, fmt.Sprintf("failed to compute contracts hash: %v", err)),
 		})
 	}
@@ -46,7 +46,7 @@ func SetFreezeTimestamp(ctx context.Context, m *IMPLManifest, t time.Time) resul
 	// Compute and store hash of scaffolds
 	scaffoldsHash, err := computeHash(m.Scaffolds)
 	if err != nil {
-		return result.NewFailure[FreezeData]([]result.SAWError{
+		return result.NewFailure[FreezeData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFreezeError, fmt.Sprintf("failed to compute scaffolds hash: %v", err)),
 		})
 	}

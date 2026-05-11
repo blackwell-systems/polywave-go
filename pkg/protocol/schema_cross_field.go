@@ -3,7 +3,7 @@ package protocol
 import (
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // validateCrossFieldConsistency checks relationships between fields that
@@ -16,8 +16,8 @@ import (
 //  3. Agent.Files entries must appear in FileOwnership with matching agent+wave
 //  4. NOT_SUITABLE verdict: waves/file_ownership/interface_contracts should be empty
 //  5. Completion report agent IDs must match Wave agent IDs
-func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
-	var errs []result.SAWError
+func validateCrossFieldConsistency(m *IMPLManifest) []result.PolywaveError {
+	var errs []result.PolywaveError
 
 	// Build lookup structures from waves.
 	waveNumbers := make(map[int]bool)
@@ -39,7 +39,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 		}
 
 		if _, ok := agentToWave[fo.Agent]; !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("file_ownership[%d]: agent %q does not appear in any wave's agents list", i, fo.Agent),
@@ -49,7 +49,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 		}
 
 		if fo.Wave > 0 && !waveNumbers[fo.Wave] {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("file_ownership[%d]: wave %d does not match any existing wave number", i, fo.Wave),
@@ -76,7 +76,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 			for _, f := range a.Files {
 				key := ownerKey{file: f, agent: a.ID, wave: w.Number}
 				if !ownerSet[key] {
-					errs = append(errs, result.SAWError{
+					errs = append(errs, result.PolywaveError{
 						Code:     result.CodeCrossField,
 						Severity: "error",
 						Message:  fmt.Sprintf("agent %s (wave %d) lists file %q but no matching file_ownership entry exists for agent=%s wave=%d", a.ID, w.Number, f, a.ID, w.Number),
@@ -91,7 +91,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 	// Check 4: NOT_SUITABLE verdict consistency (warnings, not errors).
 	if m.Verdict == "NOT_SUITABLE" {
 		if len(m.Waves) > 0 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("verdict is NOT_SUITABLE but %d wave(s) are defined — expected empty waves", len(m.Waves)),
@@ -99,7 +99,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if len(m.FileOwnership) > 0 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("verdict is NOT_SUITABLE but %d file_ownership entries exist — expected empty", len(m.FileOwnership)),
@@ -107,7 +107,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 			})
 		}
 		if len(m.InterfaceContracts) > 0 {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("verdict is NOT_SUITABLE but %d interface_contracts exist — expected empty", len(m.InterfaceContracts)),
@@ -119,7 +119,7 @@ func validateCrossFieldConsistency(m *IMPLManifest) []result.SAWError {
 	// Check 5: Completion report agent validity.
 	for agentID := range m.CompletionReports {
 		if _, ok := agentToWave[agentID]; !ok {
-			errs = append(errs, result.SAWError{
+			errs = append(errs, result.PolywaveError{
 				Code:     result.CodeCrossField,
 				Severity: "error",
 				Message:  fmt.Sprintf("completion_reports[%s]: agent %q does not appear in any wave's agents list", agentID, agentID),

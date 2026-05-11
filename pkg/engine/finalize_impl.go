@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FinalizeIMPLEngineOpts configures the FinalizeIMPLEngine call.
@@ -33,12 +33,12 @@ type FinalizeIMPLEngineOpts struct {
 func FinalizeIMPLEngine(ctx context.Context, opts FinalizeIMPLEngineOpts) result.Result[protocol.FinalizeIMPLData] {
 	// Validate required parameters
 	if opts.IMPLPath == "" {
-		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeIMPLEngine: implPath is required"),
 		})
 	}
 	if opts.RepoRoot == "" {
-		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeIMPLEngine: repoRoot is required"),
 		})
 	}
@@ -46,7 +46,7 @@ func FinalizeIMPLEngine(ctx context.Context, opts FinalizeIMPLEngineOpts) result
 	// Check context cancellation before starting
 	select {
 	case <-ctx.Done():
-		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextCancelled, fmt.Sprintf("engine.FinalizeIMPLEngine: context cancelled: %v", ctx.Err())),
 		})
 	default:
@@ -62,7 +62,7 @@ func FinalizeIMPLEngine(ctx context.Context, opts FinalizeIMPLEngineOpts) result
 	// Wait for either completion or context cancellation
 	select {
 	case <-ctx.Done():
-		return result.NewFailure[protocol.FinalizeIMPLData]([]result.SAWError{
+		return result.NewFailure[protocol.FinalizeIMPLData]([]result.PolywaveError{
 			result.NewFatal(result.CodeContextCancelled, fmt.Sprintf("engine.FinalizeIMPLEngine: context cancelled during execution: %v", ctx.Err())),
 		})
 	case r := <-resultCh:

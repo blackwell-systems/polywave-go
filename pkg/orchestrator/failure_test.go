@@ -3,7 +3,7 @@ package orchestrator
 import (
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // TestRouteFailureAllTypes verifies that all five known failure types route

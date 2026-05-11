@@ -7,8 +7,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FreezeContracts identifies and freezes program contracts at a tier boundary.
@@ -41,7 +41,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 	}
 
 	if tier == nil {
-		return result.NewFailure[*FreezeContractsData]([]result.SAWError{{
+		return result.NewFailure[*FreezeContractsData]([]result.PolywaveError{{
 			Code: result.CodeFreezeError, Message: fmt.Sprintf("tier %d not found in manifest", tierNumber), Severity: "fatal",
 		}})
 	}
@@ -116,7 +116,7 @@ func FreezeContracts(manifest *PROGRAMManifest, tierNumber int, repoPath string)
 	data.Success = len(data.Errors) == 0
 
 	if !data.Success {
-		return result.NewPartial(data, []result.SAWError{{
+		return result.NewPartial(data, []result.PolywaveError{{
 			Code: result.CodeFreezeError, Message: fmt.Sprintf("%d freeze error(s)", len(data.Errors)), Severity: "error",
 		}})
 	}

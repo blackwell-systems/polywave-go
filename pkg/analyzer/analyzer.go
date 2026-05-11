@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Analyzer parses Go source files and extracts import dependencies.
@@ -28,13 +28,13 @@ func New() *Analyzer {
 // Respects context cancellation before performing I/O.
 func (a *Analyzer) ParseFile(ctx context.Context, path string) result.Result[*ast.File] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[*ast.File]([]result.SAWError{
+		return result.NewFailure[*ast.File]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
 		})
 	}
 	file, err := parser.ParseFile(a.fset, path, nil, parser.ImportsOnly)
 	if err != nil {
-		return result.NewFailure[*ast.File]([]result.SAWError{
+		return result.NewFailure[*ast.File]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeParseFailed, fmt.Sprintf("failed to parse %s: %s", path, err.Error())),
 		})
 	}
@@ -47,7 +47,7 @@ func (a *Analyzer) ParseFile(ctx context.Context, path string) result.Result[*as
 // Respects context cancellation before performing I/O.
 func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot string) result.Result[[]string] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[[]string]([]result.SAWError{
+		return result.NewFailure[[]string]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeParseFailed, err.Error()),
 		})
 	}
@@ -55,7 +55,7 @@ func (a *Analyzer) ExtractImports(ctx context.Context, file *ast.File, repoRoot 
 	// Get module path from go.mod
 	modulePath, err := getModulePath(ctx, repoRoot)
 	if err != nil {
-		return result.NewFailure[[]string]([]result.SAWError{
+		return result.NewFailure[[]string]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeGomodReadFailed, fmt.Sprintf("failed to get module path: %s", err.Error())),
 		})
 	}
@@ -96,12 +96,12 @@ func IsStdlib(importPath string) bool {
 }
 
 // ResolveImportPath converts a local import path to an absolute file path.
-// Example: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-// -> "/Users/.../scout-and-wave-go/pkg/protocol" (directory, not file — caller scans .go files)
+// Example: "github.com/blackwell-systems/polywave-go/pkg/protocol"
+// -> "/Users/.../polywave-go/pkg/protocol" (directory, not file — caller scans .go files)
 func ResolveImportPath(ctx context.Context, importPath, repoRoot, modulePath string) result.Result[string] {
 	// Strip the module prefix
 	if !strings.HasPrefix(importPath, modulePath) {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
 				fmt.Sprintf("import path %q does not start with module path %q", importPath, modulePath)),
 		})
@@ -116,14 +116,14 @@ func ResolveImportPath(ctx context.Context, importPath, repoRoot, modulePath str
 	// Verify directory exists
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
 				fmt.Sprintf("import path resolves to non-existent directory: %s", err.Error())),
 		})
 	}
 
 	if !info.IsDir() {
-		return result.NewFailure[string]([]result.SAWError{
+		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeAnalyzeImportResolveFailed,
 				fmt.Sprintf("import path resolves to file, not directory: %s", absPath)),
 		})

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // resolveSiblingCaseInsensitive looks for a directory in parentDir whose name
@@ -119,7 +119,7 @@ func ResolveTargetRepos(manifest *IMPLManifest, fallbackRepoPath string, configR
 func ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRepos []RepoEntry) result.Result[ValidateRepoData] {
 	repos, err := ResolveTargetRepos(manifest, worktreeRepoPath, configRepos)
 	if err != nil {
-		return result.NewFailure[ValidateRepoData]([]result.SAWError{
+		return result.NewFailure[ValidateRepoData]([]result.PolywaveError{
 			result.NewFatal("REPO_MISMATCH", err.Error()),
 		})
 	}
@@ -169,10 +169,10 @@ func ValidateRepoMatch(manifest *IMPLManifest, worktreeRepoPath string, configRe
 			Valid:      false,
 			Mismatches: mismatches,
 		}
-		var sawErrs []result.SAWError
+		var sawErrs []result.PolywaveError
 		for _, m := range mismatches {
 			sawErrs = append(sawErrs, result.NewFatal("REPO_MISMATCH",
-				m+" - aborting. Set repo: field in file_ownership or configure repos in saw.config.json"))
+				m+" - aborting. Set repo: field in file_ownership or configure repos in polywave.config.json"))
 		}
 		return result.NewPartial(data, sawErrs)
 	}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // makeState returns a minimal State suitable for most tests.
@@ -222,7 +222,7 @@ func TestPipeline_ContextCancellation(t *testing.T) {
 func TestPipeline_ConditionOnSuccess(t *testing.T) {
 	ran := false
 	state := makeState()
-	state.Errors = []result.SAWError{result.NewWarning("PRIOR_ERROR", "prior error")}
+	state.Errors = []result.PolywaveError{result.NewWarning("PRIOR_ERROR", "prior error")}
 
 	p := New("cond-success")
 	p.AddStep(Step{
@@ -270,7 +270,7 @@ func TestPipeline_ConditionOnFailure(t *testing.T) {
 
 	// Pipeline with prior errors: on_failure step should run.
 	dirtyState := makeState()
-	dirtyState.Errors = []result.SAWError{result.NewWarning("PRIOR_ERROR", "something failed")}
+	dirtyState.Errors = []result.PolywaveError{result.NewWarning("PRIOR_ERROR", "something failed")}
 
 	p2 := New("cond-failure-dirty")
 	p2.AddStep(Step{

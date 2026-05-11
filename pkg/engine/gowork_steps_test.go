@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 // TestStepGoWorkSetup_SkipsNonGoRepo verifies that the step skips when go.mod is absent.
@@ -97,7 +97,7 @@ func TestStepGoWorkSetup_BacksUpExistingGoWork(t *testing.T) {
 	StepGoWorkSetup(context.Background(), repoRoot, 1, nil, onEvent, nil)
 
 	// Verify backup was created with original content
-	backupPath := filepath.Join(protocol.SAWStateDir(repoRoot), "wave1", "go.work.backup")
+	backupPath := filepath.Join(protocol.PolywaveStateDir(repoRoot), "wave1", "go.work.backup")
 	content, err := os.ReadFile(backupPath)
 	if err != nil {
 		t.Fatalf("expected backup file to exist at %s: %v", backupPath, err)
@@ -112,7 +112,7 @@ func TestStepGoWorkRestore_RestoresFromBackup(t *testing.T) {
 	repoRoot := t.TempDir()
 
 	// Create the backup directory and backup file
-	backupDir := filepath.Join(protocol.SAWStateDir(repoRoot), "wave1")
+	backupDir := filepath.Join(protocol.PolywaveStateDir(repoRoot), "wave1")
 	if err := os.MkdirAll(backupDir, 0755); err != nil {
 		t.Fatalf("failed to create backup dir: %v", err)
 	}

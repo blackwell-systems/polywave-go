@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // GenerateProgramOpts configures automatic PROGRAM generation.
@@ -26,7 +26,7 @@ type GenerateProgramData struct {
 	WaveConflictReport *WaveConflictReport `json:"wave_conflict_report,omitempty"`
 	TierAssignments    map[string]int     `json:"tier_assignments"`
 	Manifest           *PROGRAMManifest   `json:"manifest"`
-	ValidationErrors   []result.SAWError  `json:"validation_errors,omitempty"`
+	ValidationErrors   []result.PolywaveError  `json:"validation_errors,omitempty"`
 }
 
 // GenerateProgramFromIMPLs creates a PROGRAM manifest from existing IMPL docs.
@@ -34,14 +34,14 @@ type GenerateProgramData struct {
 // assignment, and writes a complete PROGRAMManifest YAML file to disk.
 func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GenerateProgramData] {
 	if len(opts.ImplRefs) == 0 {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+		return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeRequiredFieldsMissing,
 			Message:  "generate-program: at least one IMPL slug is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+		return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeInvalidSlugFormat,
 			Message:  "generate-program: RepoPath is required",
 			Severity: "fatal",
@@ -53,7 +53,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	// not raw refs. This ensures compatibility with both slug and path refs.
 	waveConflictReport, err := CheckIMPLConflictsWaveLevel(opts.ImplRefs, opts.RepoPath)
 	if err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+		return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeManifestInvalid,
 			Message:  fmt.Sprintf("generate-program: conflict check failed: %v", err),
 			Severity: "fatal",
@@ -70,7 +70,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	for _, ref := range opts.ImplRefs {
 		implPath, resolveErr := resolveIMPLPathOrAbs(opts.RepoPath, ref)
 		if resolveErr != nil {
-			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+			return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 				Code:     result.CodeInvalidAgentID,
 				Message:  fmt.Sprintf("generate-program: %v", resolveErr),
 				Severity: "fatal",
@@ -79,7 +79,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 
 		implDoc, loadErr := Load(context.TODO(), implPath)
 		if loadErr != nil {
-			return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+			return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 				Code:     result.CodeDisjointOwnership,
 				Message:  fmt.Sprintf("generate-program: failed to load IMPL %q: %v", ref, loadErr),
 				Severity: "fatal",
@@ -247,7 +247,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	outputPath := filepath.Join(opts.RepoPath, "docs", "PROGRAM", fmt.Sprintf("PROGRAM-%s.yaml", manifest.ProgramSlug))
 
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0755); err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+		return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeDependencyCycle,
 			Message:  fmt.Sprintf("generate-program: failed to create output directory: %v", err),
 			Severity: "fatal",
@@ -255,7 +255,7 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	if err := SaveYAML(outputPath, manifest); err != nil {
-		return result.NewFailure[GenerateProgramData]([]result.SAWError{{
+		return result.NewFailure[GenerateProgramData]([]result.PolywaveError{{
 			Code:     result.CodeOrphanFile,
 			Message:  fmt.Sprintf("generate-program: failed to write manifest: %v", err),
 			Severity: "fatal",
@@ -275,9 +275,9 @@ func GenerateProgramFromIMPLs(opts GenerateProgramOpts) result.Result[GeneratePr
 	}
 
 	if len(validationErrors) > 0 {
-		var warnings []result.SAWError
+		var warnings []result.PolywaveError
 		for _, ve := range validationErrors {
-			warnings = append(warnings, result.SAWError{
+			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeOrphanFile,
 				Message:  ve.Message,
 				Severity: "warning",

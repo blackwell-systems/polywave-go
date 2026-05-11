@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // RunChat executes a chat agent with proper conversation history.
@@ -17,34 +17,34 @@ import (
 // ChatModel in opts selects the model; empty string uses the backend default.
 func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result.Result[ChatData] {
 	if opts.Message == "" {
-		return result.NewFailure[ChatData]([]result.SAWError{
+		return result.NewFailure[ChatData]([]result.PolywaveError{
 			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: Message is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[ChatData]([]result.SAWError{
+		return result.NewFailure[ChatData]([]result.PolywaveError{
 			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: RepoPath is required"),
 		})
 	}
 	if opts.IMPLPath == "" {
-		return result.NewFailure[ChatData]([]result.SAWError{
+		return result.NewFailure[ChatData]([]result.PolywaveError{
 			result.NewFatal(result.CodeChatInvalidOpts, "engine.RunChat: IMPLPath is required"),
 		})
 	}
 
 	// Resolve SAW repo path.
-	sawRepo := opts.SAWRepoPath
+	sawRepo := opts.PolywaveRepoPath
 	if sawRepo == "" {
-		sawRepo = os.Getenv("SAW_REPO")
+		sawRepo = os.Getenv("POLYWAVE_REPO")
 	}
 	if sawRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return result.NewFailure[ChatData]([]result.SAWError{
+			return result.NewFailure[ChatData]([]result.PolywaveError{
 				result.NewFatal(result.CodeChatFailed, "engine.RunChat: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "scout-and-wave")
+		sawRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Build system prompt with IMPL doc context and instructions.
@@ -98,11 +98,11 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 	response, err := b.RunStreaming(ctx, systemPrompt, "Begin now.", opts.RepoPath, onChunk)
 	if err != nil {
 		if ctx.Err() != nil {
-			return result.NewFailure[ChatData]([]result.SAWError{
+			return result.NewFailure[ChatData]([]result.PolywaveError{
 				{Code: result.CodeContextCancelled, Message: "engine.RunChat: context cancelled", Severity: "fatal", Cause: err},
 			})
 		}
-		return result.NewFailure[ChatData]([]result.SAWError{
+		return result.NewFailure[ChatData]([]result.PolywaveError{
 			result.NewFatal(result.CodeChatFailed, "engine.RunChat: backend execution failed").WithCause(err),
 		})
 	}

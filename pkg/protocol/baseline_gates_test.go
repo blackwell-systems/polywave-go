@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
 )
 
 // makeTempGitRepo creates a temporary directory with a git repo and an initial

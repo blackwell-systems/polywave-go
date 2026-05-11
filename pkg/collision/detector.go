@@ -11,9 +11,9 @@ import (
 	"sort"
 	"strings"
 
-	igit "github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	igit "github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // DetectCollisions scans all agent branches for the given wave, extracts new type
@@ -32,21 +32,21 @@ import (
 // Returns CollisionReport with Valid=false if any collisions detected.
 func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, repoPath string) result.Result[CollisionReport] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[CollisionReport]([]result.SAWError{
+		return result.NewFailure[CollisionReport]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
 		})
 	}
 	// Load IMPL manifest
 	manifest, err := protocol.Load(ctx, manifestPath)
 	if err != nil {
-		return result.NewFailure[CollisionReport]([]result.SAWError{
+		return result.NewFailure[CollisionReport]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionLoadManifestFailed, fmt.Sprintf("load manifest: %s", err.Error())).WithCause(err),
 		})
 	}
 
 	// Find target wave
 	if waveNum < 1 || waveNum > len(manifest.Waves) {
-		return result.NewFailure[CollisionReport]([]result.SAWError{
+		return result.NewFailure[CollisionReport]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionInvalidWave, fmt.Sprintf("invalid wave number %d (manifest has %d waves)", waveNum, len(manifest.Waves))),
 		})
 	}
@@ -61,7 +61,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 	// Scan each agent's branch for type declarations
 	for _, agent := range wave.Agents {
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[CollisionReport]([]result.SAWError{
+			return result.NewFailure[CollisionReport]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
 			})
 		}
@@ -82,7 +82,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		// Get changed .go files in this branch
 		changedFilesResult := getChangedGoFiles(ctx, repoPath, branchName)
 		if changedFilesResult.IsFatal() {
-			return result.NewFailure[CollisionReport]([]result.SAWError{
+			return result.NewFailure[CollisionReport]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionGetFilesFailed, fmt.Sprintf("get changed files for agent %s: %s", agent.ID, changedFilesResult.Errors[0].Message)).WithCause(changedFilesResult.Errors[0]),
 			})
 		}
@@ -91,7 +91,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 		// Extract type declarations from changed files
 		typesResult := extractTypesFromFiles(ctx, repoPath, branchName, changedFiles)
 		if typesResult.IsFatal() {
-			return result.NewFailure[CollisionReport]([]result.SAWError{
+			return result.NewFailure[CollisionReport]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionExtractTypesFailed, fmt.Sprintf("extract types for agent %s: %s", agent.ID, typesResult.Errors[0].Message)).WithCause(typesResult.Errors[0]),
 			})
 		}
@@ -121,7 +121,7 @@ func DetectCollisions(ctx context.Context, manifestPath string, waveNum int, rep
 // Returns slug-scoped format if slug is non-empty, otherwise legacy format.
 func buildBranchName(slug string, waveNum int, agentID string) string {
 	if slug != "" {
-		return fmt.Sprintf("saw/%s/wave%d-agent-%s", slug, waveNum, agentID)
+		return fmt.Sprintf("polywave/%s/wave%d-agent-%s", slug, waveNum, agentID)
 	}
 	return fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 }
@@ -132,7 +132,7 @@ func buildBranchName(slug string, waveNum int, agentID string) string {
 // main, develop, or a feature branch.
 func getChangedGoFiles(ctx context.Context, repoPath, branchName string) result.Result[[]string] {
 	if err := ctx.Err(); err != nil {
-		return result.NewFailure[[]string]([]result.SAWError{
+		return result.NewFailure[[]string]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
 		})
 	}
@@ -149,7 +149,7 @@ func getChangedGoFiles(ctx context.Context, repoPath, branchName string) result.
 	}
 	out, err := igit.Run(repoPath, "diff", diffBase+".."+branchName, "--name-only", "--", "*.go")
 	if err != nil {
-		return result.NewFailure[[]string]([]result.SAWError{
+		return result.NewFailure[[]string]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionGitDiffFailed, fmt.Sprintf("git diff: %s", err.Error())).WithCause(err),
 		})
 	}
@@ -178,7 +178,7 @@ func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, fil
 
 	for _, file := range files {
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+			return result.NewFailure[[]TypeDeclaration]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionContextCancelled, err.Error()).WithCause(err),
 			})
 		}
@@ -189,7 +189,7 @@ func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, fil
 			if strings.Contains(err.Error(), "exists on disk, but not in") {
 				continue
 			}
-			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+			return result.NewFailure[[]TypeDeclaration]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionGitShowFailed, fmt.Sprintf("git show failed for %s on branch %s: %s", file, branchName, err.Error())).WithCause(err),
 			})
 		}
@@ -197,7 +197,7 @@ func extractTypesFromFiles(ctx context.Context, repoPath, branchName string, fil
 		// Parse AST
 		typesResult := extractTypeDecls(file, content)
 		if typesResult.IsFatal() {
-			return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+			return result.NewFailure[[]TypeDeclaration]([]result.PolywaveError{
 				result.NewFatal(result.CodeCollisionParseFailed, fmt.Sprintf("parse %s: %s", file, typesResult.Errors[0].Message)).WithCause(typesResult.Errors[0]),
 			})
 		}
@@ -215,7 +215,7 @@ func extractTypeDecls(filePath, content string) result.Result[[]TypeDeclaration]
 	fset := token.NewFileSet()
 	node, err := parser.ParseFile(fset, filePath, content, parser.ParseComments)
 	if err != nil {
-		return result.NewFailure[[]TypeDeclaration]([]result.SAWError{
+		return result.NewFailure[[]TypeDeclaration]([]result.PolywaveError{
 			result.NewFatal(result.CodeCollisionParseFailed, fmt.Sprintf("parse file %s: %s", filePath, err.Error())).WithCause(err),
 		})
 	}

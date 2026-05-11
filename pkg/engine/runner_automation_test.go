@@ -48,7 +48,7 @@ func Bar() string {
 		Feature:       "Add new feature to foo package",
 		RepoPath:      tmpDir,
 		IMPLOutPath:   implPath,
-		SAWRepoPath:   "", // Will use fallback
+		PolywaveRepoPath:   "", // Will use fallback
 		ScoutModel:    "claude-3-5-sonnet-20241022",
 		UseStructuredOutput: false,
 	}

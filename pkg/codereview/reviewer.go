@@ -10,7 +10,7 @@ import (
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 const (
@@ -57,7 +57,7 @@ func ReviewDiff(ctx context.Context, diff string, opts ReviewOpts) result.Result
 
 	apiKey := os.Getenv("ANTHROPIC_API_KEY")
 	if apiKey == "" {
-		return result.NewFailure[ReviewResult]([]result.SAWError{
+		return result.NewFailure[ReviewResult]([]result.PolywaveError{
 			result.NewFatal("CODEREVIEW_ERROR", "ANTHROPIC_API_KEY not set; code review requires API access"),
 		})
 	}
@@ -114,7 +114,7 @@ Do not include any text outside the JSON object.`, dimList)
 
 	resp, err := client.Messages.New(ctx, params)
 	if err != nil {
-		return result.NewFailure[ReviewResult]([]result.SAWError{
+		return result.NewFailure[ReviewResult]([]result.PolywaveError{
 			result.NewFatal("CODEREVIEW_API_ERROR",
 				fmt.Sprintf("anthropic API error (model=%s, diffBytes=%d): %s", opts.Model, len(diff), err.Error())).WithCause(err),
 		})
@@ -132,14 +132,14 @@ Do not include any text outside the JSON object.`, dimList)
 	var parsed reviewResponse
 	rawText := strings.TrimSpace(responseText.String())
 	if err := json.Unmarshal([]byte(rawText), &parsed); err != nil {
-		return result.NewFailure[ReviewResult]([]result.SAWError{
+		return result.NewFailure[ReviewResult]([]result.PolywaveError{
 			result.NewFatal("CODEREVIEW_ERROR",
 				fmt.Sprintf("failed to parse review response as JSON: %v\nraw response: %s", err, rawText)).WithCause(err),
 		})
 	}
 
 	if err := validateReviewResponse(parsed); err != nil {
-		return result.NewFailure[ReviewResult]([]result.SAWError{
+		return result.NewFailure[ReviewResult]([]result.PolywaveError{
 			result.NewFatal("CODEREVIEW_INVALID_RESPONSE", err.Error()),
 		})
 	}
@@ -175,7 +175,7 @@ func RunCodeReview(ctx context.Context, repoPath string, cfg CodeReviewConfig) r
 		var fallbackErr error
 		diffOut, fallbackErr = showCmd.Output()
 		if fallbackErr != nil {
-			return result.NewFailure[ReviewResult]([]result.SAWError{
+			return result.NewFailure[ReviewResult]([]result.PolywaveError{
 				result.NewFatal("CODEREVIEW_GIT_FAILED",
 					fmt.Sprintf("failed to get diff for code review: %v (fallback error: %v)", firstErr, fallbackErr)),
 			})

@@ -11,14 +11,14 @@ import (
 
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/builddiag"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/collision"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine/workspace"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/builddiag"
+	"github.com/blackwell-systems/polywave-go/pkg/collision"
+	"github.com/blackwell-systems/polywave-go/pkg/engine/workspace"
+	"github.com/blackwell-systems/polywave-go/pkg/gatecache"
+	"github.com/blackwell-systems/polywave-go/pkg/observability"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // FinalizeWaveOpts configures a full post-agent finalization pipeline.
@@ -59,7 +59,7 @@ type FinalizeWaveOpts struct {
 	SkipMerge bool
 
 	// CommitState: When true, commit uncommitted SAW-owned files (IMPL docs,
-	// .saw-state/) before merge-agents. Prevents dirty working directory from
+	// .polywave-state/) before merge-agents. Prevents dirty working directory from
 	// blocking git merge. Non-fatal — if commit fails, a warning is emitted
 	// but finalize continues.
 	CommitState bool
@@ -223,19 +223,19 @@ func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo
 // Stops on first fatal failure and returns partial result.
 func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[FinalizeWaveResult] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeWave: IMPLPath is required"),
 		})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, "engine.FinalizeWave: RepoPath is required"),
 		})
 	}
 
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed,
 				fmt.Sprintf("engine.FinalizeWave: load manifest: %v", err)),
 		})
@@ -267,7 +267,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 	// callers must check IsFatal() and abort; returning PARTIAL with a fatal
 	// error would cause callers that only check IsFatal() to miss the failure.
 	fatalf := func(msg string, args ...interface{}) result.Result[FinalizeWaveResult] {
-		return result.NewFailure[FinalizeWaveResult]([]result.SAWError{
+		return result.NewFailure[FinalizeWaveResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeFinalizeWaveFailed, fmt.Sprintf(msg, args...)),
 		})
 	}
@@ -423,7 +423,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 
 			// Step 3: RunPreMergeGates (E21) — per repo, with C2 closed-loop retry
 			for repoKey, repoPath := range repos {
-				stateDir := protocol.SAWStateDir(repoPath)
+				stateDir := protocol.PolywaveStateDir(repoPath)
 				cache := gatecache.New(ctx, stateDir, gatecache.DefaultTTL)
 				gateRes := protocol.RunPreMergeGates(ctx, manifest, opts.WaveNum, repoPath, opts.IMPLPath, cache, opts.Logger)
 				if !gateRes.IsSuccess() {
@@ -676,7 +676,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 			if repoKey == "." {
 				continue
 			}
-			cache := gatecache.New(ctx, protocol.SAWStateDir(repoPath), gatecache.DefaultTTL)
+			cache := gatecache.New(ctx, protocol.PolywaveStateDir(repoPath), gatecache.DefaultTTL)
 			baselineRes := protocol.RunBaselineGates(ctx, manifest, opts.WaveNum, repoPath, cache)
 			if baselineRes.IsSuccess() {
 				data := baselineRes.GetData()
@@ -720,7 +720,7 @@ type MarkIMPLCompleteOpts struct {
 // and archives the IMPL doc to docs/IMPL/complete/.
 func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Result[MarkCompleteData] {
 	if opts.IMPLPath == "" {
-		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+		return result.NewFailure[MarkCompleteData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMarkCompleteInvalidOpts, "engine.MarkIMPLComplete: IMPLPath is required"),
 		})
 	}
@@ -732,7 +732,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 
 	// E15: Write completion marker
 	if err := protocol.WriteCompletionMarker(opts.IMPLPath, date); err != nil {
-		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+		return result.NewFailure[MarkCompleteData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: write marker failed").WithCause(err),
 		})
 	}
@@ -748,7 +748,7 @@ func MarkIMPLComplete(ctx context.Context, opts MarkIMPLCompleteOpts) result.Res
 
 	// Archive: move IMPL from docs/IMPL/ to docs/IMPL/complete/
 	if archRes := protocol.ArchiveIMPL(ctx, opts.IMPLPath); archRes.IsFatal() {
-		return result.NewFailure[MarkCompleteData]([]result.SAWError{
+		return result.NewFailure[MarkCompleteData]([]result.PolywaveError{
 			result.NewFatal(result.CodeMarkCompleteFailed, "engine.MarkIMPLComplete: archive failed"),
 		})
 	}
@@ -797,10 +797,10 @@ func containsAny(s string, substrs ...string) bool {
 }
 
 // writeBranchRefs records each agent's current branch tip SHA to
-// .saw-state/wave{N}/branch-refs.json before any finalize step executes.
+// .polywave-state/wave{N}/branch-refs.json before any finalize step executes.
 // On mid-run failure, the file enables recovery:
 //
-//	cat .saw-state/wave1/branch-refs.json  # {"A":"<sha>","B":"<sha>"}
+//	cat .polywave-state/wave1/branch-refs.json  # {"A":"<sha>","B":"<sha>"}
 //	git branch saw/<slug>/wave1-agent-A <sha>
 //	sawtools finalize-wave ...
 //
@@ -828,7 +828,7 @@ func writeBranchRefs(manifest *protocol.IMPLManifest, waveNum int, repoPath stri
 	if err != nil {
 		return
 	}
-	stateDir := protocol.SAWStateDir(repoPath)
+	stateDir := protocol.PolywaveStateDir(repoPath)
 	waveDir := filepath.Join(stateDir, fmt.Sprintf("wave%d", waveNum))
 	_ = os.MkdirAll(waveDir, 0o755)
 	_ = os.WriteFile(filepath.Join(waveDir, "branch-refs.json"), data, 0o644)

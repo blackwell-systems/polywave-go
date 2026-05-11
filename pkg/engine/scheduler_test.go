@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
 func TestPrioritizeAgents_LinearDependencies(t *testing.T) {
@@ -239,8 +239,8 @@ func TestPrioritizeAgents_WaveNotFound(t *testing.T) {
 
 func TestPrioritizeAgents_Disabled(t *testing.T) {
 	// Set environment variable to disable prioritization
-	os.Setenv("SAW_NO_PRIORITIZE", "1")
-	defer os.Unsetenv("SAW_NO_PRIORITIZE")
+	os.Setenv("POLYWAVE_NO_PRIORITIZE", "1")
+	defer os.Unsetenv("POLYWAVE_NO_PRIORITIZE")
 
 	// A → B → C (linear chain)
 	// Without prioritization, should return declaration order: C, B, A

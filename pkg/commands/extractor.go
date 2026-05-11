@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"sort"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // Extractor orchestrates priority-based command resolution across CI parsers
@@ -57,7 +57,7 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) result.Result[
 	// Collect results from CI parsers
 	for _, parser := range e.ciParsers {
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[ExtractData]([]result.SAWError{
+			return result.NewFailure[ExtractData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommandExtractCancelled, fmt.Sprintf("extraction cancelled: %v", err)),
 			})
 		}
@@ -78,7 +78,7 @@ func (e *Extractor) Extract(ctx context.Context, repoRoot string) result.Result[
 	// Collect results from build system parsers
 	for _, parser := range e.buildSystemParsers {
 		if err := ctx.Err(); err != nil {
-			return result.NewFailure[ExtractData]([]result.SAWError{
+			return result.NewFailure[ExtractData]([]result.PolywaveError{
 				result.NewFatal(result.CodeCommandExtractCancelled, fmt.Sprintf("extraction cancelled: %v", err)),
 			})
 		}

@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // GoSumParser implements LockFileParser for go.sum files
@@ -15,7 +15,7 @@ type GoSumParser struct{}
 func (p *GoSumParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open go.sum: "+err.Error())})
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{result.NewFatal(result.CodeDepLockFileOpen, "failed to open go.sum: "+err.Error())})
 	}
 	defer file.Close()
 
@@ -63,7 +63,7 @@ func (p *GoSumParser) Parse(filePath string) result.Result[[]PackageInfo] {
 	}
 
 	if err := scanner.Err(); err != nil {
-		return result.NewFailure[[]PackageInfo]([]result.SAWError{result.NewError(result.CodeDepLockFileParse, "error reading go.sum: "+err.Error())})
+		return result.NewFailure[[]PackageInfo]([]result.PolywaveError{result.NewError(result.CodeDepLockFileParse, "error reading go.sum: "+err.Error())})
 	}
 
 	// Convert map to slice

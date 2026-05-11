@@ -8,12 +8,12 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/tools"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/agent"
+	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+	"github.com/blackwell-systems/polywave-go/pkg/protocol"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/tools"
 )
 
 // CallerCascadeError represents a single compiler error classified as a
@@ -140,7 +140,7 @@ func ClassifyCallerCascadeErrors(
 // It fixes minimal caller errors in future-wave-owned files after a wave
 // changes function signatures. The agent commits as:
 //
-//	[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes
+//	[polywave:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes
 //
 // Returns success when the agent fixes all errors and the build passes.
 // Returns failure when the agent cannot fix errors or the build still fails.
@@ -151,28 +151,28 @@ func RunHotfixAgent(
 ) result.Result[HotfixAgentData] {
 	// Step 1: Validate opts.
 	if opts.IMPLPath == "" {
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: IMPLPath is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.RepoPath == "" {
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: RepoPath is required",
 			Severity: "fatal",
 		}})
 	}
 	if opts.WaveNum <= 0 {
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: WaveNum must be positive",
 			Severity: "fatal",
 		}})
 	}
 	if len(opts.Errors) == 0 {
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  "engine.RunHotfixAgent: Errors must be non-empty",
 			Severity: "fatal",
@@ -195,7 +195,7 @@ func RunHotfixAgent(
 	manifest, err := protocol.Load(ctx, opts.IMPLPath)
 	if err != nil {
 		publish("hotfix_agent_failed", map[string]string{"error": err.Error()})
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: load manifest: %v", err),
 			Severity: "fatal",
@@ -217,7 +217,7 @@ func RunHotfixAgent(
 	bRes := orchestrator.NewBackendFromModel(opts.Model)
 	if bRes.IsFatal() {
 		publish("hotfix_agent_failed", map[string]string{"error": bRes.Errors[0].Message})
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: backend init: %s", bRes.Errors[0].Message),
 			Severity: "fatal",
@@ -244,7 +244,7 @@ func RunHotfixAgent(
 
 	if _, execErr := runner.ExecuteStreamingWithTools(ctx, spec, opts.RepoPath, onChunk, nil); execErr != nil {
 		publish("hotfix_agent_failed", map[string]string{"error": execErr.Error()})
-		return result.NewFailure[HotfixAgentData]([]result.SAWError{{
+		return result.NewFailure[HotfixAgentData]([]result.PolywaveError{{
 			Code:     result.CodeCallerCascadeHotfixFailed,
 			Message:  fmt.Sprintf("engine.RunHotfixAgent: agent execution failed: %v", execErr),
 			Severity: "fatal",
@@ -323,7 +323,7 @@ after wave %d changed function signatures.
 		sb.WriteString(fmt.Sprintf("- %s\n", f))
 	}
 
-	commitMsg := fmt.Sprintf("[SAW:wave%d:integration-hotfix] fix caller cascade after wave %d signature changes",
+	commitMsg := fmt.Sprintf("[polywave:wave%d:integration-hotfix] fix caller cascade after wave %d signature changes",
 		opts.WaveNum, opts.WaveNum)
 
 	sb.WriteString(fmt.Sprintf(`
@@ -364,7 +364,7 @@ func autoCommitHotfix(repoPath string, waveNum int) (string, error) {
 		return "", fmt.Errorf("staging changes: %w", err)
 	}
 
-	msg := fmt.Sprintf("[SAW:wave%d:integration-hotfix] fix caller cascade after wave %d signature changes",
+	msg := fmt.Sprintf("[polywave:wave%d:integration-hotfix] fix caller cascade after wave %d signature changes",
 		waveNum, waveNum)
 
 	sha, err := git.Commit(repoPath, msg)

@@ -5,7 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // LanguageDefaultsData wraps the result of LanguageDefaults operation
@@ -122,7 +122,7 @@ func languageDefaultsImpl(repoRoot string) result.Result[LanguageDefaultsData] {
 	}
 
 	// No toolchain detected
-	return result.NewFailure[LanguageDefaultsData]([]result.SAWError{
+	return result.NewFailure[LanguageDefaultsData]([]result.PolywaveError{
 		result.NewFatal(result.CodeCommandExtractNoToolchain, fmt.Sprintf("no toolchain detected: no go.mod, Cargo.toml, package.json, or pyproject.toml found in %s", repoRoot)),
 	})
 }

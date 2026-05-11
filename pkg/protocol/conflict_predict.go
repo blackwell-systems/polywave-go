@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/internal/git"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/internal/git"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
 // ConflictData holds the result of conflict prediction.
@@ -123,7 +123,7 @@ func AnalyzeDiffPattern(repoPath, baseRef, agentBranch, file string) (*DiffAnaly
 // in the given wave to detect files that appear in more than one agent's report.
 //
 // This implements E11: conflict prediction before merge. Any non-IMPL file
-// (files outside .saw-state/ or docs/IMPL/) that appears in multiple agents'
+// (files outside .polywave-state/ or docs/IMPL/) that appears in multiple agents'
 // files_changed or files_created lists is flagged as a conflict risk.
 //
 // Returns Partial if conflicts are detected (warnings), Success if none.
@@ -201,7 +201,7 @@ func PredictConflictsFromReports(ctx context.Context, manifest *IMPLManifest, wa
 	}
 
 	// Return Partial with warnings for each conflict (merge conflict risk).
-	warnings := make([]result.SAWError, 0, len(conflictPredictions))
+	warnings := make([]result.PolywaveError, 0, len(conflictPredictions))
 	for _, cp := range conflictPredictions {
 		warnings = append(warnings, result.NewWarning(
 			"CONFLICT_PREDICT_FAILED",
@@ -209,7 +209,7 @@ func PredictConflictsFromReports(ctx context.Context, manifest *IMPLManifest, wa
 		))
 	}
 	// Also add a summary warning
-	warnings = append([]result.SAWError{
+	warnings = append([]result.PolywaveError{
 		result.NewWarning(
 			"CONFLICT_PREDICT_FAILED",
 			fmt.Sprintf("E11 conflict prediction: %d file(s) appear in multiple agent reports (merge conflict risk):\n%s",
@@ -274,7 +274,7 @@ func PredictConflictsWithStrategy(ctx context.Context, manifest *IMPLManifest, w
 		}
 		if firstAgent != "" && secondAgent != "" {
 			branchFmt := func(id string) string {
-				return fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
+				return fmt.Sprintf("polywave/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
 			}
 			base, err := git.MergeBase(manifest.Repository, branchFmt(firstAgent), branchFmt(secondAgent))
 			if err == nil {
@@ -302,7 +302,7 @@ func PredictConflictsWithStrategy(ctx context.Context, manifest *IMPLManifest, w
 		var analyses []*DiffAnalysis
 		if mergeBase != "" && manifest.FeatureSlug != "" {
 			for _, agentID := range agents {
-				branchName := fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
+				branchName := fmt.Sprintf("polywave/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
 				analysis, err := AnalyzeDiffPattern(manifest.Repository, mergeBase, branchName, file)
 				if err == nil && analysis != nil {
 					analysis.AgentID = agentID
@@ -351,7 +351,7 @@ func PredictConflictsWithStrategy(ctx context.Context, manifest *IMPLManifest, w
 	}
 
 	// Return Partial with warnings for each conflict
-	warnings := make([]result.SAWError, 0, len(conflictPredictions)+1)
+	warnings := make([]result.PolywaveError, 0, len(conflictPredictions)+1)
 	warnings = append(warnings, result.NewWarning(
 		"CONFLICT_PREDICT_ENHANCED",
 		fmt.Sprintf("E11 enhanced conflict prediction: %d file(s) with conflicts detected (%d auto-mergeable):\n%s",
@@ -494,12 +494,12 @@ func sortAgentsByPattern(analyses []*DiffAnalysis, agents []string) []string {
 	return result
 }
 
-// isIMPLStateFile returns true for IMPL doc paths and .saw-state/ files, which
+// isIMPLStateFile returns true for IMPL doc paths and .polywave-state/ files, which
 // are expected to be modified by multiple agents and do not cause merge conflicts.
 func isIMPLStateFile(path string) bool {
 	// Allow multiple agents to touch IMPL docs and state directories.
 	return hasPathPrefix(path, "docs/IMPL/") ||
-		hasPathPrefix(path, ".saw-state/") ||
+		hasPathPrefix(path, ".polywave-state/") ||
 		hasPathPrefix(path, "docs/IMPL")
 }
 
@@ -596,7 +596,7 @@ func agentsHaveOverlappingHunks(manifest *IMPLManifest, file string, agents []st
 	// Find common ancestor of the first two agent branches (all branches share
 	// the same base commit, so merge-base of any pair gives the base ref).
 	branchFmt := func(id string) string {
-		return fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
+		return fmt.Sprintf("polywave/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, id)
 	}
 	mergeBase, err := git.MergeBase(manifest.Repository, branchFmt(agents[0]), branchFmt(agents[1]))
 	if err != nil {
@@ -639,7 +639,7 @@ func allAgentsHaveSameContent(manifest *IMPLManifest, file string, agents []stri
 
 	var hashes []string
 	for _, agentID := range agents {
-		branchName := fmt.Sprintf("saw/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
+		branchName := fmt.Sprintf("polywave/%s/wave%d-agent-%s", manifest.FeatureSlug, waveNum, agentID)
 		hash, err := computeFileHashInBranch(manifest.Repository, branchName, file)
 		if err != nil {
 			// Hash computation failed - fall back to blocking (safe default)

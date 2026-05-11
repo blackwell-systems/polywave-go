@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+	"github.com/blackwell-systems/polywave-go/pkg/result"
 	"gopkg.in/yaml.v3"
 )
 
@@ -153,7 +153,7 @@ var knownKeys = map[string]map[string]bool{
 // It returns V013_UNKNOWN_KEY errors for any unrecognized keys.
 // This operates on raw YAML bytes (not the parsed struct) to catch keys that
 // Go's YAML unmarshaling silently ignores.
-func DetectUnknownKeys(yamlData []byte) []result.SAWError {
+func DetectUnknownKeys(yamlData []byte) []result.PolywaveError {
 	// Cannot use LoadYAML: operates on raw bytes in memory and unmarshals into a yaml.Node
 	// for key-walking — LoadYAML unmarshals into a typed struct, not a Node.
 	var doc yaml.Node
@@ -170,14 +170,14 @@ func DetectUnknownKeys(yamlData []byte) []result.SAWError {
 		return nil
 	}
 
-	var errs []result.SAWError
+	var errs []result.PolywaveError
 	checkMapping(root, "top", "", &errs)
 	return errs
 }
 
 // checkMapping validates all keys in a MappingNode against the known key set
 // for the given context, and recursively checks nested structures.
-func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.SAWError) {
+func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.PolywaveError) {
 	known := knownKeys[context]
 	if known == nil {
 		return
@@ -193,7 +193,7 @@ func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.SA
 			if pathPrefix != "" {
 				path = pathPrefix + "." + key
 			}
-			*errs = append(*errs, result.SAWError{
+			*errs = append(*errs, result.PolywaveError{
 				Code:     result.CodeUnknownKey,
 				Message:  fmt.Sprintf("unknown key '%s' at %s", key, path),
 				Severity: "error",
@@ -211,7 +211,7 @@ func checkMapping(node *yaml.Node, context, pathPrefix string, errs *[]result.SA
 }
 
 // checkTopLevelValue handles recursion into nested YAML structures under top-level keys.
-func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]result.SAWError) {
+func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]result.PolywaveError) {
 	switch key {
 	case "file_ownership":
 		checkSequenceOfMappings(valNode, "file_ownership", key, errs)
@@ -270,7 +270,7 @@ func checkTopLevelValue(key string, valNode *yaml.Node, errs *[]result.SAWError)
 }
 
 // checkSequenceOfMappings checks each item in a YAML sequence against the given context.
-func checkSequenceOfMappings(node *yaml.Node, context, parentPath string, errs *[]result.SAWError) {
+func checkSequenceOfMappings(node *yaml.Node, context, parentPath string, errs *[]result.PolywaveError) {
 	if node.Kind != yaml.SequenceNode {
 		return
 	}
