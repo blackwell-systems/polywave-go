@@ -1,10 +1,15 @@
 # Changelog
 
-All notable changes to the Scout-and-Wave Go engine will be documented in this file.
+All notable changes to the Polywave Go engine will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+### Changed (2026-05-11)
+- **Rebrand: `.saw-ownership.json` renamed to `.polywave-ownership.json`** — `prepare_agent.go` writes `.polywave-ownership.json`, `executors.go` reads `.polywave-ownership.json`, matching the protocol-side hook rename. Cross-repo coordination gap closed: hooks and engine now agree on the artifact filename.
+- **Rebrand: remaining `.saw-` artifact names** — `.saw-config-*.tmp` temp files renamed to `.polywave-config-*.tmp` in `config.go` and `init_engine.go`; `sawStatePath` variable renamed to `statePath` in `close_impl_cmd.go`; `.gitignore` entries updated (`.saw-state/` to `.polywave-state/`, `.saw-agent-brief.md` to `.polywave-agent-brief.md`); test function `SawStateFilesIgnored` renamed to `PolywaveStateFilesIgnored`; `protocol-rules.md` reference updated.
+- **README logo** — Polywave neon logo added to README header.
 
 ### Added (2026-04-09)
 - **`RunScoutFullOpts.ImplOutputPath` field + `--impl-output-path` CLI flag** — optional explicit IMPL output path for `sawtools run-scout`. When set, overrides the default `repoPath/docs/IMPL/IMPL-<slug>.yaml` derivation. Enables cross-repo scouting where the IMPL doc lands in a different repo than the analysis target. Flag: `sawtools run-scout --impl-output-path /abs/path/to/IMPL.yaml`.
