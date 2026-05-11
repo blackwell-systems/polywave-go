@@ -68,18 +68,18 @@ func TestAmendImpl_RejectsComplete(t *testing.T) {
 	}
 }
 
-// TestAmendImpl_RejectsComplete_SAWMarker verifies that AmendImpl blocks when SAW:COMPLETE marker is present.
+// TestAmendImpl_RejectsComplete_SAWMarker verifies that AmendImpl blocks when polywave:complete marker is present.
 func TestAmendImpl_RejectsComplete_SAWMarker(t *testing.T) {
 	m := amendTestManifest("test-feature")
 	dir := t.TempDir()
 	path := filepath.Join(dir, "IMPL-test.yaml")
 
-	// Write manifest with SAW:COMPLETE marker in raw bytes
+	// Write manifest with polywave:complete marker in raw bytes
 	data, err := yaml.Marshal(m)
 	if err != nil {
 		t.Fatalf("failed to marshal manifest: %v", err)
 	}
-	raw := string(data) + "\n# SAW:COMPLETE\n"
+	raw := string(data) + "\n# polywave:complete\n"
 	if err := os.WriteFile(path, []byte(raw), 0644); err != nil {
 		t.Fatalf("failed to write manifest: %v", err)
 	}
@@ -89,7 +89,7 @@ func TestAmendImpl_RejectsComplete_SAWMarker(t *testing.T) {
 		AddWave:      true,
 	})
 	if !res.IsFatal() {
-		t.Fatal("expected fatal result for SAW:COMPLETE manifest")
+		t.Fatal("expected fatal result for polywave:complete manifest")
 	}
 	if len(res.Errors) == 0 || res.Errors[0].Code != result.CodeAmendBlocked {
 		t.Errorf("expected AMEND_BLOCKED error code, got: %v", res.Errors)

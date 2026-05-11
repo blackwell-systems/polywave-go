@@ -122,7 +122,7 @@ type AgentBriefInfo struct {
 	// JournalContextFile is the absolute path to context.md when
 	// JournalContextAvailable is true; empty otherwise.
 	JournalContextFile string `json:"journal_context_file,omitempty"`
-	// WorktreeEnvPath is the absolute path to the .saw-worktree-env file written  // TODO: rename file to .polywave-worktree-env
+	// WorktreeEnvPath is the absolute path to the .polywave-worktree-env file written  // TODO: rename file to .polywave-worktree-env
 	// by prepare-wave. Empty when the file could not be written.
 	WorktreeEnvPath string `json:"worktree_env_path,omitempty"`
 }

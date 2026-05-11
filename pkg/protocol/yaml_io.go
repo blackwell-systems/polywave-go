@@ -10,7 +10,7 @@ package protocol
 //	pkg/protocol/wiring_validation.go    — AppendWiringValidationReport: yaml.Node tree splice
 //	pkg/protocol/schema_unknown_keys.go  — StripUnknownKeys: yaml.Node tree traversal
 //	pkg/protocol/duplicate_key_validator.go — ValidateDuplicateKeys: yaml.Node scan
-//	pkg/protocol/marker.go               — SAW:COMPLETE marker detection via yaml.Node
+//	pkg/protocol/marker.go               — polywave:complete marker detection via yaml.Node
 //	cmd/polywave-tools/validate_integration.go — raw yaml.Node manipulation
 //
 // Exempt call sites (encoder-to-stdout — no file path; yaml.NewEncoder target is os.Stdout):
@@ -22,7 +22,7 @@ package protocol
 //
 //	pkg/engine/runner.go                  — marshal to []byte for inline string embed
 //	pkg/protocol/solver_integration.go    — deep copy via marshal+unmarshal roundtrip
-//	pkg/protocol/program_parser.go        — pre-processed bytes (SAW:PROGRAM:COMPLETE stripped)
+//	pkg/protocol/program_parser.go        — pre-processed bytes (polywave:program:complete stripped)
 //	pkg/protocol/program_status.go        — swallows errors; anonymous struct
 //	pkg/protocol/validation.go            — ValidateBytes takes []byte, not file path
 //	pkg/queue/manager.go                  — unmarshals already-read bytes from dir scan

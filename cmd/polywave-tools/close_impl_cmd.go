@@ -21,7 +21,7 @@ func newCloseImplCmd() *cobra.Command {
 		Short: "Close an IMPL: mark complete, update CONTEXT.md, archive, and clean worktrees",
 		Long: `Batches the full IMPL close lifecycle into one command:
 
-  1. Write SAW:COMPLETE marker (mark-complete)
+  1. Write polywave:complete marker (mark-complete)
   2. Archive to docs/IMPL/complete/
   3. Update CONTEXT.md with completion data (update-context)
   4. Clean stale worktrees for this IMPL

@@ -118,7 +118,7 @@ func TestMarkProgramComplete_AllComplete(t *testing.T) {
 		t.Errorf("expected archived_path to be set")
 	}
 
-	// Verify manifest was archived and updated with SAW:PROGRAM:COMPLETE marker
+	// Verify manifest was archived and updated with polywave:program:complete marker
 	archivedPath := result.ArchivedPath
 	if archivedPath == "" {
 		archivedPath = manifestPath // fallback for test
@@ -128,8 +128,8 @@ func TestMarkProgramComplete_AllComplete(t *testing.T) {
 		t.Fatalf("failed to read archived manifest at %s: %v", archivedPath, err)
 	}
 	content := string(data)
-	if !strings.Contains(content, "SAW:PROGRAM:COMPLETE") {
-		t.Errorf("expected SAW:PROGRAM:COMPLETE marker in manifest")
+	if !strings.Contains(content, "polywave:program:complete") {
+		t.Errorf("expected polywave:program:complete marker in manifest")
 	}
 	if !strings.Contains(content, "state: COMPLETE") {
 		t.Errorf("expected state: COMPLETE in manifest")

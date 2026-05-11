@@ -13,7 +13,7 @@ import (
 // Returns an error if the file cannot be read or the YAML is invalid.
 //
 // This function follows the pattern of Load() in manifest.go for IMPL documents.
-// The SAW:PROGRAM:COMPLETE marker (a non-YAML line appended by mark-program-complete)
+// The polywave:program:complete marker (a non-YAML line appended by mark-program-complete)
 // is stripped before parsing so completed manifests remain readable.
 func ParseProgramManifest(path string) (*PROGRAMManifest, error) {
 	data, err := os.ReadFile(path)
@@ -24,8 +24,8 @@ func ParseProgramManifest(path string) (*PROGRAMManifest, error) {
 	// Strip the Polywave:PROGRAM:COMPLETE marker line before YAML parsing.
 	// mark-program-complete appends this as a bare non-YAML string; the YAML
 	// parser rejects it with "could not find expected ':'".
-	data = bytes.ReplaceAll(data, []byte("\nSAW:PROGRAM:COMPLETE\n"), []byte("\n"))
-	data = bytes.TrimSuffix(data, []byte("\nSAW:PROGRAM:COMPLETE"))
+	data = bytes.ReplaceAll(data, []byte("\npolywave:program:complete\n"), []byte("\n"))
+	data = bytes.TrimSuffix(data, []byte("\npolywave:program:complete"))
 
 	// Cannot use LoadYAML: data has been pre-processed above to strip the Polywave:PROGRAM:COMPLETE
 	// marker line before YAML parsing. LoadYAML reads raw file bytes without that transformation.

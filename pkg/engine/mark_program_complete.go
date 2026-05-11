@@ -86,7 +86,7 @@ func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) resu
 	tiersCount := len(manifest.Tiers)
 	implsCount := len(manifest.Impls)
 
-	// 5. Write SAW:PROGRAM:COMPLETE marker
+	// 5. Write polywave:program:complete marker
 	markerRes := writeProgramCompleteMarker(opts.ManifestPath, date)
 	if markerRes.IsFatal() {
 		return result.NewFailure[MarkProgramCompleteResult]([]result.PolywaveError{
@@ -229,10 +229,10 @@ func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMa
 		lines = newLines
 	}
 
-	// Remove existing SAW:PROGRAM:COMPLETE marker if present, then re-append
+	// Remove existing polywave:program:complete marker if present, then re-append
 	var filtered []string
 	for _, line := range lines {
-		if strings.TrimSpace(line) != "SAW:PROGRAM:COMPLETE" {
+		if strings.TrimSpace(line) != "polywave:program:complete" {
 			filtered = append(filtered, line)
 		}
 	}
@@ -241,7 +241,7 @@ func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMa
 	for len(filtered) > 0 && strings.TrimSpace(filtered[len(filtered)-1]) == "" {
 		filtered = filtered[:len(filtered)-1]
 	}
-	filtered = append(filtered, "", "SAW:PROGRAM:COMPLETE", "")
+	filtered = append(filtered, "", "polywave:program:complete", "")
 
 	content := strings.Join(filtered, "\n")
 	if err := os.WriteFile(manifestPath, []byte(content), 0644); err != nil {

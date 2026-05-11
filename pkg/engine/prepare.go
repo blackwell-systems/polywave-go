@@ -976,14 +976,14 @@ func extractBriefsAndInitJournals(
 			return nil, fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
 		}
 
-		// Write .saw-worktree-env for PreToolUse hook enforcement (E43 / polywave-worktree-boundary.sh).
+		// Write .polywave-worktree-env for PreToolUse hook enforcement (E43 / polywave-worktree-boundary.sh).
 		// POLYWAVE_WORKTREE_ROOT is read by hooks/polywave-worktree-boundary.sh to hard-deny writes
 		// targeting the main repo instead of the agent's assigned worktree.
-		worktreeEnvPath := filepath.Join(wtInfo.Path, ".saw-worktree-env")
+		worktreeEnvPath := filepath.Join(wtInfo.Path, ".polywave-worktree-env")
 		worktreeEnvContent := fmt.Sprintf("POLYWAVE_WORKTREE_ROOT=%s\n", wtInfo.Path)
 		if err := os.WriteFile(worktreeEnvPath, []byte(worktreeEnvContent), 0644); err != nil {
 			// Non-fatal: log warning but don't abort — boundary hook will be no-op without this file
-			fmt.Fprintf(os.Stderr, "prepare-wave: warning: failed to write .saw-worktree-env for agent %s: %v\n", agentID, err)
+			fmt.Fprintf(os.Stderr, "prepare-wave: warning: failed to write .polywave-worktree-env for agent %s: %v\n", agentID, err)
 			worktreeEnvPath = ""
 		}
 

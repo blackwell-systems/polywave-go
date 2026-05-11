@@ -61,7 +61,7 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 		})
 	}
 
-	// Step 3: Check raw file for SAW:COMPLETE marker
+	// Step 3: Check raw file for polywave:complete marker
 	rawBytes, err := os.ReadFile(opts.ManifestPath)
 	if err != nil {
 		return result.NewFailure[AmendImplData]([]result.PolywaveError{
@@ -72,11 +72,11 @@ func AmendImpl(ctx context.Context, opts AmendImplOpts) result.Result[AmendImplD
 			},
 		})
 	}
-	if strings.Contains(string(rawBytes), "SAW:COMPLETE") {
+	if strings.Contains(string(rawBytes), "polywave:complete") {
 		return result.NewFailure[AmendImplData]([]result.PolywaveError{
 			{
 				Code:     result.CodeAmendBlocked,
-				Message:  "IMPL is complete (SAW:COMPLETE marker present); cannot amend",
+				Message:  "IMPL is complete (polywave:complete marker present); cannot amend",
 				Severity: "fatal",
 			},
 		})
