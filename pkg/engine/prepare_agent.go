@@ -138,7 +138,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 
 	// Build the agent brief with frontmatter
 	brief := fmt.Sprintf(`---
-saw_name: %s
+polywave_name: %s
 ---
 
 # Agent %s Brief - Wave %d

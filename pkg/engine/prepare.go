@@ -955,9 +955,9 @@ func extractBriefsAndInitJournals(
 				"IMPL branch to main after all IMPLs in the tier complete.\n"
 		}
 
-		// Build the agent brief with YAML frontmatter (E44: saw_name for Orchestrator naming)
+		// Build the agent brief with YAML frontmatter (E44: polywave_name for Orchestrator naming)
 		sawName := fmt.Sprintf("[polywave:wave%d:agent-%s] %s", opts.WaveNum, agentID, briefTaskSummary(agentTask))
-		brief := fmt.Sprintf("---\nsaw_name: %q\n---\n\n# Agent %s Brief - Wave %d\n\n**IMPL Doc:** %s\n\n## Files Owned\n\n%s\n\n## Task\n\n%s\n%s%s%s%s\n",
+		brief := fmt.Sprintf("---\npolywave_name: %q\n---\n\n# Agent %s Brief - Wave %d\n\n**IMPL Doc:** %s\n\n## Files Owned\n\n%s\n\n## Task\n\n%s\n%s%s%s%s\n",
 			sawName,
 			agentID,
 			opts.WaveNum,
@@ -1053,7 +1053,7 @@ func extractBriefsAndInitJournals(
 	return agentBriefs, nil
 }
 
-// briefTaskSummary extracts a short task summary for use in saw_name frontmatter.
+// briefTaskSummary extracts a short task summary for use in polywave_name frontmatter.
 // It looks for a "**Role:**" line first, then falls back to the first non-empty line.
 // Result is truncated to 60 characters.
 func briefTaskSummary(task string) string {
