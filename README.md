@@ -207,8 +207,8 @@ The `polywave-tools` binary provides 60+ commands covering the full protocol lif
 | Command | What it does |
 |---------|-------------|
 | `amend-impl` | E36 IMPL amendment: add-wave, redirect-agent, extend-scope |
-| `close-impl` | Atomic: E15 SAW:COMPLETE + archive + update CONTEXT.md + git commit |
-| `mark-complete` | E15 write SAW:COMPLETE marker + archive to `docs/IMPL/complete/` |
+| `close-impl` | Atomic: E15 polywave:complete + archive + update CONTEXT.md + git commit |
+| `mark-complete` | E15 write polywave:complete marker + archive to `docs/IMPL/complete/` |
 | `update-context` | E18 update `docs/CONTEXT.md` after feature completion |
 | `list-impls` | Discover IMPL docs (active and archived) |
 | `resume-detect` | Detect interrupted Polywave sessions for recovery |
