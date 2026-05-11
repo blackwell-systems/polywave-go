@@ -1,6 +1,6 @@
 // Package api provides an Anthropic API backend that implements the backend.Backend
 // interface. It runs a full tool-use loop against the Anthropic Messages API,
-// using the standard SAW tools from pkg/tools.
+// using the standard Polywave tools from pkg/tools.
 package api
 
 import (

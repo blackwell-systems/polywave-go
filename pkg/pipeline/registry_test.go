@@ -60,7 +60,7 @@ func TestRegistry_Overwrite(t *testing.T) {
 }
 
 // TestDefaultRegistry_AllSteps verifies that DefaultRegistry contains every
-// standard SAW step by name.
+// standard Polywave step by name.
 func TestDefaultRegistry_AllSteps(t *testing.T) {
 	r := DefaultRegistry()
 	expected := []string{

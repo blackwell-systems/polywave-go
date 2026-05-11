@@ -201,7 +201,7 @@ Results are optionally cached by HEAD commit SHA to avoid re-running on repeated
 
 ### E21B — Cross-Repo Baseline Gate
 
-For multi-repo IMPLs, `RunCrossRepoBaselineGates` runs baseline checks in each target repository. Repos with explicit `build_command` / `test_command` in the SAW config use those directly; others fall back to the IMPL's `quality_gates`.
+For multi-repo IMPLs, `RunCrossRepoBaselineGates` runs baseline checks in each target repository. Repos with explicit `build_command` / `test_command` in the Polywave config use those directly; others fall back to the IMPL's `quality_gates`.
 
 Returns early on first repo failure for fast feedback. Errors are fatal and block wave launch.
 

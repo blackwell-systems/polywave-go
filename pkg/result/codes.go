@@ -84,7 +84,7 @@ const (
 	// CodeParseError is emitted for YAML parse failures (replaces E16_PARSE_ERROR, P000_PARSE_ERROR)
 	CodeParseError = "V046_PARSE_ERROR"
 	// CodeTrivialScope is emitted when an IMPL is SUITABLE but has only 1 agent owning 1 file.
-	// SAW adds no parallelization value at this scope — the change should be made directly.
+	// Polywave adds no parallelization value at this scope — the change should be made directly.
 	CodeTrivialScope = "V047_TRIVIAL_SCOPE"
 	// CodeGateTargetsNewFile is emitted when a quality gate with required:true references a path
 	// that is owned with action:new. Required gates run on baseline before agents execute, so

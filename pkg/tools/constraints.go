@@ -1,13 +1,13 @@
 // pkg/tools/constraints.go
 //
-// Constraints configures SAW protocol invariant enforcement at the tool level.
+// Constraints configures Polywave protocol invariant enforcement at the tool level.
 // This is a scaffold file: type definitions only, no implementation logic.
 // Shared by Wave 1 agents (A, B, C, D) and Wave 2 agents (E, F).
 package tools
 
 import "time"
 
-// Constraints configures SAW protocol invariant enforcement for a Workshop.
+// Constraints configures Polywave protocol invariant enforcement for a Workshop.
 // Passed from IMPL manifest -> engine -> backend -> Workshop middleware.
 // A zero-value Constraints applies no enforcement (backward compatible).
 type Constraints struct {

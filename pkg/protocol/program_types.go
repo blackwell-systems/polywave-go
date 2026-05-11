@@ -2,7 +2,7 @@ package protocol
 
 import "github.com/blackwell-systems/polywave-go/pkg/result"
 
-// PROGRAMManifest is the structured representation of a SAW PROGRAM document.
+// PROGRAMManifest is the structured representation of a Polywave PROGRAM document.
 // It coordinates multiple IMPL docs into tiered execution.
 type PROGRAMManifest struct {
 	Title            string             `yaml:"title" json:"title"`

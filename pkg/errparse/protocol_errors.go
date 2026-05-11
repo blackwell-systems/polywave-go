@@ -141,7 +141,7 @@ func init() {
 }
 
 // ExplainProtocolError returns a human-readable explanation for a
-// SAW protocol error code. Returns nil if code is unknown.
+// Polywave protocol error code. Returns nil if code is unknown.
 // Lookup is case-insensitive (e.g. "e16" matches "E16").
 func ExplainProtocolError(code string) *ProtocolErrorInfo {
 	upper := strings.ToUpper(code)

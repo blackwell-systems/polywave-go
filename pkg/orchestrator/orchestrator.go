@@ -1,4 +1,4 @@
-// Package orchestrator drives SAW protocol execution: it advances the
+// Package orchestrator drives Polywave protocol execution: it advances the
 // 10-state machine, creates per-agent git worktrees, launches agents
 // concurrently via configurable LLM backends (Anthropic, OpenAI, Bedrock,
 // Ollama, LM Studio, CLI), merges completed worktrees, runs post-merge
@@ -244,7 +244,7 @@ type BackendConfig struct {
 	// or when the provider prefix is "openai".
 	BaseURL string
 
-	// Constraints, if non-nil, configures SAW protocol invariant enforcement
+	// Constraints, if non-nil, configures Polywave protocol invariant enforcement
 	// (I1 ownership, I2 freeze, I5 commit tracking, I6 role restriction).
 	Constraints *tools.Constraints
 }
@@ -463,7 +463,7 @@ var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner 
 	return agent.NewRunner(b)
 }
 
-// Orchestrator drives SAW protocol wave coordination.
+// Orchestrator drives Polywave protocol wave coordination.
 // State mutations must go through TransitionTo — never set o.state directly.
 type Orchestrator struct {
 	state          protocol.ProtocolState
@@ -942,7 +942,7 @@ func (o *Orchestrator) launchAgent(
 	report, _ := waitForCompletionFunc(ctx, wtIMPLPath(o.repoPath, o.implDocPath, wtPath), agentSpec.ID, 5*time.Second, 2*time.Second)
 
 	// d. Auto-commit and synthesize completion report if the agent didn't write one.
-	// This bridges the gap between CLI agents (SAW-protocol-aware, commit + write report)
+	// This bridges the gap between CLI agents (Polywave-protocol-aware, commit + write report)
 	// and API/Bedrock agents (vanilla Claude, just write files via tools).
 	if report == nil {
 		// BUG-4 fix: Before synthesizing "complete", check if a previous retry wrote

@@ -121,7 +121,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 		}
 	}
 
-	// Extract first line of task for SAW name
+	// Extract first line of task for Polywave name
 	taskFirstLine := agentTask
 	if idx := strings.Index(agentTask, "\n"); idx > 0 {
 		taskFirstLine = agentTask[:idx]
@@ -130,7 +130,7 @@ func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[Prep
 		taskFirstLine = taskFirstLine[:77] + "..."
 	}
 
-	// Generate SAW-formatted name for Agent tool
+	// Generate Polywave-formatted name for Agent tool
 	sawName := fmt.Sprintf("[polywave:wave%d:agent-%s] %s", opts.WaveNum, opts.AgentID, taskFirstLine)
 	// Wrap in single quotes for valid YAML: values containing brackets (e.g. [polywave:...])
 	// are invalid bare YAML scalars and must be quoted.

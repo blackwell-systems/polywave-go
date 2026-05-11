@@ -60,7 +60,7 @@ cp polywave-tools ~/.local/bin/polywave-tools
 - `create-worktrees` -- create git worktrees for all agents in a wave
 - `verify-isolation` -- verify agent is running in correct isolated worktree (E12)
 - `cleanup` -- remove worktrees and branches after merge
-- `cleanup-stale` -- detect and remove stale SAW worktrees
+- `cleanup-stale` -- detect and remove stale Polywave worktrees
 - `verify-hook-installed` -- verify pre-commit hook is installed in worktree
 
 **Merge & Build Verification:**
@@ -156,17 +156,17 @@ cp polywave-tools ~/.local/bin/polywave-tools
 - `metrics` -- show metrics for an IMPL (cost, duration, success rate)
 - `query` -- query observability data
   - `query events` -- query observability events
-- `resume-detect` -- detect interrupted SAW sessions in the repository
+- `resume-detect` -- detect interrupted Polywave sessions in the repository
 
 **Recovery:**
 - `retry` -- generate retry IMPL doc for a failed quality gate (E24)
 - `interview` -- conduct a structured requirements interview
 
 **Daemon:**
-- `daemon` -- run the SAW daemon loop (processes queue items continuously)
+- `daemon` -- run the Polywave daemon loop (processes queue items continuously)
 
 **System:**
-- `verify-install` -- check that all SAW prerequisites are met
+- `verify-install` -- check that all Polywave prerequisites are met
 
 ---
 

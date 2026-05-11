@@ -360,7 +360,7 @@ builds retry prompts with specific fix suggestions.
 
 #### `pkg/resume`
 
-Detection of interrupted SAW sessions. Scans IMPL docs and git state to
+Detection of interrupted Polywave sessions. Scans IMPL docs and git state to
 determine what was in progress and recommends how to resume.
 
 - `detect.go` -- `DetectSessions`
@@ -455,7 +455,7 @@ error strategies (fail/continue), and context cancellation.
 
 - `pipeline.go` -- `Pipeline`, `Step`, `Run`
 - `registry.go` -- named pipeline registry
-- `saw_steps.go` -- SAW-specific pipeline step implementations
+- `saw_steps.go` -- Polywave-specific pipeline step implementations
 - `types.go` -- `StepFunc`, `ErrorStrategy`, `State`
 
 #### `pkg/queue`

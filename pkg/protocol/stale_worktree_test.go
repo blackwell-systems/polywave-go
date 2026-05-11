@@ -15,7 +15,7 @@ func TestStaleExtractSlugFromBranches(t *testing.T) {
 		{"polywave/type-collision-detection/wave2-agent-B3", "type-collision-detection"},
 		{"polywave/x/wave1-agent-A", "x"},
 		{"wave1-agent-A", ""},           // legacy — no slug
-		{"main", ""},                    // not a SAW branch
+		{"main", ""},                    // not a Polywave branch
 		{"polywave/slug-only", ""},           // no wave suffix
 		{"refs/heads/polywave/s/wave1-agent-A", ""}, // unexpected prefix
 	}

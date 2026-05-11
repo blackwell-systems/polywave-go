@@ -227,7 +227,7 @@ func TestScopedBranchRegex_Invalid(t *testing.T) {
 		"wave1-agent-a",                // lowercase agent (invalid)
 		"polywave/wave1-agent-A",            // missing slug between saw/ and wave
 		"polywave//wave1-agent-A",           // empty slug
-		"main",                         // not a SAW branch
+		"main",                         // not a Polywave branch
 		"feature/my-feature",           // different branch pattern
 		"polywave/MY-SLUG/wave1-agent-A",    // uppercase in slug (invalid)
 		"polywave/my_slug/wave1-agent-A",    // underscore in slug (invalid)

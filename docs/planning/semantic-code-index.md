@@ -4,7 +4,7 @@
 
 **Note**: `modernc.org/sqlite` is already in `go.mod` (used by `pkg/observability/sqlite/`), so the SQLite dependency is already paid — no extra module cost for storage.
 
-**Purpose**: Tree-sitter-based symbol extraction and indexing for SAW agents. Replaces keyword grep with structured queries: "all exported functions in src/api/" → structured results with file, line, signature, callers.
+**Purpose**: Tree-sitter-based symbol extraction and indexing for Polywave agents. Replaces keyword grep with structured queries: "all exported functions in src/api/" → structured results with file, line, signature, callers.
 
 **Package**: `pkg/codeindex/`
 
@@ -50,7 +50,7 @@ SQLite with two tables:
 - `references` — caller/callee relationships
 
 ### Language Support (priority order)
-1. **Go** — tree-sitter-go (most SAW usage today)
+1. **Go** — tree-sitter-go (most Polywave usage today)
 2. **TypeScript/JavaScript** — tree-sitter-typescript
 3. **Python** — tree-sitter-python
 4. **Rust** — tree-sitter-rust

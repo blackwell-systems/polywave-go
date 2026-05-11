@@ -1,7 +1,7 @@
 # Observability — Reference
 
 Package `pkg/observability` provides event types, a storage abstraction, and query
-helpers for tracking cost, agent performance, and orchestrator activity across SAW
+helpers for tracking cost, agent performance, and orchestrator activity across Polywave
 executions.
 
 ## Architecture

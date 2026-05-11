@@ -1,4 +1,4 @@
-# SAW Engine — Project Memory
+# Polywave Engine — Project Memory
 
 ## Completed Features
 
@@ -24,7 +24,7 @@
 - 10 CLI commands in `cmd/polywave-tools/`: `create-worktrees`, `verify-commits`, `scan-stubs`, `merge-agents`, `cleanup`, `verify-build`, `update-status`, `update-context`, `list-impls`, `run-wave`
 - Binary output named `polywave-tools` (directory `cmd/polywave-tools/`)
 - Capstone orchestration: `RunWaveFull()` in `pkg/engine/` — full wave lifecycle in one call
-- IMPL doc: `docs/IMPL/IMPL-orchestration-loop-cli.yaml` — 24 agents, 5 waves, SAW:COMPLETE 2026-03-09
+- IMPL doc: `docs/IMPL/IMPL-orchestration-loop-cli.yaml` — 24 agents, 5 waves, Polywave:COMPLETE 2026-03-09
 - Cross-repo prompt updates: `polywave-skill.md` v0.7.0, `saw-merge.md` v0.6.0, `saw-worktree.md` v0.6.0 in polywave repo
 
 ### v0.15.0 — Binary rename to polywave-tools (2026-03-09)

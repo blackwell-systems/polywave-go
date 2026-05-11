@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// WorktreeBaseDirs lists the directory names (inside a repo root) where SAW
+// WorktreeBaseDirs lists the directory names (inside a repo root) where Polywave
 // worktrees may live. The canonical location is ".claude"; ".claire" is a
 // known Claude hallucination that occurs in some sessions.
 var WorktreeBaseDirs = []string{".claude", ".claire"}

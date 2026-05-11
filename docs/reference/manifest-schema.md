@@ -1,6 +1,6 @@
 # IMPL Manifest Schema Reference
 
-The IMPL manifest is a YAML document parsed into `protocol.IMPLManifest`. It is the single source of truth for a SAW feature: scout output, wave/agent definitions, quality gates, wiring declarations, and runtime reports all live here.
+The IMPL manifest is a YAML document parsed into `protocol.IMPLManifest`. It is the single source of truth for a Polywave feature: scout output, wave/agent definitions, quality gates, wiring declarations, and runtime reports all live here.
 
 ---
 

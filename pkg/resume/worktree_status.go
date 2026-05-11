@@ -13,7 +13,7 @@ import (
 	"github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 
-// DirtyWorktree describes a SAW agent worktree and whether it has uncommitted changes.
+// DirtyWorktree describes a Polywave agent worktree and whether it has uncommitted changes.
 type DirtyWorktree struct {
 	Path       string `json:"path"`
 	Branch     string `json:"branch"`

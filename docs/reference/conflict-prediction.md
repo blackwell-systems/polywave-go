@@ -65,7 +65,7 @@ HunkRange{Start: int, End: int}  // both 1-indexed, inclusive
 
 The cascade patch pattern is the primary reason E11 has Pass 2 at all.
 
-In a typical SAW wave, each agent is assigned ownership of different files. When a wave touches a shared file (a common interface, a constants file, a registry), the Scout assigns each agent a different section of that file — for example, Agent A adds a method to `FuncA` near the top and Agent B adds a method to `FuncB` near the bottom. Both agents report `shared.go` in their `files_changed` list.
+In a typical Polywave wave, each agent is assigned ownership of different files. When a wave touches a shared file (a common interface, a constants file, a registry), the Scout assigns each agent a different section of that file — for example, Agent A adds a method to `FuncA` near the top and Agent B adds a method to `FuncB` near the bottom. Both agents report `shared.go` in their `files_changed` list.
 
 Without hunk analysis, this would look like a conflict. With Pass 2, E11 verifies that the two agents' `@@ -a,b @@` ranges do not overlap, confirms git 3-way merge will handle it cleanly, and allows the merge to proceed. No manual intervention required.
 

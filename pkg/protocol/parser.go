@@ -1,5 +1,5 @@
 // Package protocol parses and updates IMPL documents — the single source of
-// truth for SAW protocol execution. It extracts wave/agent structure,
+// truth for Polywave protocol execution. It extracts wave/agent structure,
 // reads completion reports written by agents, and ticks status checkboxes
 // once agents report completion. All IMPL doc I/O is concentrated here.
 package protocol

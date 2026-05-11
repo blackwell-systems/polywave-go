@@ -15,7 +15,7 @@ func init() {
 	mergeWaveFunc = executeMergeWave
 }
 
-// executeMergeWave implements the full SAW merge procedure for waveNum.
+// executeMergeWave implements the full Polywave merge procedure for waveNum.
 // Called by Orchestrator.MergeWave via the mergeWaveFunc variable (set in init()).
 func executeMergeWave(ctx context.Context, o *Orchestrator, waveNum int) result.Result[MergeData] {
 	// Step 1: Find wave in IMPL doc.

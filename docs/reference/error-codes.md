@@ -1,4 +1,4 @@
-# SAW Error Code Reference
+# Polywave Error Code Reference
 
 Error codes appear in the `code` field of every `SAWError` object returned by polywave-tools commands. They identify the exact failure condition so agents and users can diagnose and fix problems without reading source.
 
@@ -77,7 +77,7 @@ Emitted by `polywave-tools validate` and pre-flight checks inside `prepare-wave`
 | `V044_MISSING_CHECKLIST` | New API handlers (`pkg/api/*_handler.go`) or React components (`web/src/components/*.tsx`) are declared in `file_ownership` but `post_merge_checklist` is absent or empty. | Add a `post_merge_checklist` section listing integration steps needed after merge. This is a warning — it does not block execution. |
 | `V045_REPO_MISMATCH` | Every single `action: modify` file in the IMPL is missing from disk. This indicates the IMPL is being validated against the wrong repository directory. | Run validate with the correct `--repo-dir` pointing to the repository this IMPL targets. |
 | `V046_PARSE_ERROR` | The IMPL YAML cannot be parsed (syntax error, invalid encoding, or duplicate key detected during raw parsing). | Fix the YAML syntax. The error message includes the line or key causing the failure. |
-| `V047_TRIVIAL_SCOPE` | The IMPL is marked `SUITABLE` but has exactly 1 agent owning exactly 1 file. SAW provides no parallelization benefit at this scope. | Make the change directly without using SAW. Delete the IMPL doc and edit the file manually. If SAW is genuinely needed (e.g. for the quality gate infrastructure), split the work into multiple agents or mark it `NOT_SUITABLE`. |
+| `V047_TRIVIAL_SCOPE` | The IMPL is marked `SUITABLE` but has exactly 1 agent owning exactly 1 file. Polywave provides no parallelization benefit at this scope. | Make the change directly without using Polywave. Delete the IMPL doc and edit the file manually. If Polywave is genuinely needed (e.g. for the quality gate infrastructure), split the work into multiple agents or mark it `NOT_SUITABLE`. |
 
 ---
 

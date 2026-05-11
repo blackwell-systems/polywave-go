@@ -52,7 +52,7 @@ func DetectStaleWorktrees(repoPath string) ([]StaleWorktree, error) {
 			continue
 		}
 
-		// Verify this is a SAW branch (has wave/agent info).
+		// Verify this is a Polywave branch (has wave/agent info).
 		if _, _, ok := ParseBranch(branch); !ok {
 			continue
 		}

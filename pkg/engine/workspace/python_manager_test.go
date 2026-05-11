@@ -126,7 +126,7 @@ func TestPythonManager_Setup_CreatesPyrightConfigFromScratch(t *testing.T) {
 func TestPythonManager_Restore_FromBackup_PyRight(t *testing.T) {
 	dir := t.TempDir()
 
-	// Set up a SAW-modified pyrightconfig.json and its backup.
+	// Set up a Polywave-modified pyrightconfig.json and its backup.
 	pyrightPath := filepath.Join(dir, "pyrightconfig.json")
 	modified := []byte(`{"extraPaths":["worktree1","worktree2"]}`)
 	if err := os.WriteFile(pyrightPath, modified, 0644); err != nil {
@@ -166,7 +166,7 @@ func TestPythonManager_Restore_FromBackup_PyRight(t *testing.T) {
 func TestPythonManager_Restore_DeletesCreatedPyrightConfig(t *testing.T) {
 	dir := t.TempDir()
 
-	// pyrightconfig.json exists but no backup (SAW created it from scratch).
+	// pyrightconfig.json exists but no backup (Polywave created it from scratch).
 	pyrightPath := filepath.Join(dir, "pyrightconfig.json")
 	if err := os.WriteFile(pyrightPath, []byte(`{"extraPaths":["wt"]}`), 0644); err != nil {
 		t.Fatal(err)

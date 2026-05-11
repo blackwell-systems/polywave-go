@@ -9,7 +9,7 @@ import (
 // agent's completion report section does not exist in the IMPL doc.
 var ErrReportNotFound = errors.New("completion report not found")
 
-// IMPLManifest is the structured representation of a SAW IMPL document.
+// IMPLManifest is the structured representation of a Polywave IMPL document.
 // It contains all metadata, wave definitions, agent tasks, and completion reports.
 type IMPLManifest struct {
 	Title                 string                         `yaml:"title" json:"title"`

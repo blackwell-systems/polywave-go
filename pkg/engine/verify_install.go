@@ -408,7 +408,7 @@ var criticalPolywaveHooks = []string{
 	"validate_agent_completion",
 }
 
-// checkHooksRegistered verifies that critical SAW hooks appear in settings.json.
+// checkHooksRegistered verifies that critical Polywave hooks appear in settings.json.
 func checkHooksRegistered() InstallCheck {
 	s := readClaudeSettings()
 	if s == nil {

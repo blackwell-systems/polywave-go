@@ -1,6 +1,6 @@
 package tools
 
-// StandardTools creates a workshop and registers all 7 standard SAW tools.
+// StandardTools creates a workshop and registers all 7 standard Polywave tools.
 // Tool names use underscores (OpenAI function name compatible).
 func StandardTools(workDir string) Workshop {
 	reg := NewWorkshop()

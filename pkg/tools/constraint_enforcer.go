@@ -1,6 +1,6 @@
 // pkg/tools/constraint_enforcer.go
 //
-// Real middleware implementations for SAW protocol invariant enforcement.
+// Real middleware implementations for Polywave protocol invariant enforcement.
 // Registered via RegisterConstraintMiddleware(), called explicitly from
 // workshop_constrained.go's init(), eliminating the fragile dependency on
 // Go's alphabetical file init() ordering.

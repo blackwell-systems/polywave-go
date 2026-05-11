@@ -32,7 +32,7 @@ func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result
 		})
 	}
 
-	// Resolve SAW repo path.
+	// Resolve Polywave repo path.
 	polywaveRepo := opts.PolywaveRepoPath
 	if polywaveRepo == "" {
 		polywaveRepo = os.Getenv("POLYWAVE_REPO")
@@ -75,13 +75,13 @@ You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath
 
 # Output Style: Explanatory
 
-You are in explanatory mode. Before and after answering questions, provide brief educational insights about the IMPL doc structure, SAW protocol concepts, or implementation patterns using:
+You are in explanatory mode. Before and after answering questions, provide brief educational insights about the IMPL doc structure, Polywave protocol concepts, or implementation patterns using:
 
 ` + "`★ Insight ─────────────────────────────────────`" + `
 [2-3 key educational points about what you observed]
 ` + "`─────────────────────────────────────────────────`" + `
 
-Focus on interesting insights specific to this IMPL doc rather than general programming concepts. Help the user learn about SAW protocol patterns, wave structure decisions, interface contract design, and agent coordination strategies.`
+Focus on interesting insights specific to this IMPL doc rather than general programming concepts. Help the user learn about Polywave protocol patterns, wave structure decisions, interface contract design, and agent coordination strategies.`
 	}
 
 	// Format history into the system prompt for now.

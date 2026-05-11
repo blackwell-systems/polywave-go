@@ -24,7 +24,7 @@ type Result[T any] struct {
 	Code   string     `json:"code"` // "SUCCESS" | "PARTIAL" | "FATAL"
 }
 
-// PolywaveError is the unified structured error type for all SAW operations.
+// PolywaveError is the unified structured error type for all Polywave operations.
 // Replaces: protocol.ValidationError, errparse.StructuredError, result.PolywaveError.
 // Implements the error interface. Supports errors.Is/As chains via Unwrap.
 type PolywaveError struct {

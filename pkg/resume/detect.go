@@ -374,7 +374,7 @@ func loadCompletedSlugs(repoPath string) map[string]bool {
 	return slugs
 }
 
-// extractSlugFromBranch extracts the IMPL slug from a slug-scoped SAW branch name.
+// extractSlugFromBranch extracts the IMPL slug from a slug-scoped Polywave branch name.
 // Returns the slug and true if found, or empty string and false for legacy branches.
 // The candidate should already have refs/heads/ stripped.
 func extractSlugFromBranch(candidate string) (string, bool) {

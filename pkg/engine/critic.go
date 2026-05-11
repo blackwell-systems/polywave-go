@@ -92,7 +92,7 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.R
 	if criticMdRes.IsFatal() {
 		return result.NewFailure[string]([]result.PolywaveError{
 			result.NewFatal(result.CodeBriefExtractFail,
-				fmt.Sprintf("run-critic: critic-agent.md not found at %s — verify SAW installation or set POLYWAVE_REPO environment variable: %v", criticMdPath, criticMdRes.Errors[0].Message)),
+				fmt.Sprintf("run-critic: critic-agent.md not found at %s — verify Polywave installation or set POLYWAVE_REPO environment variable: %v", criticMdPath, criticMdRes.Errors[0].Message)),
 		})
 	}
 	criticMdContent := criticMdRes.GetData()

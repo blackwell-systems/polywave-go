@@ -102,7 +102,7 @@ The `state` field must be one of these `ProtocolState` constants (V008):
 | `WAVE_VERIFIED` | Wave passed quality gates |
 | `BLOCKED` | Manual intervention required |
 | `COMPLETE` | All waves done |
-| `NOT_SUITABLE` | Feature deemed unfit for SAW |
+| `NOT_SUITABLE` | Feature deemed unfit for Polywave |
 
 Empty/omitted `state` is accepted for backward compatibility. An unrecognized value (anything not in the table above) triggers V008.
 
@@ -194,7 +194,7 @@ Two checks apply when `file_ownership` entries use explicit `repo:` fields:
 
 ## Agent Scope and LOC Budget
 
-**V047 (Trivial Scope):** An IMPL declaring itself `SUITABLE` or `SUITABLE_WITH_CAVEATS` with exactly 1 total agent owning exactly 1 file is rejected. SAW provides no parallelization benefit at this scope; the change should be made directly. Retry IMPLs (slugs containing `-retry-`) are exempt.
+**V047 (Trivial Scope):** An IMPL declaring itself `SUITABLE` or `SUITABLE_WITH_CAVEATS` with exactly 1 total agent owning exactly 1 file is rejected. Polywave provides no parallelization benefit at this scope; the change should be made directly. Retry IMPLs (slugs containing `-retry-`) are exempt.
 
 **W001 (Scope Large):** Warnings are emitted when any agent owns more than 8 files total or creates more than 5 new files. These are advisory; they do not block execution.
 

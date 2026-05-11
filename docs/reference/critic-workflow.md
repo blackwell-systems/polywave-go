@@ -65,7 +65,7 @@ When `--skip` is used, the `run-critic` CLI writes a synthetic `CriticData` with
 
 ## Check Categories
 
-The critic agent verifies the following categories. These are set in `CriticIssue.Check`. The authoritative list is in `critic-agent.md` (see `implementations/claude-code/prompts/agents/critic-agent.md` in the SAW protocol repo).
+The critic agent verifies the following categories. These are set in `CriticIssue.Check`. The authoritative list is in `critic-agent.md` (see `implementations/claude-code/prompts/agents/critic-agent.md` in the Polywave protocol repo).
 
 | Check | What is verified |
 |---|---|
@@ -118,7 +118,7 @@ A warnings-only report in auto mode is treated as safe to proceed. In manual mod
 ## How `critic_report` Is Populated
 
 1. The orchestrator calls `polywave-tools run-critic <impl-path>` (or `engine.RunCritic` directly).
-2. `engine.BuildCriticPrompt` loads the IMPL doc, resolves repo roots, loads `critic-agent.md` from the SAW protocol repo with reference injection, and assembles the prompt.
+2. `engine.BuildCriticPrompt` loads the IMPL doc, resolves repo roots, loads `critic-agent.md` from the Polywave protocol repo with reference injection, and assembles the prompt.
 3. `engine.RunCritic` applies a context timeout (default 20 minutes), initializes a backend from the model option, and launches a critic agent via `agent.NewRunner`.
 4. The critic agent performs its checks and calls `polywave-tools set-critic-review <impl-path> --verdict <V> --summary <S> --issue-count <N> --agent-reviews <JSON>`.
 5. `set-critic-review` parses the JSON array of `AgentCriticReview` objects, builds a `CriticData`, and calls `protocol.WriteCriticReview` to persist it to `IMPLManifest.CriticReport`.
@@ -148,7 +148,7 @@ polywave-tools run-critic <impl-path> [flags]
 - `0` — verdict is `PASS` (or skipped)
 - `1` — verdict is `ISSUES`; error message directs operator to correct the IMPL doc before proceeding
 
-**SAW repo resolution** (for loading `critic-agent.md`):
+**Polywave repo resolution** (for loading `critic-agent.md`):
 1. `$POLYWAVE_REPO` environment variable
 2. `~/code/polywave` (default fallback)
 

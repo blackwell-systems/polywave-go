@@ -14,7 +14,7 @@ import (
 	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
-// PolywaveConfig is the unified configuration type for all SAW operations.
+// PolywaveConfig is the unified configuration type for all Polywave operations.
 // It is the superset of fields from backend.PolywaveProviders, autonomy.Config,
 // and the web application's service.PolywaveConfig.
 type PolywaveConfig struct {

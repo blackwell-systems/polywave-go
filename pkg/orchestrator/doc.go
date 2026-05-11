@@ -1,4 +1,4 @@
-// Package orchestrator drives SAW protocol wave execution: it advances the
+// Package orchestrator drives Polywave protocol wave execution: it advances the
 // 10-state machine, creates per-agent git worktrees, launches agents
 // concurrently, merges completed worktrees, runs post-merge verification,
 // and updates the IMPL doc status table.

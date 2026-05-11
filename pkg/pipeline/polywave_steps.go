@@ -147,7 +147,7 @@ func StepCleanup() Step {
 }
 
 // WavePipeline builds the standard wave execution pipeline for the given wave number.
-// The pipeline chains all SAW steps in the canonical order:
+// The pipeline chains all Polywave steps in the canonical order:
 //
 //	validate_invariants → create_worktrees → run_quality_gates →
 //	merge_agents → verify_build → cleanup

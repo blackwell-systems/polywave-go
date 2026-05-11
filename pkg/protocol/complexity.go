@@ -18,7 +18,7 @@ const codeAgentLOCBudget = "V048_AGENT_LOC_BUDGET"
 //
 // Hard errors (block execution):
 //   - V047_TRIVIAL_SCOPE: IMPL is SUITABLE but has only 1 agent owning 1 file.
-//     SAW adds no parallelization value; the change should be made directly.
+//     Polywave adds no parallelization value; the change should be made directly.
 //
 // Warnings (advisory):
 //   - W001_AGENT_SCOPE_LARGE: agent owns >8 files or creates >5 new files.
@@ -28,7 +28,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.Polywav
 
 	// V047: Reject trivial single-agent, single-file IMPLs declared SUITABLE.
 	// The suitability gate is LLM-driven; this catch ensures small-scope work
-	// doesn't incur full SAW orchestration overhead for zero parallelism benefit.
+	// doesn't incur full Polywave orchestration overhead for zero parallelism benefit.
 	// Exempt retry IMPLs (slug contains "-retry-") — those are machine-generated
 	// and are intentionally targeted single-agent documents.
 	isRetry := strings.Contains(m.FeatureSlug, "-retry-")
@@ -40,7 +40,7 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.Polywav
 		if totalAgents == 1 && len(m.FileOwnership) == 1 {
 			warnings = append(warnings, result.PolywaveError{
 				Code:     result.CodeTrivialScope,
-				Message:  "IMPL has 1 agent owning 1 file — SAW adds no parallelization value at this scope; make the change directly instead",
+				Message:  "IMPL has 1 agent owning 1 file — Polywave adds no parallelization value at this scope; make the change directly instead",
 				Severity: "error",
 				Field:    "file_ownership",
 			})

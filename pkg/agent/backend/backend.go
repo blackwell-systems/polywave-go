@@ -64,7 +64,7 @@ type Config struct {
 	// and edit_file at execution time. Used for Scout agents.
 	ReadOnly bool
 
-	// Constraints, if non-nil, configures SAW protocol invariant enforcement
+	// Constraints, if non-nil, configures Polywave protocol invariant enforcement
 	// (I1 file ownership, I2 interface freeze, I5 commit tracking, I6 role separation).
 	// When nil, no constraints are applied (backward compatible).
 	Constraints *tools.Constraints

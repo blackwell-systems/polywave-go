@@ -140,7 +140,7 @@ func (m *PythonWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePat
 func (m *PythonWorkspaceManager) Restore(repoRoot string, waveNum int) error {
 	backupDir := BackupDir(repoRoot, waveNum)
 
-	// Handle pyrightconfig.json backup or SAW-created file.
+	// Handle pyrightconfig.json backup or Polywave-created file.
 	pyrightBackup := filepath.Join(backupDir, "pyrightconfig.json.backup")
 	pyrightPath := filepath.Join(repoRoot, "pyrightconfig.json")
 	if content, err := os.ReadFile(pyrightBackup); err == nil {
@@ -152,9 +152,9 @@ func (m *PythonWorkspaceManager) Restore(repoRoot string, waveNum int) error {
 			return fmt.Errorf("python_manager: remove pyrightconfig.json.backup: %w", err)
 		}
 	} else if _, statErr := os.Stat(pyrightPath); statErr == nil {
-		// No backup means SAW created the file; delete it.
+		// No backup means Polywave created the file; delete it.
 		if err := os.Remove(pyrightPath); err != nil {
-			return fmt.Errorf("python_manager: remove SAW-created pyrightconfig.json: %w", err)
+			return fmt.Errorf("python_manager: remove Polywave-created pyrightconfig.json: %w", err)
 		}
 	}
 

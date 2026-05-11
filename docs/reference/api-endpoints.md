@@ -940,7 +940,7 @@ Events published to `GET /api/wave/{slug}/events` (scaffold_started, scaffold_ou
 
 ### `GET /api/sessions/interrupted`
 
-Scan all configured repos for interrupted SAW sessions.
+Scan all configured repos for interrupted Polywave sessions.
 
 **Response:** `200 OK`
 ```json
@@ -1104,7 +1104,7 @@ Subscribe to `GET /api/impl/{slug}/chat/{runID}/events` for streaming response.
 
 ### `GET /api/impl/{slug}/worktrees`
 
-List all SAW-managed git worktrees for an IMPL.
+List all Polywave-managed git worktrees for an IMPL.
 
 **Response:** `200 OK`
 ```json

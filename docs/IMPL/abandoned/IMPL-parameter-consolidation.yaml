@@ -39,7 +39,7 @@ suitability_assessment: |
     - Scout phase: ~5 min (simple dependency analysis, straightforward contracts)
     - Agent execution: ~8-12 min (4 agents × 3-4 min avg, accounting for parallelism)
     - Merge & verification: ~3 min
-    Total SAW time: ~16-20 min
+    Total Polywave time: ~16-20 min
 
     Sequential baseline: ~25-30 min (4 functions × 6-7 min avg sequential time)
     Time savings: ~8-12 min (35-40% faster)

@@ -160,7 +160,7 @@ Selected codes:
 | `V016_JSONSCHEMA_FAILED` | `CodeJSONSchemaFailed` | Document failed JSON Schema validation. |
 | `V036_INVALID_ENUM` | `CodeInvalidEnum` | Field value is not a member of the allowed enum set. |
 | `V046_PARSE_ERROR` | `CodeParseError` | YAML or JSON could not be parsed. |
-| `V047_TRIVIAL_SCOPE` | `CodeTrivialScope` | IMPL has only one agent owning one file; SAW provides no parallelisation value. |
+| `V047_TRIVIAL_SCOPE` | `CodeTrivialScope` | IMPL has only one agent owning one file; Polywave provides no parallelisation value. |
 
 ### W — Warnings (W001–W099)
 

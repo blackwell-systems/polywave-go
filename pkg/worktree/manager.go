@@ -1,4 +1,4 @@
-// Package worktree manages git worktrees for SAW wave agents. Each agent
+// Package worktree manages git worktrees for Polywave wave agents. Each agent
 // in a wave receives an isolated worktree branched from HEAD so that
 // parallel file edits cannot conflict during execution. The Manager
 // handles creation, path resolution, and cleanup of worktrees.
@@ -33,7 +33,7 @@ type CreateData struct {
 	Branch string
 }
 
-// Manager tracks and manages git worktrees for SAW wave agents.
+// Manager tracks and manages git worktrees for Polywave wave agents.
 // Manager is not safe for concurrent use.
 type Manager struct {
 	repoPath string

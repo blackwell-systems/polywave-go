@@ -777,7 +777,7 @@ func TestExtractSlugFromBranch(t *testing.T) {
 		{"polywave/my-feature/wave1-agent-A", "my-feature", true},
 		{"polywave/completed-slug/wave2-agent-B3", "completed-slug", true},
 		{"wave1-agent-A", "", false},           // legacy, no slug
-		{"main", "", false},                    // not a SAW branch
+		{"main", "", false},                    // not a Polywave branch
 		{"polywave//wave1-agent-A", "", false},      // empty slug
 	}
 	for _, tc := range tests {
@@ -872,7 +872,7 @@ func TestDetectOrphanedWorktrees_LiveGitPath(t *testing.T) {
 	run("add", ".")
 	run("commit", "-m", "init")
 
-	// Create a SAW-patterned worktree.
+	// Create a Polywave-patterned worktree.
 	wtPath := filepath.Join(repo, ".claude", "worktrees", "polywave", "test-feature", "wave1-agent-A")
 	if err := os.MkdirAll(filepath.Dir(wtPath), 0o755); err != nil {
 		t.Fatal(err)

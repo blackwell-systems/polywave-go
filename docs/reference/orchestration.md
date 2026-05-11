@@ -1,6 +1,6 @@
 # Orchestration
 
-The orchestrator (`pkg/orchestrator`) drives SAW protocol wave execution: it
+The orchestrator (`pkg/orchestrator`) drives Polywave protocol wave execution: it
 advances an 11-state machine, creates per-agent git worktrees, launches agents
 concurrently via pluggable backends, merges completed worktrees, runs
 post-merge verification, and updates the IMPL doc status table.
@@ -552,7 +552,7 @@ type State struct {
 ### Registry
 
 `pipeline.Registry` maps step names to `StepFunc` implementations.
-`DefaultRegistry()` pre-populates the standard SAW steps:
+`DefaultRegistry()` pre-populates the standard Polywave steps:
 `validate_invariants`, `create_worktrees`, `run_quality_gates`,
 `merge_agents`, `verify_build`, `cleanup`.
 

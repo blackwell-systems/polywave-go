@@ -1,6 +1,6 @@
 # polywave-tools CLI Reference
 
-`polywave-tools` is the SAW Protocol SDK command-line toolkit. All commands accept a global `--repo-dir` flag (default `.`) specifying the repository root.
+`polywave-tools` is the Polywave Protocol SDK command-line toolkit. All commands accept a global `--repo-dir` flag (default `.`) specifying the repository root.
 
 ```
 polywave-tools [command] [args] [flags]
@@ -28,7 +28,7 @@ polywave-tools --repo-dir /path/to/repo [command] ...
 | `resolve-impl` | Context | Resolve IMPL doc path from slug, filename, or auto-select |
 | `interview` | Context | Conduct a structured requirements interview |
 | `init` | Setup | Zero-config project initialization |
-| `install-hooks` | Setup | Install SAW git hooks in repository |
+| `install-hooks` | Setup | Install Polywave git hooks in repository |
 | `pre-commit-check` | Quality | Pre-commit validation check (called by hooks) |
 | `set-injection-method` | Execution | Set agent injection method for an IMPL |
 | `create-worktrees` | Execution | Create git worktrees for agents in a wave |
@@ -36,7 +36,7 @@ polywave-tools --repo-dir /path/to/repo [command] ...
 | `prepare-wave` | Execution | Prepare all agents in a wave (atomic batch operation) |
 | `pre-wave-gate` | Execution | Run pre-wave readiness checks on an IMPL manifest |
 | `run-wave` | Execution | Execute full wave lifecycle end-to-end |
-| `auto` | Execution | Scout + confirm + wave: the full SAW flow in one command |
+| `auto` | Execution | Scout + confirm + wave: the full Polywave flow in one command |
 | `run-scout` | Execution | Automated Scout execution with validation (I3) |
 | `run-critic` | Execution | Run critic agent to review briefs against codebase (E37) |
 | `run-integration-agent` | Execution | Launch integration agent to wire integration gaps (E26) |
@@ -49,10 +49,10 @@ polywave-tools --repo-dir /path/to/repo [command] ...
 | `merge-agents` | Execution | Merge all agent branches for a wave |
 | `verify-build` | Execution | Run test and lint commands from manifest |
 | `cleanup` | Execution | Remove worktrees and branches after merge |
-| `cleanup-stale` | Execution | Detect and remove stale SAW worktrees |
+| `cleanup-stale` | Execution | Detect and remove stale Polywave worktrees |
 | `verify-isolation` | Execution | Verify agent is in correct isolated worktree (E12) |
 | `verify-hook-installed` | Execution | Verify pre-commit hook is installed in worktree (E4) |
-| `verify-install` | Execution | Check that all SAW prerequisites are met |
+| `verify-install` | Execution | Check that all Polywave prerequisites are met |
 | `update-status` | Status | Update agent status in manifest |
 | `update-context` | Status | Update project CONTEXT.md (E18) |
 | `set-completion` | Status | Set completion report for an agent |
@@ -80,11 +80,11 @@ polywave-tools --repo-dir /path/to/repo [command] ...
 | `amend-impl` | Amendment | Amend a living IMPL doc (add wave, redirect agent, extend scope) |
 | `retry` | Recovery | Generate retry IMPL doc for failed quality gate (E24) |
 | `build-retry-context` | Recovery | Build structured retry context for a failed agent |
-| `resume-detect` | Recovery | Detect interrupted SAW sessions in the repository |
+| `resume-detect` | Recovery | Detect interrupted Polywave sessions in the repository |
 | `journal-init` | Journal | Initialize journal directory for a wave agent |
 | `journal-context` | Journal | Generate context.md from journal entries for agent recovery |
 | `debug-journal` | Journal | Inspect journal contents for debugging failed agents |
-| `daemon` | Automation | Run the SAW daemon loop (process queue items continuously) |
+| `daemon` | Automation | Run the Polywave daemon loop (process queue items continuously) |
 | `queue` | Automation | Manage the IMPL execution queue (add, list, next) |
 | `metrics` | Observability | Show metrics for an IMPL (cost, duration, success rate) |
 | `query events` | Observability | Query observability events with filters |
@@ -1058,7 +1058,7 @@ polywave-tools cleanup docs/IMPL/my-feature.yaml --wave 1
 
 ### cleanup-stale
 
-Detect and remove stale SAW worktrees (completed IMPLs, orphaned branches, merged-but-not-cleaned).
+Detect and remove stale Polywave worktrees (completed IMPLs, orphaned branches, merged-but-not-cleaned).
 
 ```
 polywave-tools cleanup-stale [flags]
@@ -1087,7 +1087,7 @@ polywave-tools cleanup-stale --all --force
 
 ### verify-install
 
-Check that all SAW prerequisites are met: polywave-tools binary on PATH, Git version >= 2.20, skill directory and files, config file, and configured repo paths.
+Check that all Polywave prerequisites are met: polywave-tools binary on PATH, Git version >= 2.20, skill directory and files, config file, and configured repo paths.
 
 ```
 polywave-tools verify-install [flags]
@@ -1110,7 +1110,7 @@ polywave-tools verify-install --human
 
 ### init
 
-Initialize a new SAW-managed repository with zero configuration. Creates `docs/IMPL/`, `docs/IMPL/complete/`, and `polywave.config.json` with sensible defaults.
+Initialize a new Polywave-managed repository with zero configuration. Creates `docs/IMPL/`, `docs/IMPL/complete/`, and `polywave.config.json` with sensible defaults.
 
 ```
 polywave-tools init [flags]
@@ -1133,7 +1133,7 @@ polywave-tools init --repo-dir /path/to/new/repo
 
 ### install-hooks
 
-Install SAW git hooks in a repository. Installs pre-commit hook for worktree isolation enforcement (E43) and other validation checks.
+Install Polywave git hooks in a repository. Installs pre-commit hook for worktree isolation enforcement (E43) and other validation checks.
 
 ```
 polywave-tools install-hooks [flags]
@@ -1506,7 +1506,7 @@ polywave-tools program-status docs/PROGRAM.yaml
 
 ### mark-program-complete
 
-Mark a PROGRAM manifest as complete. Verifies all tiers are complete, updates state to PROGRAM_COMPLETE, sets completion date, writes the `SAW:PROGRAM:COMPLETE` marker, updates CONTEXT.md, and commits both files.
+Mark a PROGRAM manifest as complete. Verifies all tiers are complete, updates state to PROGRAM_COMPLETE, sets completion date, writes the `polywave:program:complete` marker, updates CONTEXT.md, and commits both files.
 
 ```
 polywave-tools mark-program-complete <program-manifest> [flags]
@@ -1980,7 +1980,7 @@ polywave-tools build-retry-context docs/IMPL/my-feature.yaml --agent B --attempt
 
 ### resume-detect
 
-Detect interrupted SAW sessions in the repository. Scans `docs/IMPL/` for manifests that are not complete or unsuitable, inspects completion reports and git worktrees.
+Detect interrupted Polywave sessions in the repository. Scans `docs/IMPL/` for manifests that are not complete or unsuitable, inspects completion reports and git worktrees.
 
 ```
 polywave-tools resume-detect
@@ -2097,7 +2097,7 @@ polywave-tools debug-journal wave1/agent-A --export timeline.html
 
 ### daemon
 
-Run the SAW daemon loop that continuously monitors the IMPL queue, runs Scout/Wave cycles, auto-remediates failures, and advances the queue.
+Run the Polywave daemon loop that continuously monitors the IMPL queue, runs Scout/Wave cycles, auto-remediates failures, and advances the queue.
 
 ```
 polywave-tools daemon [flags]

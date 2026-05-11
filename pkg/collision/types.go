@@ -1,4 +1,4 @@
-// Package collision provides AST-based type collision detection for SAW Wave agents.
+// Package collision provides AST-based type collision detection for Polywave Wave agents.
 // It scans agent branches for new type declarations and detects naming conflicts
 // within the same package across multiple agents.
 package collision

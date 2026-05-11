@@ -1,6 +1,6 @@
 # pkg/notify - Extractable Notification Library
 
-A standalone notification adapter library with zero SAW-specific dependencies.
+A standalone notification adapter library with zero Polywave-specific dependencies.
 Designed for extraction into an independent Go module.
 
 ## Quick Start
