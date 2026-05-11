@@ -321,7 +321,7 @@ func TestRunTierLoop_PassesMergeTarget(t *testing.T) {
 
 	// Verify ProgramBranchName produces expected branch for tier loop usage
 	implBranch := protocol.ProgramBranchName(manifest.ProgramSlug, 1, "auth-service")
-	expected := "saw/program/test-program/tier1-impl-auth-service"
+	expected := "polywave/program/test-program/tier1-impl-auth-service"
 	if implBranch != expected {
 		t.Errorf("expected implBranch=%q, got %q", expected, implBranch)
 	}
@@ -359,12 +359,12 @@ func TestRunTierLoop_CreatesIMPLBranch(t *testing.T) {
 		t.Error("each IMPL should have a unique branch name")
 	}
 
-	expectedBilling := "saw/program/test-program/tier2-impl-billing"
+	expectedBilling := "polywave/program/test-program/tier2-impl-billing"
 	if billingBranch != expectedBilling {
 		t.Errorf("expected billing branch=%q, got %q", expectedBilling, billingBranch)
 	}
 
-	expectedNotif := "saw/program/test-program/tier2-impl-notifications"
+	expectedNotif := "polywave/program/test-program/tier2-impl-notifications"
 	if notifBranch != expectedNotif {
 		t.Errorf("expected notifications branch=%q, got %q", expectedNotif, notifBranch)
 	}

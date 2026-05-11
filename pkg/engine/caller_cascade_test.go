@@ -19,8 +19,8 @@ func TestClassifyCallerCascadeErrors_AllCascades(t *testing.T) {
 	verifyData := &protocol.VerifyBuildData{
 		TestPassed: false,
 		LintPassed: false,
-		TestOutput: "cmd/sawtools/some_cmd.go:36:12: undefined: SomeFunc",
-		LintOutput: "cmd/sawtools/other_cmd.go:14:8: assignment mismatch: 2 variables but NewThing returns 1",
+		TestOutput: "cmd/polywave-tools/some_cmd.go:36:12: undefined: SomeFunc",
+		LintOutput: "cmd/polywave-tools/other_cmd.go:14:8: assignment mismatch: 2 variables but NewThing returns 1",
 	}
 
 	manifest := buildCascadeTestManifest([]protocol.FileOwnership{
@@ -49,7 +49,7 @@ func TestClassifyCallerCascadeErrors_MixedErrors(t *testing.T) {
 		// Error in a wave-1-owned file (genuine failure)
 		TestOutput: "pkg/engine/foo.go:10:5: undefined: MissingFunc",
 		// Error in an unowned file (cascade)
-		LintOutput: "cmd/sawtools/some_cmd.go:36:12: undefined: SomeFunc",
+		LintOutput: "cmd/polywave-tools/some_cmd.go:36:12: undefined: SomeFunc",
 	}
 
 	manifest := buildCascadeTestManifest([]protocol.FileOwnership{
@@ -172,7 +172,7 @@ func TestClassifyCallerCascadeErrors_NilVerifyData(t *testing.T) {
 func TestClassifyCallerCascadeErrors_FileLineExtraction(t *testing.T) {
 	verifyData := &protocol.VerifyBuildData{
 		TestPassed: false,
-		LintOutput: "cmd/sawtools/main.go:123:7: undefined: MyFunc",
+		LintOutput: "cmd/polywave-tools/main.go:123:7: undefined: MyFunc",
 	}
 
 	manifest := buildCascadeTestManifest([]protocol.FileOwnership{
@@ -186,8 +186,8 @@ func TestClassifyCallerCascadeErrors_FileLineExtraction(t *testing.T) {
 	}
 
 	e := result.Errors[0]
-	if e.File != "cmd/sawtools/main.go" {
-		t.Errorf("File: got %q, want %q", e.File, "cmd/sawtools/main.go")
+	if e.File != "cmd/polywave-tools/main.go" {
+		t.Errorf("File: got %q, want %q", e.File, "cmd/polywave-tools/main.go")
 	}
 	if e.Line != 123 {
 		t.Errorf("Line: got %d, want 123", e.Line)

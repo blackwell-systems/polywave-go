@@ -26,7 +26,7 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // ## Stub Report — Wave {N} section to the IMPL doc at implDocPath.
 //
 // sawRepoPath locates scan-stubs.sh: falls back to $POLYWAVE_REPO env var, then
-// ~/code/scout-and-wave (same fallback as RunScout).
+// ~/code/polywave (same fallback as RunScout).
 //
 // Always returns success — stub detection is informational only (E20).
 func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData] {

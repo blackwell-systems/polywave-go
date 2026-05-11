@@ -3,7 +3,7 @@ feature_slug: semantic-code-index
 verdict: SUITABLE
 suitability_assessment: |
   File decomposition: 9+ distinct new files across 2 packages (pkg/codeindex/,
-  cmd/sawtools/), cleanly partitioned into types/schema, storage/query, parser/indexer,
+  cmd/polywave-tools/), cleanly partitioned into types/schema, storage/query, parser/indexer,
   and CLI layers. Disjoint ownership is achievable.
 
   Investigation-first items: None. Design doc fully specifies the schema, storage,
@@ -66,7 +66,7 @@ scaffolds:
     contents: |
       // Symbol, Ref, IndexDB, QueryFilter types for cross-agent use.
       // Agent A owns this file and defines all shared types.
-    import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex
+    import_path: github.com/blackwell-systems/polywave-go/pkg/codeindex
     status: pending
 
 file_ownership:
@@ -121,26 +121,26 @@ file_ownership:
     depends_on: [A]
 
   # Wave 3: CLI commands
-  - file: cmd/sawtools/index_codebase_cmd.go
+  - file: cmd/polywave-tools/index_codebase_cmd.go
     agent: D
     wave: 3
     action: new
     depends_on: [B, C]
 
-  - file: cmd/sawtools/query_symbols_cmd.go
+  - file: cmd/polywave-tools/query_symbols_cmd.go
     agent: D
     wave: 3
     action: new
     depends_on: [B, C]
 
-  - file: cmd/sawtools/index_codebase_cmd_test.go
+  - file: cmd/polywave-tools/index_codebase_cmd_test.go
     agent: D
     wave: 3
     action: new
     depends_on: []
 
   # Wave 4: Integration — wire CLI into main.go
-  - file: cmd/sawtools/main.go
+  - file: cmd/polywave-tools/main.go
     agent: E
     wave: 4
     action: modify
@@ -257,7 +257,7 @@ interface_contracts:
       // Flags: --repo-dir string (default "."), --lang string (default "go"),
       //        --output string (default "$repo-dir/.saw-index/symbols.db"),
       //        --include-tests bool (default false)
-    location: cmd/sawtools/index_codebase_cmd.go
+    location: cmd/polywave-tools/index_codebase_cmd.go
 
   - name: newQuerySymbolsCmd
     description: Cobra command constructor for query-symbols
@@ -266,7 +266,7 @@ interface_contracts:
       // Flags: --repo-dir string (default "."), --kind string, --exported bool,
       //        --package string, --callers-of string, --unused-exports bool,
       //        --format string (default "table", also "json")
-    location: cmd/sawtools/query_symbols_cmd.go
+    location: cmd/polywave-tools/query_symbols_cmd.go
 
 waves:
   - number: 1
@@ -627,7 +627,7 @@ waves:
         task: |
           ## Context
 
-          You are implementing two new CLI commands for the sawtools binary. Agents A,
+          You are implementing two new CLI commands for the polywave-tools binary. Agents A,
           B, and C (waves 1-2) have already created the pkg/codeindex/ package with:
           - types.go — Symbol, Ref, QueryFilter
           - schema.go — Schema DDL constant
@@ -640,7 +640,7 @@ waves:
 
           ## What to implement
 
-          ### cmd/sawtools/index_codebase_cmd.go
+          ### cmd/polywave-tools/index_codebase_cmd.go
 
           ```go
           package main
@@ -649,7 +649,7 @@ waves:
               "fmt"
               "path/filepath"
 
-              "github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex"
+              "github.com/blackwell-systems/polywave-go/pkg/codeindex"
               "github.com/spf13/cobra"
           )
 
@@ -673,7 +673,7 @@ waves:
             5. Return any errors
           - Exit codes: 0 = success, non-zero = error (cobra handles this)
 
-          ### cmd/sawtools/query_symbols_cmd.go
+          ### cmd/polywave-tools/query_symbols_cmd.go
 
           ```go
           package main
@@ -684,7 +684,7 @@ waves:
               "strings"
               "text/tabwriter"
 
-              "github.com/blackwell-systems/scout-and-wave-go/pkg/codeindex"
+              "github.com/blackwell-systems/polywave-go/pkg/codeindex"
               "github.com/spf13/cobra"
           )
 
@@ -715,7 +715,7 @@ waves:
                - `--format json`: json.MarshalIndent the results array
             5. Print to stdout; return errors
 
-          ### cmd/sawtools/index_codebase_cmd_test.go
+          ### cmd/polywave-tools/index_codebase_cmd_test.go
 
           Write at least 2 tests:
           - TestIndexCodebaseCmd_help: run command with --help, verify no error and
@@ -726,10 +726,10 @@ waves:
           ## Verification gate
 
           ```
-          go build ./cmd/sawtools/...
-          go vet ./cmd/sawtools/...
-          go test ./cmd/sawtools/... -run TestIndexCodebase
-          go test ./cmd/sawtools/... -run TestQuerySymbols
+          go build ./cmd/polywave-tools/...
+          go vet ./cmd/polywave-tools/...
+          go test ./cmd/polywave-tools/... -run TestIndexCodebase
+          go test ./cmd/polywave-tools/... -run TestQuerySymbols
           ```
 
           ## Constraints
@@ -737,13 +737,13 @@ waves:
           - Do NOT modify main.go — that is owned by Agent E (integration wave)
           - Function names MUST be newIndexCodebaseCmd and newQuerySymbolsCmd (exact)
           - Do NOT add tree-sitter to go.mod — the pkg/codeindex package uses go/ast
-          - Follow existing cmd/sawtools/ command patterns: cobra.Command, --repo-dir
+          - Follow existing cmd/polywave-tools/ command patterns: cobra.Command, --repo-dir
             flag, RunE (not Run), return errors rather than os.Exit
           - For the DB path default, use filepath.Join(absRepoDir, ".saw-index", "symbols.db")
         files:
-          - cmd/sawtools/index_codebase_cmd.go
-          - cmd/sawtools/query_symbols_cmd.go
-          - cmd/sawtools/index_codebase_cmd_test.go
+          - cmd/polywave-tools/index_codebase_cmd.go
+          - cmd/polywave-tools/query_symbols_cmd.go
+          - cmd/polywave-tools/index_codebase_cmd_test.go
         dependencies:
           - B
           - C
@@ -758,12 +758,12 @@ waves:
           You are wiring the two new CLI commands into main.go. Agents A-D have
           completed the implementation. The commands are:
 
-          - newIndexCodebaseCmd() in cmd/sawtools/index_codebase_cmd.go
-          - newQuerySymbolsCmd() in cmd/sawtools/query_symbols_cmd.go
+          - newIndexCodebaseCmd() in cmd/polywave-tools/index_codebase_cmd.go
+          - newQuerySymbolsCmd() in cmd/polywave-tools/query_symbols_cmd.go
 
           ## What to implement
 
-          In cmd/sawtools/main.go, locate the rootCmd.AddCommand(...) call and add
+          In cmd/polywave-tools/main.go, locate the rootCmd.AddCommand(...) call and add
           two new entries:
 
           ```go
@@ -785,10 +785,10 @@ waves:
           ## Verification gate
 
           ```
-          go build ./cmd/sawtools/...
-          go vet ./cmd/sawtools/...
-          sawtools index-codebase --help
-          sawtools query-symbols --help
+          go build ./cmd/polywave-tools/...
+          go vet ./cmd/polywave-tools/...
+          polywave-tools index-codebase --help
+          polywave-tools query-symbols --help
           ```
 
           ## Constraints
@@ -796,7 +796,7 @@ waves:
           - Modify ONLY main.go (the AddCommand block)
           - Do not modify any other files
         files:
-          - cmd/sawtools/main.go
+          - cmd/polywave-tools/main.go
         dependencies:
           - D
 

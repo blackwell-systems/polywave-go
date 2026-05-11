@@ -5,11 +5,11 @@ Last reviewed: 2026-03-24
 ## Module
 
 ```
-module github.com/blackwell-systems/scout-and-wave-go
+module github.com/blackwell-systems/polywave-go
 ```
 
-Go engine and SDK for the Scout-and-Wave protocol. Consumed as a library by
-`scout-and-wave-web` (HTTP/SSE web application) and directly via the `sawtools`
+Go engine and SDK for the Polywave protocol. Consumed as a library by
+`polywave-web` (HTTP/SSE web application) and directly via the `polywave-tools`
 CLI binary (80 commands as of March 2026, including `help` and `completion`).
 
 ## High-Level Flow
@@ -328,7 +328,7 @@ modifying the agent backend.
 
 File structure per agent:
 ```
-.saw-state/wave{N}/agent-{ID}/
+.polywave-state/wave{N}/agent-{ID}/
 +-- cursor.json          # read position
 +-- index.jsonl          # append-only tool entries
 +-- recent.json          # last 30 entries
@@ -473,7 +473,7 @@ Autonomy level configuration for orchestrator decision-making. Three levels
 control how much human approval is required.
 
 - `autonomy.go` -- level checking and decision logic
-- `config.go` -- configuration loading from `saw.config.json`
+- `config.go` -- configuration loading from `polywave.config.json`
 
 Levels: `gated` (human approves everything), `supervised` (auto-advance with
 review points), `autonomous` (fully automatic).
@@ -498,7 +498,7 @@ detection), diff, status, and log parsing. Not importable outside this module.
 
 ### CLI Binary
 
-#### `cmd/sawtools` (sawtools)
+#### `cmd/polywave-tools` (polywave-tools)
 
 Cobra-based CLI binary with 80 commands (including `help` and `completion`).
 Each command wraps one or more engine/protocol functions. Commands are organized
@@ -578,21 +578,21 @@ allowed-transitions map. Invalid transitions return an error.
 
 The engine is split across three repos:
 
-- **scout-and-wave** -- protocol specification (invariants, execution rules, agent prompts)
-- **scout-and-wave-go** (this repo) -- engine, protocol SDK, CLI
-- **scout-and-wave-web** -- web UI, HTTP server, `saw serve` binary
+- **polywave** -- protocol specification (invariants, execution rules, agent prompts)
+- **polywave-go** (this repo) -- engine, protocol SDK, CLI
+- **polywave-web** -- web UI, HTTP server, `saw serve` binary
 
-`scout-and-wave-web` imports the engine as a Go module:
+`polywave-web` imports the engine as a Go module:
 
 ```go
 import (
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+    "github.com/blackwell-systems/polywave-go/pkg/engine"
+    "github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+    "github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 ```
 
-The `saw serve` command in `scout-and-wave-web` wraps the engine with HTTP
+The `saw serve` command in `polywave-web` wraps the engine with HTTP
 handlers and an SSE broker.
 
 ## Design Decisions

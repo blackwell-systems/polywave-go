@@ -1,4 +1,4 @@
-title: IMPL-level git rollback via automatic baseline/completion tagging and sawtools rollback command
+title: IMPL-level git rollback via automatic baseline/completion tagging and polywave-tools rollback command
 feature_slug: impl-rollback
 verdict: SUITABLE
 suitability_assessment: |
@@ -49,11 +49,11 @@ file_ownership:
       agent: B
       wave: 1
       action: new
-    - file: cmd/sawtools/rollback_cmd.go
+    - file: cmd/polywave-tools/rollback_cmd.go
       agent: C
       wave: 1
       action: new
-    - file: cmd/sawtools/rollback_cmd_test.go
+    - file: cmd/polywave-tools/rollback_cmd_test.go
       agent: C
       wave: 1
       action: new
@@ -65,19 +65,19 @@ file_ownership:
       agent: D
       wave: 2
       action: modify
-    - file: cmd/sawtools/close_impl_cmd.go
+    - file: cmd/polywave-tools/close_impl_cmd.go
       agent: E
       wave: 2
       action: modify
-    - file: cmd/sawtools/close_impl_cmd_test.go
+    - file: cmd/polywave-tools/close_impl_cmd_test.go
       agent: E
       wave: 2
       action: modify
-    - file: cmd/sawtools/main.go
+    - file: cmd/polywave-tools/main.go
       agent: E
       wave: 2
       action: modify
-    - file: cmd/sawtools/finalize_wave.go
+    - file: cmd/polywave-tools/finalize_wave.go
       agent: E
       wave: 2
       action: modify
@@ -132,28 +132,28 @@ interface_contracts:
         // Returns formatted log output.
       location: internal/git/commands.go
     - name: TagBaseline
-      description: Create saw/{slug}/baseline tag at current HEAD
+      description: Create polywave/{slug}/baseline tag at current HEAD
       definition: |
         func TagBaseline(repoPath, slug string) error
-        // Creates tag saw/{slug}/baseline at HEAD.
+        // Creates tag polywave/{slug}/baseline at HEAD.
         // Idempotent: returns nil if tag already exists.
       location: pkg/engine/tagging.go
     - name: TagWaveMerged
-      description: Create saw/{slug}/wave{N}-merged tag at current HEAD
+      description: Create polywave/{slug}/wave{N}-merged tag at current HEAD
       definition: |
         func TagWaveMerged(repoPath, slug string, waveNum int) error
-        // Creates tag saw/{slug}/wave{N}-merged at HEAD after successful merge.
+        // Creates tag polywave/{slug}/wave{N}-merged at HEAD after successful merge.
         // Idempotent: returns nil if tag already exists.
       location: pkg/engine/tagging.go
     - name: TagComplete
-      description: Create saw/{slug}/complete tag at current HEAD
+      description: Create polywave/{slug}/complete tag at current HEAD
       definition: |
         func TagComplete(repoPath, slug string) error
-        // Creates tag saw/{slug}/complete at HEAD.
+        // Creates tag polywave/{slug}/complete at HEAD.
         // Idempotent: returns nil if tag already exists.
       location: pkg/engine/tagging.go
     - name: CleanupTags
-      description: Remove all saw/{slug}/* tags
+      description: Remove all polywave/{slug}/* tags
       definition: |
         func CleanupTags(repoPath, slug string) ([]string, error)
         // Returns list of deleted tag names. Returns nil error if no tags found.
@@ -177,8 +177,8 @@ interface_contracts:
       description: Execute IMPL rollback to a specific tag
       definition: |
         func Rollback(repoPath, slug, target string, hard, dryRun bool) (*RollbackResult, error)
-        // target is "baseline" or "wave{N}" — resolved to saw/{slug}/{target} or
-        // saw/{slug}/{target}-merged tag.
+        // target is "baseline" or "wave{N}" — resolved to polywave/{slug}/{target} or
+        // polywave/{slug}/{target}-merged tag.
         // Default (hard=false): git revert --no-commit.
         // hard=true: git reset --hard.
         // dryRun=true: report what would happen without doing it.
@@ -264,35 +264,35 @@ waves:
             rollback functions. This file contains the business logic layer that uses
             `internal/git` primitives.
 
-            Import `github.com/blackwell-systems/scout-and-wave-go/internal/git` for
+            Import `github.com/blackwell-systems/polywave-go/internal/git` for
             git operations.
 
             ### Tag name helpers
 
             ```go
-            func baselineTagName(slug string) string { return fmt.Sprintf("saw/%s/baseline", slug) }
-            func waveMergedTagName(slug string, waveNum int) string { return fmt.Sprintf("saw/%s/wave%d-merged", slug, waveNum) }
-            func completeTagName(slug string) string { return fmt.Sprintf("saw/%s/complete", slug) }
-            func tagPrefix(slug string) string { return fmt.Sprintf("saw/%s/", slug) }
+            func baselineTagName(slug string) string { return fmt.Sprintf("polywave/%s/baseline", slug) }
+            func waveMergedTagName(slug string, waveNum int) string { return fmt.Sprintf("polywave/%s/wave%d-merged", slug, waveNum) }
+            func completeTagName(slug string) string { return fmt.Sprintf("polywave/%s/complete", slug) }
+            func tagPrefix(slug string) string { return fmt.Sprintf("polywave/%s/", slug) }
             ```
 
             ### Lifecycle tagging functions
 
             1. **`TagBaseline(repoPath, slug string) error`**
-               - Tag name: `saw/{slug}/baseline`
+               - Tag name: `polywave/{slug}/baseline`
                - Idempotent: if `git.TagExists` returns true, return nil (skip)
                - Otherwise call `git.CreateTag(repoPath, tagName, "")` to tag HEAD
 
             2. **`TagWaveMerged(repoPath, slug string, waveNum int) error`**
-               - Tag name: `saw/{slug}/wave{N}-merged`
+               - Tag name: `polywave/{slug}/wave{N}-merged`
                - Same idempotency pattern as TagBaseline
 
             3. **`TagComplete(repoPath, slug string) error`**
-               - Tag name: `saw/{slug}/complete`
+               - Tag name: `polywave/{slug}/complete`
                - Same idempotency pattern as TagBaseline
 
             4. **`CleanupTags(repoPath, slug string) ([]string, error)`**
-               - List all tags with prefix `saw/{slug}/` via `git.ListTagsWithPrefix`
+               - List all tags with prefix `polywave/{slug}/` via `git.ListTagsWithPrefix`
                - Delete each tag via `git.DeleteTag`
                - Return list of deleted tag names
                - Return nil error if no tags found (not an error condition)
@@ -387,7 +387,7 @@ waves:
           task: |
             ## What to implement
 
-            Create `cmd/sawtools/rollback_cmd.go` with the `sawtools rollback` CLI command.
+            Create `cmd/polywave-tools/rollback_cmd.go` with the `polywave-tools rollback` CLI command.
 
             **IMPORTANT:** This agent creates the command definition only. The command will be
             registered in main.go by Agent E in wave 2. For now, just define the function
@@ -396,7 +396,7 @@ waves:
             ### Command definition
 
             ```
-            sawtools rollback --impl <slug> [--to baseline|wave{N}] [--repo-dir <path>] [--hard] [--dry-run] [--cleanup]
+            polywave-tools rollback --impl <slug> [--to baseline|wave{N}] [--repo-dir <path>] [--hard] [--dry-run] [--cleanup]
             ```
 
             Flags:
@@ -404,7 +404,7 @@ waves:
             - `--to` (string, default "baseline"): Rollback target: "baseline" or "wave{N}"
             - `--hard` (bool): Use git reset --hard instead of revert
             - `--dry-run` (bool): Show what would happen without doing it
-            - `--cleanup` (bool): Remove all saw/{slug}/* tags after rollback (or standalone)
+            - `--cleanup` (bool): Remove all polywave/{slug}/* tags after rollback (or standalone)
 
             Note: `--repo-dir` is already a persistent flag on the root command (see root.go),
             available as the package-level `repoDir` variable.
@@ -424,7 +424,7 @@ waves:
                - Call `engine.Rollback(repoPath, slug, target, hard, dryRun)`
                - If `--cleanup` is also set and rollback succeeded:
                  call `engine.CleanupTags(repoPath, slug)` and merge into result
-            5. Check for multi-repo: look for `saw.config.json` in repoDir
+            5. Check for multi-repo: look for `polywave.config.json` in repoDir
                - If found and has repos array, iterate each repo
                - Use `engine.RollbackMultiRepo(repos, slug, target, hard, dryRun)`
             6. Print JSON result to stdout (json.MarshalIndent, 2-space indent)
@@ -451,15 +451,15 @@ waves:
             ```json
             {
               "repos": {
-                "scout-and-wave-go": { ... },
-                "scout-and-wave-web": { ... }
+                "polywave-go": { ... },
+                "polywave-web": { ... }
               }
             }
             ```
 
             ## Tests
 
-            Create `cmd/sawtools/rollback_cmd_test.go` with:
+            Create `cmd/polywave-tools/rollback_cmd_test.go` with:
             - TestNewRollbackCmd_RequiresImpl: verify error when --impl not provided
             - TestNewRollbackCmd_DefaultTarget: verify --to defaults to "baseline"
             - TestNewRollbackCmd_FlagParsing: verify all flags parse correctly
@@ -467,7 +467,7 @@ waves:
             ## Verification gate
 
             ```
-            go test ./cmd/sawtools/ -run "TestNewRollbackCmd" -v
+            go test ./cmd/polywave-tools/ -run "TestNewRollbackCmd" -v
             ```
 
             ## Constraints
@@ -479,8 +479,8 @@ waves:
             - The function `newRollbackCmd()` must be exported in the package
               (lowercase new, uppercase R — matching convention: newCloseImplCmd, etc.)
           files:
-            - cmd/sawtools/rollback_cmd.go
-            - cmd/sawtools/rollback_cmd_test.go
+            - cmd/polywave-tools/rollback_cmd.go
+            - cmd/polywave-tools/rollback_cmd_test.go
       base_commit: e3ff1dfdcea843a91a693b757c19919e63c525a8
     - number: 2
       agents:
@@ -513,7 +513,7 @@ waves:
 
             ### 2. Wave-merged tag in finalize
 
-            The finalize pipeline lives in `cmd/sawtools/finalize_wave.go` which is Agent E's
+            The finalize pipeline lives in `cmd/polywave-tools/finalize_wave.go` which is Agent E's
             file. Instead, add a step function in `pkg/engine/prepare.go` or a separate
             location that Agent E can call. Actually, since `FinalizeWave` in
             `pkg/engine/finalize.go` is also not this agent's file, the cleanest approach:
@@ -521,7 +521,7 @@ waves:
             Add this helper at the bottom of `prepare.go`:
 
             ```go
-            // TagWaveAfterMerge tags the current HEAD as saw/{slug}/wave{N}-merged.
+            // TagWaveAfterMerge tags the current HEAD as polywave/{slug}/wave{N}-merged.
             // Called by finalize-wave after successful merge+verify.
             // This is a thin wrapper that delegates to TagWaveMerged in tagging.go.
             // Exported so the CLI finalize_wave.go can call engine.TagWaveAfterMerge().
@@ -563,13 +563,13 @@ waves:
 
             ### 1. Register rollback command in main.go
 
-            In `cmd/sawtools/main.go`, add `newRollbackCmd()` to the `rootCmd.AddCommand()`
+            In `cmd/polywave-tools/main.go`, add `newRollbackCmd()` to the `rootCmd.AddCommand()`
             call. Add it after `newCloseImplCmd(),` (the last entry currently). The function
-            is defined in `cmd/sawtools/rollback_cmd.go` (created by Agent C in wave 1).
+            is defined in `cmd/polywave-tools/rollback_cmd.go` (created by Agent C in wave 1).
 
             ### 2. Add wave-merged tag to finalize_wave.go
 
-            In `cmd/sawtools/finalize_wave.go`, after the successful merge step (Step 4:
+            In `cmd/polywave-tools/finalize_wave.go`, after the successful merge step (Step 4:
             MergeAgents, around line 445 at the `postMerge:` label), add tagging logic.
             Insert after the `postMerge:` label and before Step 4.5:
 
@@ -591,7 +591,7 @@ waves:
 
             ### 3. Add complete tag to close_impl_cmd.go
 
-            In `cmd/sawtools/close_impl_cmd.go`, after Step 2 (archive) and before Step 3
+            In `cmd/polywave-tools/close_impl_cmd.go`, after Step 2 (archive) and before Step 3
             (update CONTEXT.md), add:
 
             ```go
@@ -610,7 +610,7 @@ waves:
             ```go
             var cleanupTags bool
             // In flag registration:
-            cmd.Flags().BoolVar(&cleanupTags, "cleanup-tags", false, "Remove saw/{slug}/* tags after closing")
+            cmd.Flags().BoolVar(&cleanupTags, "cleanup-tags", false, "Remove polywave/{slug}/* tags after closing")
             ```
 
             After Step 5 (clean .saw-state), if `cleanupTags` is true:
@@ -625,18 +625,18 @@ waves:
             }
             ```
 
-            Add `"engine"` import: `"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"`
+            Add `"engine"` import: `"github.com/blackwell-systems/polywave-go/pkg/engine"`
             to close_impl_cmd.go (it currently only imports `protocol`).
 
             ### 4. Tests
 
-            In `cmd/sawtools/close_impl_cmd_test.go`:
+            In `cmd/polywave-tools/close_impl_cmd_test.go`:
             - TestCloseImplCmd_HasCleanupTagsFlag: verify the flag exists and defaults to false
 
             ## Verification gate
 
             ```
-            go build ./cmd/sawtools/ && go test ./cmd/sawtools/ -run "TestCloseImpl" -v
+            go build ./cmd/polywave-tools/ && go test ./cmd/polywave-tools/ -run "TestCloseImpl" -v
             ```
 
             ## Constraints
@@ -647,10 +647,10 @@ waves:
             - All tagging calls are non-fatal (warnings only) — tagging failure must not
               block the primary operation
           files:
-            - cmd/sawtools/close_impl_cmd.go
-            - cmd/sawtools/close_impl_cmd_test.go
-            - cmd/sawtools/main.go
-            - cmd/sawtools/finalize_wave.go
+            - cmd/polywave-tools/close_impl_cmd.go
+            - cmd/polywave-tools/close_impl_cmd_test.go
+            - cmd/polywave-tools/main.go
+            - cmd/polywave-tools/finalize_wave.go
           dependencies:
             - B
             - C
@@ -676,7 +676,7 @@ pre_mortem:
         - scenario: Tag names collide if multiple IMPLs use similar slugs
           likelihood: low
           impact: low
-          mitigation: Tags are namespaced under saw/{slug}/ which is unique per IMPL. Slug uniqueness is enforced by IMPL naming convention.
+          mitigation: Tags are namespaced under polywave/{slug}/ which is unique per IMPL. Slug uniqueness is enforced by IMPL naming convention.
         - scenario: Baseline tag created after first commit (race with fast agent)
           likelihood: low
           impact: medium

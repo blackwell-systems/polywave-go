@@ -213,7 +213,7 @@ Advisory event when leftover branches from previous runs are detected.
 ```json
 {
   "slug": "my-feature",
-  "branches": ["saw/my-feature/wave1-agent-A", "saw/my-feature/wave1-agent-B"],
+  "branches": ["polywave/my-feature/wave1-agent-A", "polywave/my-feature/wave1-agent-B"],
   "count": 2
 }
 ```
@@ -345,7 +345,7 @@ Agent finished execution successfully.
   "agent": "A",
   "wave": 1,
   "status": "complete",
-  "branch": "saw/my-feature/wave1-agent-A"
+  "branch": "polywave/my-feature/wave1-agent-A"
 }
 ```
 
@@ -1594,7 +1594,7 @@ An IMPL branch was created for program-tier execution.
   "program_slug": "my-project",
   "tier": 1,
   "impl_slug": "add-auth",
-  "branch": "saw/program/my-project/tier1/add-auth"
+  "branch": "polywave/program/my-project/tier1/add-auth"
 }
 ```
 
@@ -1607,7 +1607,7 @@ An IMPL branch was merged back to main after successful completion.
   "program_slug": "my-project",
   "tier": 1,
   "impl_slug": "add-auth",
-  "branch": "saw/program/my-project/tier1/add-auth"
+  "branch": "polywave/program/my-project/tier1/add-auth"
 }
 ```
 

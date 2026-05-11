@@ -55,13 +55,13 @@ type PrepareWaveOpts struct {
 	MergeTarget    string
 	NoCache        bool
 	CommitBaseline bool // Auto-commit baseline fixes if working directory is dirty
-	// CommitState auto-commits SAW-owned state changes (IMPL yaml, gate-cache,
+	// CommitState auto-commits Polywave-owned state changes (IMPL yaml, gate-cache,
 	// docs/IMPL/, docs/CONTEXT.md) before the working-directory check. It does
 	// NOT commit user code changes. Enabled by default via the --commit-state
-	// flag (default: true) in cmd/sawtools/prepare_wave.go.
+	// flag (default: true) in cmd/polywave-tools/prepare_wave.go.
 	CommitState bool
 	// Deprecated: use NoWorkspaceSetup. Will be removed in a future version.
-	// TODO: Remove once cmd/sawtools/prepare_wave.go no longer references NoGoWork.
+	// TODO: Remove once cmd/polywave-tools/prepare_wave.go no longer references NoGoWork.
 	NoGoWork bool
 	// NoWorkspaceSetup disables all WorkspaceManager setup steps in PrepareWave.
 	// Replaces the deprecated NoGoWork field.
@@ -122,7 +122,7 @@ type AgentBriefInfo struct {
 	// JournalContextFile is the absolute path to context.md when
 	// JournalContextAvailable is true; empty otherwise.
 	JournalContextFile string `json:"journal_context_file,omitempty"`
-	// WorktreeEnvPath is the absolute path to the .saw-worktree-env file written
+	// WorktreeEnvPath is the absolute path to the .saw-worktree-env file written  // TODO: rename file to .polywave-worktree-env
 	// by prepare-wave. Empty when the file could not be written.
 	WorktreeEnvPath string `json:"worktree_env_path,omitempty"`
 }

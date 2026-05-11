@@ -33,7 +33,7 @@ func BuildRecoverySteps(state SessionState, manifest *protocol.IMPLManifest) []p
 		steps = append(steps, protocol.RecoveryStep{
 			Priority:    1,
 			Description: fmt.Sprintf("Analyze failure details for agent %s", agentID),
-			Command:     fmt.Sprintf("sawtools build-retry-context %s --agent %s", state.IMPLPath, agentID),
+			Command:     fmt.Sprintf("polywave-tools build-retry-context %s --agent %s", state.IMPLPath, agentID),
 			Category:    category,
 		})
 	}
@@ -63,7 +63,7 @@ func BuildRecoverySteps(state SessionState, manifest *protocol.IMPLManifest) []p
 			steps = append(steps, protocol.RecoveryStep{
 				Priority:    2,
 				Description: fmt.Sprintf("Clean up %d orphaned worktree(s) before resuming", len(state.OrphanedWorktrees)),
-				Command:     fmt.Sprintf("sawtools cleanup %s --wave %d", state.IMPLPath, state.CurrentWave),
+				Command:     fmt.Sprintf("polywave-tools cleanup %s --wave %d", state.IMPLPath, state.CurrentWave),
 				Category:    protocol.FailureCategoryTransient,
 			})
 		}

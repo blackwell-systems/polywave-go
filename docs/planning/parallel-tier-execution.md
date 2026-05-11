@@ -17,7 +17,7 @@ The gap is step 8 of `RunTierLoop` (`pkg/engine/program_tier_loop.go`) and the e
 
 ### 1. `check-tier-conflicts` command (low effort)
 
-**New command:** `sawtools check-tier-conflicts <program-manifest> --tier N`
+**New command:** `polywave-tools check-tier-conflicts <program-manifest> --tier N`
 
 Gatekeeper for parallel execution. Returns a verdict the orchestrator acts on.
 
@@ -121,12 +121,12 @@ Note: IMPL branch isolation already handles baseline gate coordination — each 
 
 **Web app (`pkg/api/program_runner.go`):** Convert the `for _, implSlug := range tier.Impls` loop in `runProgramTier` to parallel (goroutine per IMPL, guarded by `CheckTierConflicts` verdict). Add `MergeLock` for IMPL-branch-to-main merges during `FinalizeTier`. Optional: `?sequential=true` query param for opt-out.
 
-**CLI skill (`saw-skill.md`):** Update `/saw program execute` flow:
+**CLI skill (`polywave-skill.md`):** Update `/polywave program execute` flow:
 
 ```
 Step 3b: IMPL Execution (parallel within tier)
 
-- Run: sawtools check-tier-conflicts <program> --tier N
+- Run: polywave-tools check-tier-conflicts <program> --tier N
 - If safe (exit 0):
   - Prepare worktrees for ALL IMPLs in the tier
   - Launch Wave 1 agents from ALL IMPLs simultaneously

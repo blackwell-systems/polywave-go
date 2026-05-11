@@ -1,5 +1,5 @@
 // Package config provides unified configuration loading and wave state queries
-// for the scout-and-wave engine.
+// for the Polywave engine.
 package config
 
 import (

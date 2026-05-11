@@ -179,7 +179,7 @@ func checkGitOwnershipViolations(workDir string, ownedFiles map[string]bool) str
 func loadOwnershipFromWorkDir(workDir string) map[string]bool {
 	data, err := os.ReadFile(filepath.Join(workDir, ".saw-ownership.json"))
 	if err != nil {
-		return nil // Not in a SAW worktree
+		return nil // Not in a Polywave worktree
 	}
 	var manifest struct {
 		OwnedFiles []string `json:"owned_files"`

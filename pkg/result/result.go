@@ -1,5 +1,5 @@
 // Package result provides a unified Result[T] type for consistent error handling
-// and success/failure signaling across the scout-and-wave engine.
+// and success/failure signaling across the Polywave engine.
 //
 // This package replaces 68 distinct *Result types found throughout the codebase
 // with a single generic Result[T] wrapper that supports:

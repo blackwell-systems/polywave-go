@@ -303,7 +303,7 @@ func CommitCount(repoPath, fromRef, toRef string) (int, error) {
 	return count, nil
 }
 
-// preCommitHookTemplate is the SAW worktree isolation hook that blocks commits
+// preCommitHookTemplate is the Polywave worktree isolation hook that blocks commits
 // to main/master branches unless POLYWAVE_ALLOW_MAIN_COMMIT=1 is set.
 const preCommitHookTemplate = `#!/usr/bin/env bash
 # Polywave pre-commit guard: Block commits to main/master in Wave agent worktrees
@@ -312,7 +312,7 @@ const preCommitHookTemplate = `#!/usr/bin/env bash
 
 set -euo pipefail
 
-# Allow bypass via environment variable (for SAW orchestrator merge operations)
+# Allow bypass via environment variable (for Polywave orchestrator merge operations)
 if [[ "${POLYWAVE_ALLOW_MAIN_COMMIT:-0}" == "1" ]]; then
 	exit 0
 fi
@@ -343,7 +343,7 @@ fi
 # They break after merge. Correct paths use at most ../ (one level up from repo root).
 if git diff --cached --name-only | grep -q '^go\.mod$'; then
 	if git diff --cached -- go.mod | grep -E '^\+.*=>.*\.\./\.\./\.\.' > /dev/null 2>&1; then
-		echo "❌ SAW go.mod guard: replace directive has deep relative path (../../../...)"
+		echo "❌ Polywave go.mod guard: replace directive has deep relative path (../../../...)"
 		echo ""
 		echo "Replace paths in go.mod must be relative to the repo root, not the worktree."
 		echo "Do NOT modify replace directives — they are already correct for the repo root."
@@ -504,7 +504,7 @@ func VerifyHookInWorktree(worktreePath string) (bool, error) {
 		return false, nil // Not executable
 	}
 
-	// Check hook content contains SAW isolation logic
+	// Check hook content contains Polywave isolation logic
 	hookContent, err := os.ReadFile(hookPath)
 	if err != nil {
 		return false, fmt.Errorf("failed to read hook: %w", err)
@@ -512,7 +512,7 @@ func VerifyHookInWorktree(worktreePath string) (bool, error) {
 
 	contentStr := string(hookContent)
 	if !strings.Contains(contentStr, "POLYWAVE_ALLOW_MAIN_COMMIT") && !strings.Contains(contentStr, "Polywave pre-commit guard") {
-		return false, nil // Hook doesn't contain SAW logic
+		return false, nil // Hook doesn't contain Polywave logic
 	}
 
 	return true, nil
@@ -553,7 +553,7 @@ func Rm(repoPath string, paths ...string) error {
 
 // AddForce stages paths using "git add -f", bypassing .gitignore rules.
 // Use this when staging files that are tracked but have been gitignored
-// (e.g. SAW state files where .gitignore was added after initial tracking).
+// (e.g. Polywave state files where .gitignore was added after initial tracking).
 func AddForce(repoPath string, paths ...string) error {
 	args := append([]string{"add", "-f"}, paths...)
 	_, err := Run(repoPath, args...)

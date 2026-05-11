@@ -22,7 +22,7 @@ type IsolationData struct {
 // any work (E12: isolation verification).
 //
 // repoDir is the worktree directory (where the agent is running).
-// expectedBranch is the branch name assigned by saw create-worktrees
+// expectedBranch is the branch name assigned by polywave-tools create-worktrees
 // (e.g. "wave1-agent-A").
 //
 // CRITICAL: repoDir must be the absolute path to the worktree. If the agent

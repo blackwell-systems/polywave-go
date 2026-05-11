@@ -76,17 +76,17 @@ func TestCleanup_AllRemoved(t *testing.T) {
 	}
 
 	// Create worktrees and branches for both agents (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
-	if err := os.MkdirAll(sawDir, 0755); err != nil {
-		t.Fatalf("failed to create saw dir: %v", err)
+	polywaveDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
+	if err := os.MkdirAll(polywaveDir, 0755); err != nil {
+		t.Fatalf("failed to create polywave dir: %v", err)
 	}
 
-	worktreePathA := filepath.Join(sawDir, "wave1-agent-A")
+	worktreePathA := filepath.Join(polywaveDir, "wave1-agent-A")
 	if err := git.WorktreeAdd(tmpDir, worktreePathA, "polywave/test-cleanup/wave1-agent-A"); err != nil {
 		t.Fatalf("failed to create worktree for agent A: %v", err)
 	}
 
-	worktreePathB := filepath.Join(sawDir, "wave1-agent-B")
+	worktreePathB := filepath.Join(polywaveDir, "wave1-agent-B")
 	if err := git.WorktreeAdd(tmpDir, worktreePathB, "polywave/test-cleanup/wave1-agent-B"); err != nil {
 		t.Fatalf("failed to create worktree for agent B: %v", err)
 	}
@@ -349,11 +349,11 @@ func TestCleanup_PartialFailure(t *testing.T) {
 	}
 
 	// Create worktree and branch for agent D only (agent E doesn't exist) — slug-scoped
-	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
-	if err := os.MkdirAll(sawDir, 0755); err != nil {
-		t.Fatalf("failed to create saw dir: %v", err)
+	polywaveDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
+	if err := os.MkdirAll(polywaveDir, 0755); err != nil {
+		t.Fatalf("failed to create polywave dir: %v", err)
 	}
-	worktreePathD := filepath.Join(sawDir, "wave1-agent-D")
+	worktreePathD := filepath.Join(polywaveDir, "wave1-agent-D")
 	if err := git.WorktreeAdd(tmpDir, worktreePathD, "polywave/test-cleanup/wave1-agent-D"); err != nil {
 		t.Fatalf("failed to create worktree for agent D: %v", err)
 	}
@@ -477,12 +477,12 @@ func TestCleanup_ForcesDeleteUnmergedBranches(t *testing.T) {
 	}
 
 	// Create worktree and make a commit (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
-	if err := os.MkdirAll(sawDir, 0755); err != nil {
-		t.Fatalf("failed to create saw dir: %v", err)
+	polywaveDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
+	if err := os.MkdirAll(polywaveDir, 0755); err != nil {
+		t.Fatalf("failed to create polywave dir: %v", err)
 	}
 	branchF := "polywave/test-cleanup/wave1-agent-F"
-	worktreePathF := filepath.Join(sawDir, "wave1-agent-F")
+	worktreePathF := filepath.Join(polywaveDir, "wave1-agent-F")
 	if err := git.WorktreeAdd(tmpDir, worktreePathF, branchF); err != nil {
 		t.Fatalf("failed to create worktree for agent F: %v", err)
 	}
@@ -596,12 +596,12 @@ func TestCleanup_IdempotentBranchDeletion(t *testing.T) {
 	}
 
 	// Create and then manually delete worktree and branch (slug-scoped)
-	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
-	if err := os.MkdirAll(sawDir, 0755); err != nil {
-		t.Fatalf("failed to create saw dir: %v", err)
+	polywaveDir := filepath.Join(worktreesDir, "polywave", "test-cleanup")
+	if err := os.MkdirAll(polywaveDir, 0755); err != nil {
+		t.Fatalf("failed to create polywave dir: %v", err)
 	}
 	branchG := "polywave/test-cleanup/wave1-agent-G"
-	worktreePathG := filepath.Join(sawDir, "wave1-agent-G")
+	worktreePathG := filepath.Join(polywaveDir, "wave1-agent-G")
 	if err := git.WorktreeAdd(tmpDir, worktreePathG, branchG); err != nil {
 		t.Fatalf("failed to create worktree for agent G: %v", err)
 	}
@@ -673,11 +673,11 @@ func TestCleanup_PrunesStaleWorktrees(t *testing.T) {
 	if err := os.MkdirAll(worktreesDir, 0755); err != nil {
 		t.Fatalf("failed to create worktrees dir: %v", err)
 	}
-	sawDir := filepath.Join(worktreesDir, "polywave", "test-cleanup-prune")
-	if err := os.MkdirAll(sawDir, 0755); err != nil {
-		t.Fatalf("failed to create saw dir: %v", err)
+	polywaveDir := filepath.Join(worktreesDir, "polywave", "test-cleanup-prune")
+	if err := os.MkdirAll(polywaveDir, 0755); err != nil {
+		t.Fatalf("failed to create polywave dir: %v", err)
 	}
-	stalePath := filepath.Join(sawDir, "wave1-agent-H")
+	stalePath := filepath.Join(polywaveDir, "wave1-agent-H")
 	if err := git.WorktreeAdd(tmpDir, stalePath, "polywave/test-cleanup-prune/wave1-agent-H"); err != nil {
 		t.Fatalf("failed to create worktree: %v", err)
 	}

@@ -1,6 +1,6 @@
 # Reference Documentation
 
-Complete reference for the Scout-and-Wave Go engine. All docs are derived
+Complete reference for the Polywave Go engine. All docs are derived
 directly from source — if behavior differs from what's described here, the
 code is authoritative and the doc should be updated.
 
@@ -28,17 +28,17 @@ code is authoritative and the doc should be updated.
 
 | Doc | What it covers |
 |-----|---------------|
-| [cli-reference.md](cli-reference.md) | All sawtools commands — usage, flags, exit codes, examples |
-| [binaries.md](binaries.md) | sawtools vs saw binary split, build instructions, release workflow |
+| [cli-reference.md](cli-reference.md) | All polywave-tools commands — usage, flags, exit codes, examples |
+| [binaries.md](binaries.md) | polywave-tools vs polywave binary split, build instructions, release workflow |
 
 ## SDK / engine internals
 
 | Doc | What it covers |
 |-----|---------------|
-| [result-types.md](result-types.md) | Result[T] and SAWError — constructors, methods, error code domains (V/W/B/G/A/N/P/T) |
+| [result-types.md](result-types.md) | Result[T] and PolywaveError — constructors, methods, error code domains (V/W/B/G/A/N/P/T) |
 | [error-codes.md](error-codes.md) | Error code registry with severity and descriptions |
-| [autonomy-levels.md](autonomy-levels.md) | Gated/supervised/autonomous levels, Stage enum, approval matrix, saw.config.json |
-| [observability.md](observability.md) | OrchestratorEvent types, SQLite store, query filters, rollups, sawtools query CLI |
+| [autonomy-levels.md](autonomy-levels.md) | Gated/supervised/autonomous levels, Stage enum, approval matrix, polywave.config.json |
+| [observability.md](observability.md) | OrchestratorEvent types, SQLite store, query filters, rollups, polywave-tools query CLI |
 
 ## Architecture and integrations
 
@@ -46,8 +46,8 @@ code is authoritative and the doc should be updated.
 |-----|---------------|
 | [architecture.md](architecture.md) | System overview, three-repo structure, package dependency graph |
 | [orchestration.md](orchestration.md) | Engine orchestration flow, step sequence, E19 failure routing |
-| [api-endpoints.md](api-endpoints.md) | saw server REST API |
-| [sse-events.md](sse-events.md) | Server-sent events emitted by the saw server |
+| [api-endpoints.md](api-endpoints.md) | polywave server REST API |
+| [sse-events.md](sse-events.md) | Server-sent events emitted by the polywave server |
 | [backends.md](backends.md) | LLM backend configuration (Anthropic, Bedrock, etc.) |
 | [bedrock-tool-use-api.md](bedrock-tool-use-api.md) | AWS Bedrock tool use specifics |
 

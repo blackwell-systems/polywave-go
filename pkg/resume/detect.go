@@ -1,4 +1,4 @@
-// Package resume provides detection of interrupted SAW sessions.
+// Package resume provides detection of interrupted Polywave sessions.
 // It scans IMPL docs and git state to determine what was in progress
 // and recommends how to resume.
 package resume
@@ -19,7 +19,7 @@ import (
 	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
-// SessionState describes the state of an interrupted SAW session.
+// SessionState describes the state of an interrupted Polywave session.
 type SessionState struct {
 	IMPLSlug          string                  `json:"impl_slug"`
 	IMPLPath          string                  `json:"impl_path"`
@@ -53,7 +53,7 @@ type worktreeEntry struct {
 	branch string
 }
 
-// Detect scans a repository for interrupted SAW sessions.
+// Detect scans a repository for interrupted Polywave sessions.
 // It reads IMPL YAML files from docs/IMPL/ (excluding the complete/ subdirectory),
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
@@ -62,7 +62,7 @@ func Detect(ctx context.Context, repoPath string) result.Result[[]SessionState] 
 	return DetectWithConfig(ctx, []string{repoPath})
 }
 
-// DetectWithConfig scans for interrupted SAW sessions across multiple repositories.
+// DetectWithConfig scans for interrupted Polywave sessions across multiple repositories.
 // It reads IMPL YAML files from docs/IMPL/ in each repo (excluding complete/ subdirectory),
 // skips manifests with state COMPLETE or NOT_SUITABLE, and returns a SessionState
 // for each manifest that appears to be in progress.
@@ -293,7 +293,7 @@ func buildActionAndCommandInternal(
 	case len(failed) > 0:
 		ids := strings.Join(failed, ", ")
 		action := fmt.Sprintf("Rerun failed agent(s): %s", ids)
-		cmd := fmt.Sprintf("sawtools retry %s --wave %d", implPath, currentWave)
+		cmd := fmt.Sprintf("polywave-tools retry %s --wave %d", implPath, currentWave)
 		return action, cmd
 
 	case len(orphaned) > 0:
@@ -307,27 +307,27 @@ func buildActionAndCommandInternal(
 		}
 		if anyDirty {
 			action := fmt.Sprintf("Resume wave %d (agents have uncommitted work)", currentWave)
-			cmd := fmt.Sprintf("sawtools run-wave %s --wave %d", implPath, currentWave)
+			cmd := fmt.Sprintf("polywave-tools run-wave %s --wave %d", implPath, currentWave)
 			return action, cmd
 		}
 		action := fmt.Sprintf("Clean up orphaned worktrees, then resume wave %d", currentWave)
-		cmd := fmt.Sprintf("sawtools cleanup %s --wave %d", implPath, currentWave)
+		cmd := fmt.Sprintf("polywave-tools cleanup %s --wave %d", implPath, currentWave)
 		return action, cmd
 
 	case currentWave == 0:
 		action := "Start wave 1"
-		cmd := fmt.Sprintf("sawtools run-wave %s --wave 1", implPath)
+		cmd := fmt.Sprintf("polywave-tools run-wave %s --wave 1", implPath)
 		return action, cmd
 
 	case isCurrentWaveFullyComplete(manifest, currentWave, completed):
 		nextWave := currentWave + 1
 		action := fmt.Sprintf("Start wave %d", nextWave)
-		cmd := fmt.Sprintf("sawtools run-wave %s --wave %d", implPath, nextWave)
+		cmd := fmt.Sprintf("polywave-tools run-wave %s --wave %d", implPath, nextWave)
 		return action, cmd
 
 	default:
 		action := fmt.Sprintf("Resume wave %d", currentWave)
-		cmd := fmt.Sprintf("sawtools run-wave %s --wave %d", implPath, currentWave)
+		cmd := fmt.Sprintf("polywave-tools run-wave %s --wave %d", implPath, currentWave)
 		return action, cmd
 	}
 }
@@ -446,7 +446,7 @@ func detectOrphanedWorktrees(repoPaths []string, manifest *protocol.IMPLManifest
 			}
 
 			// Filter by IMPL slug: only consider worktrees that belong to this manifest.
-			// Slug-scoped branches contain "saw/{slug}/" — if present, must match.
+			// Slug-scoped branches contain "polywave/{slug}/" — if present, must match.
 			// Legacy branches (no slug prefix) are attributed to any manifest (backward compat).
 			if manifest.FeatureSlug != "" && strings.Contains(candidate, "polywave/") {
 				expectedPrefix := "polywave/" + manifest.FeatureSlug + "/"

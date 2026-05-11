@@ -14,7 +14,7 @@ import (
 )
 
 // newRunCriticCmd creates the run-critic subcommand.
-// Usage: sawtools run-critic <impl-path> [--no-review] [--skip] [--model <model>]
+// Usage: polywave-tools run-critic <impl-path> [--no-review] [--skip] [--model <model>]
 //
 // Launches a critic agent that reviews agent briefs in the IMPL doc against
 // the actual codebase. Writes CriticData to impl doc critic_report field.
@@ -46,9 +46,9 @@ Writes a structured CriticData to the IMPL doc critic_report field.
 Exits 0 if overall verdict is PASS. Exits 1 if verdict is ISSUES.
 
 Examples:
-  sawtools run-critic /path/to/IMPL-feature.yaml
-  sawtools run-critic /path/to/IMPL-feature.yaml --model claude-opus-4-6
-  sawtools run-critic /path/to/IMPL-feature.yaml --skip`,
+  polywave-tools run-critic /path/to/IMPL-feature.yaml
+  polywave-tools run-critic /path/to/IMPL-feature.yaml --model claude-opus-4-6
+  polywave-tools run-critic /path/to/IMPL-feature.yaml --skip`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			implPath := args[0]
@@ -163,7 +163,7 @@ Examples:
 }
 
 // newSetCriticReviewCmd creates the set-critic-review subcommand.
-// Usage: sawtools set-critic-review <impl-path> --verdict <PASS|ISSUES>
+// Usage: polywave-tools set-critic-review <impl-path> --verdict <PASS|ISSUES>
 //
 //	--summary <string> --issue-count <N> --agent-reviews <JSON>
 //

@@ -133,7 +133,7 @@ func verifyHookInstalled(worktreePath string, waveNum int) (*HookVerificationRes
 		strings.Contains(hookContent, "Polywave pre-commit guard")
 
 	if !hasIsolationCheck {
-		result.Reason = "pre-commit hook exists and is executable, but does not contain SAW isolation logic"
+		result.Reason = "pre-commit hook exists and is executable, but does not contain Polywave isolation logic"
 		return result, nil
 	}
 	result.HasLogic = true

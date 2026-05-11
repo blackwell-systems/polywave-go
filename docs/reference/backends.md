@@ -50,7 +50,7 @@ import (
     "net/http"
     "strings"
 
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+    "github.com/blackwell-systems/polywave-go/pkg/agent/backend"
 )
 
 type Client struct {
@@ -284,7 +284,7 @@ func newBackendFunc(cfg BackendConfig) (backend.Backend, error) {
 // pkg/agent/backend/groq/client.go
 package groq
 
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+import "github.com/blackwell-systems/polywave-go/pkg/agent/backend"
 
 type Client struct {
     apiKey string

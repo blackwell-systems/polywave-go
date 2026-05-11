@@ -70,12 +70,12 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.R
 		}
 	}
 
-	// Resolve the SAW repo path for loading critic-agent.md.
-	sawRepo := opts.PolywaveRepoPath
-	if sawRepo == "" {
-		sawRepo = os.Getenv("POLYWAVE_REPO")
+	// Resolve the Polywave repo path for loading critic-agent.md.
+	polywaveRepo := opts.PolywaveRepoPath
+	if polywaveRepo == "" {
+		polywaveRepo = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepo == "" {
+	if polywaveRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[string]([]result.PolywaveError{
@@ -83,11 +83,11 @@ func BuildCriticPrompt(ctx context.Context, opts BuildCriticPromptOpts) result.R
 					fmt.Sprintf("run-critic: cannot determine home directory: %v", err)),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "polywave")
+		polywaveRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load the critic-agent.md prompt with reference injection.
-	criticMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
+	criticMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "critic-agent.md")
 	criticMdRes := LoadTypePromptWithRefs(criticMdPath)
 	if criticMdRes.IsFatal() {
 		return result.NewFailure[string]([]result.PolywaveError{

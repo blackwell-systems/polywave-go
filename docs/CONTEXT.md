@@ -16,21 +16,21 @@
 - `backend.Config.APIKey` / `backend.Config.BaseURL` — struct-based config for OpenAI backend; env var fallback (`OPENAI_API_KEY`)
 - `BackendConfig.OpenAIKey` / `BackendConfig.BaseURL` — orchestrator-level config
 - `parseProviderPrefix("openai:gpt-4o")` → `("openai", "gpt-4o")` — routing prefix parsed in `newBackendFunc`
-- Provider dispatch: `"openai:*"` → openai backend; `"cli:*"` → CLI backend (binary from `SAW_CLI_BINARY` env); `"anthropic:*"` → Anthropic API backend; no prefix → existing auto logic
+- Provider dispatch: `"openai:*"` → openai backend; `"cli:*"` → CLI backend (binary from `POLYWAVE_CLI_BINARY` env); `"anthropic:*"` → Anthropic API backend; no prefix → existing auto logic
 
 ### v0.7.0 — Protocol SDK Phase 2: Orchestration Loop CLI (2026-03-09)
 - 9 SDK functions in `pkg/protocol/`: `CreateWorktrees`, `VerifyCommits`, `ScanStubs`, `MergeAgents`, `Cleanup`, `VerifyBuild`, `UpdateStatus`, `UpdateContext`, `ListIMPLs`
 - 1 git helper in `internal/git/`: `CommitCount`
-- 10 CLI commands in `cmd/sawtools/`: `create-worktrees`, `verify-commits`, `scan-stubs`, `merge-agents`, `cleanup`, `verify-build`, `update-status`, `update-context`, `list-impls`, `run-wave`
-- Binary output named `sawtools` (directory `cmd/sawtools/`)
+- 10 CLI commands in `cmd/polywave-tools/`: `create-worktrees`, `verify-commits`, `scan-stubs`, `merge-agents`, `cleanup`, `verify-build`, `update-status`, `update-context`, `list-impls`, `run-wave`
+- Binary output named `polywave-tools` (directory `cmd/polywave-tools/`)
 - Capstone orchestration: `RunWaveFull()` in `pkg/engine/` — full wave lifecycle in one call
 - IMPL doc: `docs/IMPL/IMPL-orchestration-loop-cli.yaml` — 24 agents, 5 waves, SAW:COMPLETE 2026-03-09
-- Cross-repo prompt updates: `saw-skill.md` v0.7.0, `saw-merge.md` v0.6.0, `saw-worktree.md` v0.6.0 in scout-and-wave repo
+- Cross-repo prompt updates: `polywave-skill.md` v0.7.0, `saw-merge.md` v0.6.0, `saw-worktree.md` v0.6.0 in polywave repo
 
-### v0.15.0 — Binary rename to sawtools (2026-03-09)
-- Binary output renamed from `saw` to `sawtools`
-- `cmd/sawtools/root.go`: Use field updated to `"sawtools"`, Short updated
-- Clarifies split: `sawtools` = toolkit (this repo), `saw` = orchestrator (scout-and-wave-web)
+### v0.15.0 — Binary rename to polywave-tools (2026-03-09)
+- Binary output renamed from `saw` to `polywave-tools`
+- `cmd/polywave-tools/root.go`: Use field updated to `"polywave-tools"`, Short updated
+- Clarifies split: `polywave-tools` = toolkit (this repo), `saw` = orchestrator (polywave-web)
 
 ## Established Interfaces
 
@@ -80,7 +80,7 @@ type BackendConfig struct {
 - **Tool type is package-local** in both `api/` and `openai/` backends — avoids circular imports; each backend defines its own `tool` struct
 - **net/http over openai-go SDK** — OpenAI backend uses raw HTTP; SDK is in go.mod but raw HTTP avoids SDK type churn
 - **Provider prefix overrides Kind** — if `parseProviderPrefix(cfg.Model)` returns a non-empty provider, it takes precedence over `cfg.Kind`; this lets per-agent `model:` fields in IMPL docs route to any backend without changing orchestrator config
-- **`SAW_CLI_BINARY` env** — custom CLI binary path for the `"cli:*"` dispatch case; complements `BinaryPath` in `backend.Config`
+- **`POLYWAVE_CLI_BINARY` env** — custom CLI binary path for the `"cli:*"` dispatch case; complements `BinaryPath` in `backend.Config`
 - **structured-output-parsing**: completed 2026-03-10, 3 waves, 4 agents
   - IMPL doc: docs/IMPL/IMPL-structured-output-parsing.yaml
 - **constraint-solver**: completed 2026-03-10, 3 waves, 4 agents
@@ -95,7 +95,7 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-phase2-determinism-final.yaml
   - Deliverables: H1a (analyze-suitability), M2 (detect-cascades)
   - New packages: `pkg/suitability/` (pre-implementation scanning), `pkg/analyzer/` (cascade detection)
-  - New commands: `sawtools analyze-suitability`, `sawtools detect-cascades`
+  - New commands: `polywave-tools analyze-suitability`, `polywave-tools detect-cascades`
 - **h2-command-extraction**: completed 2026-03-12, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-h2-command-extraction.yaml
 - **h8-scaffold-validation**: completed 2026-03-12, 3 waves, 3 agents
@@ -117,7 +117,7 @@ type BackendConfig struct {
 - **journal-recovery-merge-idempotency**: completed 2026-03-14, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-journal-recovery-merge-idempotency.yaml
 - **m4-finalize-impl**: completed 2026-03-14, 2 waves, 3 agents
-  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
+  - IMPL doc: ../polywave/docs/IMPL/complete/IMPL-m4-finalize-impl.yaml
 - **bedrock-tool-loop**: completed 2026-03-14, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-bedrock-tool-loop.yaml
 - **workshop-constraints**: completed 2026-03-15, 2 waves, 6 agents
@@ -137,27 +137,27 @@ type BackendConfig struct {
 - **e16-validation-enhancements**: completed 2026-03-18, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-e16-validation-enhancements.yaml
 - **multi-repo-prepare-wave**: completed 2026-03-19, 1 waves, 2 agents
-  - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-multi-repo-prepare-wave.yaml
+  - IMPL doc: ../polywave-web/docs/IMPL/complete/IMPL-multi-repo-prepare-wave.yaml
 - **gate-timing-fix**: completed 2026-03-19, 2 waves, 2 agents
-  - IMPL doc: ../scout-and-wave-web/docs/IMPL/complete/IMPL-gate-timing-fix.yaml
+  - IMPL doc: ../polywave-web/docs/IMPL/complete/IMPL-gate-timing-fix.yaml
 - **planner-dag-prioritization**: completed 2026-03-19, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-planner-dag-prioritization.yaml
 - **gate-result-caching**: completed 2026-03-19, 1 waves, 3 agents
-  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-gate-result-caching.yaml
+  - IMPL doc: ../polywave/docs/IMPL/complete/IMPL-gate-result-caching.yaml
 - **interview-mode**: completed 2026-03-20, 2 waves, 4 agents
-  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-interview-mode.yaml
+  - IMPL doc: ../polywave/docs/IMPL/complete/IMPL-interview-mode.yaml
 - **type-collision-detection**: completed 2026-03-20, 2 waves, 3 agents
-  - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-type-collision-detection.yaml
+  - IMPL doc: ../polywave/docs/IMPL/complete/IMPL-type-collision-detection.yaml
 - **protocol-docs-gaps**: completed 2026-03-20, 1 waves, 3 agents
-  - IMPL doc: /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/complete/IMPL-protocol-docs-gaps.yaml
+  - IMPL doc: /Users/dayna.blackwell/code/polywave/docs/IMPL/complete/IMPL-protocol-docs-gaps.yaml
 - **interview-improvements**: completed 2026-03-20, 2 waves, 3 agents
-  - IMPL doc: /Users/dayna.blackwell/code/scout-and-wave/docs/IMPL/complete/IMPL-interview-improvements.yaml
+  - IMPL doc: /Users/dayna.blackwell/code/polywave/docs/IMPL/complete/IMPL-interview-improvements.yaml
 - **auto-program-from-impls**: completed 2026-03-21, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-auto-program-from-impls.yaml
 - **repo-mismatch-hardening**: completed 2026-03-21, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-repo-mismatch-hardening.yaml
-- **sawtools-cli-gaps**: completed 2026-03-21, 3 waves, 7 agents
-  - IMPL doc: docs/IMPL/complete/IMPL-sawtools-cli-gaps.yaml
+- **polywave-tools-cli-gaps**: completed 2026-03-21, 3 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-polywave-tools-cli-gaps.yaml
 - **baseline-gate-enforcement**: completed 2026-03-21, 1 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-baseline-gate-enforcement.yaml
 - **determinism-enforcement**: completed 2026-03-21, 2 waves, 5 agents
@@ -306,8 +306,8 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-resume-bug-fixes.yaml
 - **notify-bug-fixes**: completed 2026-03-31, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-notify-bug-fixes.yaml
-- **sawtools-ux-bugs**: completed 2026-03-31, 1 waves, 2 agents
-  - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-bugs.yaml
+- **polywave-tools-ux-bugs**: completed 2026-03-31, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-polywave-tools-ux-bugs.yaml
 - **gowork-lsp-setup**: completed 2026-04-01, 1 waves, 2 agents
   - IMPL doc: docs/IMPL/complete/IMPL-gowork-lsp-setup.yaml
 - **interview-bug-fixes**: completed 2026-04-01, 2 waves, 2 agents
@@ -358,8 +358,8 @@ type BackendConfig struct {
   - IMPL doc: docs/IMPL/complete/IMPL-between-wave-integration-hotfix.yaml
 - **journal-integration**: completed 2026-04-03, 1 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-journal-integration.yaml
-- **sawtools-ux-improvements**: completed 2026-04-03, 2 waves, 3 agents
-  - IMPL doc: docs/IMPL/complete/IMPL-sawtools-ux-improvements.yaml
+- **polywave-tools-ux-improvements**: completed 2026-04-03, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-polywave-tools-ux-improvements.yaml
 - **roadmap-hardening**: completed 2026-04-04, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-roadmap-hardening.yaml
 - **wire-manager-lifecycle**: completed 2026-04-04, 1 waves, 2 agents

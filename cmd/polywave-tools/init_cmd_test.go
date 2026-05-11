@@ -169,8 +169,8 @@ func TestInitCmd_Output(t *testing.T) {
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "SAW initialized") {
-		t.Errorf("output missing 'SAW initialized', got:\n%s", output)
+	if !strings.Contains(output, "Polywave initialized") {
+		t.Errorf("output missing 'Polywave initialized', got:\n%s", output)
 	}
 	baseName := filepath.Base(dir)
 	if !strings.Contains(output, baseName) {

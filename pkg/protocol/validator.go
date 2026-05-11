@@ -141,7 +141,7 @@ func ValidateIMPLDoc(path string) ([]result.PolywaveError, error) {
 			Code:     "agent-id",
 			Severity: "error",
 			Line:     0,
-			Message:  fmt.Sprintf("Run: sawtools assign-agent-ids --count %d", len(allAgentIDs)),
+			Message:  fmt.Sprintf("Run: polywave-tools assign-agent-ids --count %d", len(allAgentIDs)),
 		})
 	}
 

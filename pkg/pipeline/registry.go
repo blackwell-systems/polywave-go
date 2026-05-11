@@ -29,7 +29,7 @@ func (r *Registry) Get(name string) (StepFunc, bool) {
 	return fn, ok
 }
 
-// DefaultRegistry returns a Registry pre-populated with the standard SAW steps.
+// DefaultRegistry returns a Registry pre-populated with the standard Polywave steps.
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register("validate_invariants", StepValidateInvariants().Func)

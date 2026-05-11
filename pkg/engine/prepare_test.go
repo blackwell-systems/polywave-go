@@ -170,7 +170,7 @@ func TestPrepareWave_NilOnEvent(t *testing.T) {
 	}
 }
 
-func TestIsSAWOwnedPath(t *testing.T) {
+func TestIsPolywaveOwnedPath(t *testing.T) {
 	projectRoot := "/repo"
 	implPath := "/repo/docs/IMPL/IMPL-my-feature.yaml"
 
@@ -180,42 +180,42 @@ func TestIsSAWOwnedPath(t *testing.T) {
 		want bool
 	}{
 		{
-			name: "IMPL yaml path is SAW-owned",
+			name: "IMPL yaml path is Polywave-owned",
 			path: " M docs/IMPL/IMPL-my-feature.yaml",
 			want: true,
 		},
 		{
-			name: "gate-cache under .polywave-state is SAW-owned",
+			name: "gate-cache under .polywave-state is Polywave-owned",
 			path: " M .polywave-state/gate-cache.json",
 			want: true,
 		},
 		{
-			name: "nested file under .polywave-state is SAW-owned",
+			name: "nested file under .polywave-state is Polywave-owned",
 			path: " M .polywave-state/active-impl",
 			want: true,
 		},
 		{
-			name: "user code file is not SAW-owned",
-			path: " M cmd/sawtools/main.go",
+			name: "user code file is not Polywave-owned",
+			path: " M cmd/polywave-tools/main.go",
 			want: false,
 		},
 		{
-			name: "docs IMPL yaml that does NOT match implPath is SAW-owned (docs/IMPL/ dir is SAW-owned)",
+			name: "docs IMPL yaml that does NOT match implPath is Polywave-owned (docs/IMPL/ dir is Polywave-owned)",
 			path: " M docs/IMPL/IMPL-other-feature.yaml",
 			want: true,
 		},
 		{
-			name: "untracked docs/IMPL file is SAW-owned",
+			name: "untracked docs/IMPL file is Polywave-owned",
 			path: "?? docs/IMPL/IMPL-foo.yaml",
 			want: true,
 		},
 		{
-			name: "docs/CONTEXT.md is SAW-owned",
+			name: "docs/CONTEXT.md is Polywave-owned",
 			path: " M docs/CONTEXT.md",
 			want: true,
 		},
 		{
-			name: "windows path separator .polywave-state is SAW-owned",
+			name: "windows path separator .polywave-state is Polywave-owned",
 			path: " M .polywave-state\\gate-cache.json",
 			want: true,
 		},
@@ -223,9 +223,9 @@ func TestIsSAWOwnedPath(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := isSAWOwnedPath(tc.path, implPath, projectRoot)
+			got := isPolywaveOwnedPath(tc.path, implPath, projectRoot)
 			if got != tc.want {
-				t.Errorf("isSAWOwnedPath(%q, %q, %q) = %v, want %v",
+				t.Errorf("isPolywaveOwnedPath(%q, %q, %q) = %v, want %v",
 					tc.path, implPath, projectRoot, got, tc.want)
 			}
 		})
@@ -239,7 +239,7 @@ func TestPrepareWave_CommitState_CleanDir(t *testing.T) {
 	// accepted without panic. Full integration coverage (reaching
 	// working_dir_check with a clean repo) requires a properly initialized git
 	// repo and valid IMPL doc. The CommitState clean-dir path is also covered
-	// by the fact that isSAWOwnedPath returns empty slices → success step.
+	// by the fact that isPolywaveOwnedPath returns empty slices → success step.
 	opts := PrepareWaveOpts{
 		IMPLPath:    "/tmp/nonexistent.yaml",
 		RepoPath:    "/tmp/nonexistent-repo",
@@ -263,15 +263,15 @@ func TestPrepareWave_CommitState_CleanDir(t *testing.T) {
 func TestPrepareWave_CommitState_UserCodeDirty(t *testing.T) {
 	// Verify that when CommitState=true and dirty files are user code, the
 	// error contains "user-code changes". This is exercised through the
-	// isSAWOwnedPath helper that drives the CommitState branch classification.
-	userPath := " M cmd/sawtools/main.go"
-	if isSAWOwnedPath(userPath, "/repo/docs/IMPL/IMPL-foo.yaml", "/repo") {
-		t.Errorf("expected cmd/sawtools/main.go to be classified as user code, not SAW-owned")
+	// isPolywaveOwnedPath helper that drives the CommitState branch classification.
+	userPath := " M cmd/polywave-tools/main.go"
+	if isPolywaveOwnedPath(userPath, "/repo/docs/IMPL/IMPL-foo.yaml", "/repo") {
+		t.Errorf("expected cmd/polywave-tools/main.go to be classified as user code, not Polywave-owned")
 	}
 
 	sawPath := " M .polywave-state/gate-cache.json"
-	if !isSAWOwnedPath(sawPath, "/repo/docs/IMPL/IMPL-foo.yaml", "/repo") {
-		t.Errorf("expected .polywave-state/gate-cache.json to be classified as SAW-owned")
+	if !isPolywaveOwnedPath(sawPath, "/repo/docs/IMPL/IMPL-foo.yaml", "/repo") {
+		t.Errorf("expected .polywave-state/gate-cache.json to be classified as Polywave-owned")
 	}
 }
 

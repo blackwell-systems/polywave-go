@@ -21,7 +21,7 @@ func newMarkProgramCompleteCmd() *cobra.Command {
 		Long: `Mark a PROGRAM manifest as complete.
 
 Verifies all tiers are complete, updates the manifest state to PROGRAM_COMPLETE,
-sets the completion_date, writes the SAW:PROGRAM:COMPLETE marker, updates CONTEXT.md,
+sets the completion_date, writes the Polywave:PROGRAM:COMPLETE marker, updates CONTEXT.md,
 and commits both files.
 
 Exit codes:

@@ -269,7 +269,7 @@ func TestCreateWorktrees_InstallsHooks(t *testing.T) {
 		t.Fatalf("failed to create hooks directory: %v", err)
 	}
 
-	hookContent := "#!/bin/sh\n# SAW isolation enforcement hook\necho 'test hook'\n"
+	hookContent := "#!/bin/sh\n# Polywave isolation enforcement hook\necho 'test hook'\n"
 	hookPath := filepath.Join(hooksDir, "pre-commit")
 	if err := os.WriteFile(hookPath, []byte(hookContent), 0755); err != nil {
 		t.Fatalf("failed to create pre-commit hook: %v", err)
@@ -350,7 +350,7 @@ func TestCreateWorktrees_ContinuesOnHookInstallFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("hook not found at %s: %v", worktreeHookPath, err)
 	}
-	// Verify hook has SAW isolation markers
+	// Verify hook has Polywave isolation markers
 	if !strings.Contains(string(hookContent), "POLYWAVE_ALLOW_MAIN_COMMIT") {
 		t.Error("hook missing POLYWAVE_ALLOW_MAIN_COMMIT marker")
 	}

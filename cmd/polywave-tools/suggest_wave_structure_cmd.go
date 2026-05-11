@@ -21,7 +21,7 @@ Exit code 0: no problems found (or SUCCESS/PARTIAL with only warnings).
 Exit code 1: problems found that would cause E21A failures.
 
 Example:
-  sawtools suggest-wave-structure docs/IMPL/IMPL-feature.yaml --repo-dir /path/to/repo`,
+  polywave-tools suggest-wave-structure docs/IMPL/IMPL-feature.yaml --repo-dir /path/to/repo`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]

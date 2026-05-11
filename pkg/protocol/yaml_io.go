@@ -11,12 +11,12 @@ package protocol
 //	pkg/protocol/schema_unknown_keys.go  — StripUnknownKeys: yaml.Node tree traversal
 //	pkg/protocol/duplicate_key_validator.go — ValidateDuplicateKeys: yaml.Node scan
 //	pkg/protocol/marker.go               — SAW:COMPLETE marker detection via yaml.Node
-//	cmd/sawtools/validate_integration.go — raw yaml.Node manipulation
+//	cmd/polywave-tools/validate_integration.go — raw yaml.Node manipulation
 //
 // Exempt call sites (encoder-to-stdout — no file path; yaml.NewEncoder target is os.Stdout):
 //
-//	cmd/sawtools/validate_scaffold_cmd.go       — yaml.NewEncoder(cmd.OutOrStdout())
-//	cmd/sawtools/diagnose_build_failure_cmd.go  — yaml.NewEncoder(cmd.OutOrStdout())
+//	cmd/polywave-tools/validate_scaffold_cmd.go       — yaml.NewEncoder(cmd.OutOrStdout())
+//	cmd/polywave-tools/diagnose_build_failure_cmd.go  — yaml.NewEncoder(cmd.OutOrStdout())
 //
 // Exempt call sites (in-memory / no file path):
 //
@@ -28,8 +28,8 @@ package protocol
 //	pkg/queue/manager.go                  — unmarshals already-read bytes from dir scan
 //	pkg/commands/github_actions.go        — unmarshals already-read bytes from caller
 //	pkg/analyzer/output.go                — marshal to []byte as return value
-//	cmd/sawtools/detect_cascades_cmd.go   — marshal to []byte for stdout print
-//	cmd/sawtools/extract_commands_cmd.go  — marshal to []byte for stdout print
+//	cmd/polywave-tools/detect_cascades_cmd.go   — marshal to []byte for stdout print
+//	cmd/polywave-tools/extract_commands_cmd.go  — marshal to []byte for stdout print
 
 import (
 	"fmt"

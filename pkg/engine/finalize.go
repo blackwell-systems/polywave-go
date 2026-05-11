@@ -58,7 +58,7 @@ type FinalizeWaveOpts struct {
 	// blocks merge with false positive.
 	SkipMerge bool
 
-	// CommitState: When true, commit uncommitted SAW-owned files (IMPL docs,
+	// CommitState: When true, commit uncommitted Polywave-owned files (IMPL docs,
 	// .polywave-state/) before merge-agents. Prevents dirty working directory from
 	// blocking git merge. Non-fatal — if commit fails, a warning is emitted
 	// but finalize continues.
@@ -187,8 +187,8 @@ func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo
 
 	// Resolve relative paths to absolute paths.
 	// defaultRepo may be relative (e.g. "." from --repo-dir flag) — resolve it first
-	// so parentDir is always an absolute path, preventing repo names like "scout-and-wave"
-	// from resolving to "./scout-and-wave" instead of "/abs/path/to/scout-and-wave".
+	// so parentDir is always an absolute path, preventing repo names like "polywave"
+	// from resolving to "./polywave" instead of "/abs/path/to/polywave".
 	absDefaultRepo, err := filepath.Abs(defaultRepo)
 	if err != nil {
 		absDefaultRepo = defaultRepo
@@ -206,7 +206,7 @@ func ExtractReposFromManifest(m *protocol.IMPLManifest, waveNum int, defaultRepo
 }
 
 // FinalizeWave runs the full post-agent finalization pipeline for a single wave.
-// This is the engine-level equivalent of the CLI's `sawtools finalize-wave` command.
+// This is the engine-level equivalent of the CLI's `polywave-tools finalize-wave` command.
 //
 // Pipeline:
 //  1. VerifyCommits (I5) - ensure all agents committed work
@@ -541,7 +541,7 @@ func FinalizeWave(ctx context.Context, opts FinalizeWaveOpts) result.Result[Fina
 				}
 			}
 
-			// Step 3.7: CommitState — commit SAW-owned dirty files before merge
+			// Step 3.7: CommitState — commit Polywave-owned dirty files before merge
 			if opts.CommitState {
 				_, commitErr := StepCommitState(ctx, opts, manifest, onEvent)
 				if commitErr != nil {
@@ -802,7 +802,7 @@ func containsAny(s string, substrs ...string) bool {
 //
 //	cat .polywave-state/wave1/branch-refs.json  # {"A":"<sha>","B":"<sha>"}
 //	git branch saw/<slug>/wave1-agent-A <sha>
-//	sawtools finalize-wave ...
+//	polywave-tools finalize-wave ...
 //
 // Errors are silently swallowed — this is a best-effort record.
 func writeBranchRefs(manifest *protocol.IMPLManifest, waveNum int, repoPath string) {

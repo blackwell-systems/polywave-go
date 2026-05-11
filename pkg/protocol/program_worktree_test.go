@@ -17,19 +17,19 @@ func TestProgramBranchName(t *testing.T) {
 			programSlug: "my-program",
 			tierNumber:  1,
 			implSlug:    "auth-service",
-			want:        "saw/program/my-program/tier1-impl-auth-service",
+			want:        "polywave/program/my-program/tier1-impl-auth-service",
 		},
 		{
 			programSlug: "big-refactor",
 			tierNumber:  2,
 			implSlug:    "db-migration",
-			want:        "saw/program/big-refactor/tier2-impl-db-migration",
+			want:        "polywave/program/big-refactor/tier2-impl-db-migration",
 		},
 		{
 			programSlug: "single",
 			tierNumber:  10,
 			implSlug:    "final",
-			want:        "saw/program/single/tier10-impl-final",
+			want:        "polywave/program/single/tier10-impl-final",
 		},
 	}
 

@@ -25,8 +25,8 @@ func newUpdateProgramStateCmd() *cobra.Command {
 		Long: `Update the state field of a PROGRAM manifest YAML file.
 
 Examples:
-  sawtools update-program-state docs/PROGRAM/PROGRAM.yaml --state REVIEWED
-  sawtools update-program-state docs/PROGRAM/PROGRAM.yaml --state TIER_EXECUTING
+  polywave-tools update-program-state docs/PROGRAM/PROGRAM.yaml --state REVIEWED
+  polywave-tools update-program-state docs/PROGRAM/PROGRAM.yaml --state TIER_EXECUTING
 
 Exit codes:
   0 - Success

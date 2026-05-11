@@ -21,7 +21,7 @@ import (
 type RunCriticOpts struct {
 	IMPLPath    string       // absolute path to IMPL doc (required)
 	CriticModel string       // optional model override
-	PolywaveRepoPath string       // optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave
+	PolywaveRepoPath string       // optional; falls back to $POLYWAVE_REPO then ~/code/polywave
 	Timeout     int          // minutes; default 20
 	Logger      *slog.Logger // optional
 }
@@ -38,7 +38,7 @@ type RunCriticResult struct {
 // without launching it. Used by --backend agent-tool.
 type BuildCriticPromptOpts struct {
 	IMPLPath    string // absolute path to IMPL doc (required)
-	PolywaveRepoPath string // optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave
+	PolywaveRepoPath string // optional; falls back to $POLYWAVE_REPO then ~/code/polywave
 }
 
 // runCriticFn is the function variable through which RunScoutFull calls the
@@ -389,11 +389,11 @@ func criticThresholdMet(manifest *protocol.IMPLManifest) bool {
 }
 
 // countAgentsFromErrors extracts the agent count from validation error messages.
-// The validator appends "Run: sawtools assign-agent-ids --count N" as the last error.
+// The validator appends "Run: polywave-tools assign-agent-ids --count N" as the last error.
 func countAgentsFromErrors(errs []result.PolywaveError) int {
 	for _, e := range errs {
 		if e.Code == "agent-id" && e.Line == 0 {
-			// This is the suggestion message: "Run: sawtools assign-agent-ids --count N"
+			// This is the suggestion message: "Run: polywave-tools assign-agent-ids --count N"
 			msg := e.Message
 			if strings.Contains(msg, "--count") {
 				// Extract number after "--count ".

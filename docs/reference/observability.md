@@ -15,7 +15,7 @@ Orchestrator / Emitter
   ┌─────┴──────┐
   ▼            ▼
 SQLite     (PostgreSQL — not yet implemented)
-~/.saw/observability.db
+~/.polywave/observability.db
 ```
 
 The `Store` interface is the only dependency for write and read paths. The SQLite
@@ -126,7 +126,7 @@ type Store interface {
 ```
 
 The SQLite store (`pkg/observability/sqlite`) is the production implementation.
-Database file defaults to `~/.saw/observability.db`. WAL mode is enabled at open
+Database file defaults to `~/.polywave/observability.db`. WAL mode is enabled at open
 time. Schema is applied automatically on first open.
 
 ### SQLite schema
@@ -262,10 +262,10 @@ domain-specific logic.
 
 Results are sorted by `Count` descending.
 
-## sawtools query command
+## polywave-tools query command
 
 ```
-sawtools query events [flags]
+polywave-tools query events [flags]
 ```
 
 ### Flags
@@ -279,7 +279,7 @@ sawtools query events [flags]
 | `--since` | (none) | Time range: `24h`, `7d`, `30d`, or any Go duration string |
 | `--limit` | `100` | Maximum results |
 | `--format` | `table` | Output format: `table`, `json`, `csv` |
-| `--store` | `~/.saw/observability.db` | SQLite file path or DSN |
+| `--store` | `~/.polywave/observability.db` | SQLite file path or DSN |
 
 The `--since` flag accepts day suffixes (`7d`, `30d`) in addition to standard Go
 duration strings (`24h`, `1h30m`).
@@ -297,29 +297,29 @@ duration strings (`24h`, `1h30m`).
 
 ```sh
 # All events for an IMPL in the last 7 days
-sawtools query events --impl add-auth --since 7d
+polywave-tools query events --impl add-auth --since 7d
 
 # Only cost events, JSON output
-sawtools query events --type cost --format json
+polywave-tools query events --type cost --format json
 
 # Performance events for a specific agent, last 24 hours
-sawtools query events --type agent_performance --agent A --since 24h
+polywave-tools query events --type agent_performance --agent A --since 24h
 
 # All events from a specific store file
-sawtools query events --store /path/to/custom.db --limit 500
+polywave-tools query events --store /path/to/custom.db --limit 500
 ```
 
-## sawtools metrics command
+## polywave-tools metrics command
 
 ```
-sawtools metrics <impl-slug> [flags]
+polywave-tools metrics <impl-slug> [flags]
 ```
 
 | Flag | Description |
 |---|---|
 | `--program <slug>` | Show program-level summary instead of IMPL metrics |
 | `--breakdown` | Show per-agent cost breakdown below IMPL metrics |
-| `--store <path>` | SQLite file path (default: `~/.saw/observability.db`) |
+| `--store <path>` | SQLite file path (default: `~/.polywave/observability.db`) |
 
 Outputs a tab-formatted table. With `--breakdown`, a second table lists cost by agent.
 

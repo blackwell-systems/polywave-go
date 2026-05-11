@@ -1,4 +1,4 @@
-# Scout-and-Wave Go Engine — Claude Instructions
+# Polywave Go Engine — Claude Instructions
 
 ## Docs Contract
 
@@ -31,12 +31,12 @@ Reference docs to check per area:
 
 ## Repo Role
 
-This is the **Go engine** — the SDK and CLI layer for Scout-and-Wave. It is one
+This is the **Go engine** — the SDK and CLI layer for Polywave. It is one
 of three repos:
 
-1. `scout-and-wave` — protocol spec (POSITION.md) and skill definitions
-2. `scout-and-wave-go` ← **this repo** — Go implementation (pkg/, cmd/sawtools/)
-3. `scout-and-wave-web` — web UI (imports the Go engine via `pkg/engine`)
+1. `polywave` — protocol spec (POSITION.md) and skill definitions
+2. `polywave-go` ← **this repo** — Go implementation (pkg/, cmd/polywave-tools/)
+3. `polywave-web` — web UI (imports the Go engine via `pkg/engine`)
 
 **Cross-repo update order**: protocol spec first → Go engine second → web last.
 Changes to pkg/protocol/types.go that add fields must be reflected in the
@@ -44,12 +44,12 @@ manifest-schema.md reference doc and may require web UI updates.
 
 ## Design Principles
 
-### sawtools (cmd/sawtools/)
+### polywave-tools (cmd/polywave-tools/)
 - Each command is a thin adapter: parse flags → call pkg/ → emit JSON → exit
 - No orchestration logic in cmd/ — all logic lives in pkg/
 - Exit 0 = success, exit 1 = partial/blocked, exit 2 = fatal/invalid input
 - JSON output on stdout; human-readable errors on stderr
-- See `cmd/sawtools/README.md` for the full command landscape
+- See `cmd/polywave-tools/README.md` for the full command landscape
 
 ### Key packages (pkg/)
 
@@ -88,14 +88,14 @@ See `pkg/README.md` for additional navigation guidance.
 
 ## Pre-wave Checks
 
-Before executing any wave on this repo, `sawtools pre-wave-validate` should
+Before executing any wave on this repo, `polywave-tools pre-wave-validate` should
 pass. E35 (same-package caller gaps) and E16 (manifest invariants) are both
 blocking.
 
 ## Build
 
 ```bash
-cd cmd/sawtools && go build -o ../../sawtools .
+cd cmd/polywave-tools && go build -o ../../polywave-tools .
 go test ./...
 go vet ./...
 ```

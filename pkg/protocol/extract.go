@@ -8,7 +8,7 @@ import (
 	"fmt"
 )
 
-// AgentContextJSONPayload is the structured JSON output of 'sawtools extract-context' (E23).
+// AgentContextJSONPayload is the structured JSON output of 'polywave-tools extract-context' (E23).
 type AgentContextJSONPayload struct {
 	IMPLDocPath        string              `json:"impl_doc_path"`
 	AgentID            string              `json:"agent_id"`

@@ -26,9 +26,9 @@ Reads the current manifest, constructs a revision prompt with failure
 context, launches the Planner agent, and returns the updated manifest path.
 
 Examples:
-  sawtools program-replan docs/PROGRAM/PROGRAM.yaml --reason "Tier 2 gate failed: integration tests failing"
-  sawtools program-replan docs/PROGRAM/PROGRAM.yaml --reason "User-initiated replan" --tier 0
-  sawtools program-replan docs/PROGRAM/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --model claude-opus-4-6
+  polywave-tools program-replan docs/PROGRAM/PROGRAM.yaml --reason "Tier 2 gate failed: integration tests failing"
+  polywave-tools program-replan docs/PROGRAM/PROGRAM.yaml --reason "User-initiated replan" --tier 0
+  polywave-tools program-replan docs/PROGRAM/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --model claude-opus-4-6
 
 Exit codes:
   0 - Re-planning succeeded, revised manifest validated

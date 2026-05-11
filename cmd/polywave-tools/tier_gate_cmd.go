@@ -25,8 +25,8 @@ Checks that:
 2. All required quality gates pass
 
 Examples:
-  sawtools tier-gate docs/PROGRAM/PROGRAM.yaml --tier 1
-  sawtools tier-gate program.yaml --tier 2 --repo-dir /path/to/repo
+  polywave-tools tier-gate docs/PROGRAM/PROGRAM.yaml --tier 1
+  polywave-tools tier-gate program.yaml --tier 2 --repo-dir /path/to/repo
 
 Exit codes:
   0 - Tier gate passed

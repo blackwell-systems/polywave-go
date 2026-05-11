@@ -69,23 +69,23 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 		}
 	}
 
-	// Resolve SAW repo path.
-	sawRepo := opts.PolywaveRepoPath
-	if sawRepo == "" {
-		sawRepo = os.Getenv("POLYWAVE_REPO")
+	// Resolve Polywave repo path.
+	polywaveRepo := opts.PolywaveRepoPath
+	if polywaveRepo == "" {
+		polywaveRepo = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepo == "" {
+	if polywaveRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[ScoutData]([]result.PolywaveError{
 				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "polywave")
+		polywaveRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
-	scoutMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
+	scoutMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
 	scoutMdRes := LoadTypePromptWithRefs(scoutMdPath)
 	if scoutMdRes.IsFatal() {
 		return result.NewFailure[ScoutData]([]result.PolywaveError{
@@ -202,22 +202,22 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 		})
 	}
 
-	sawRepo := opts.PolywaveRepoPath
-	if sawRepo == "" {
-		sawRepo = os.Getenv("POLYWAVE_REPO")
+	polywaveRepo := opts.PolywaveRepoPath
+	if polywaveRepo == "" {
+		polywaveRepo = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepo == "" {
+	if polywaveRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[PlannerData]([]result.PolywaveError{
 				result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "polywave")
+		polywaveRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Load planner.md prompt with fallback.
-	plannerMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
+	plannerMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
 	plannerMdContent := "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
 	if plannerMdRes := LoadTypePromptWithRefs(plannerMdPath); plannerMdRes.IsSuccess() {
 		plannerMdContent = plannerMdRes.GetData()
@@ -549,7 +549,7 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	ctx := opts.Ctx
 	implPath := opts.ImplPath
 	repoPath := opts.RepoPath
-	sawRepoPath := opts.PolywaveRepoPath
+	polywaveRepoPath := opts.PolywaveRepoPath
 	model := opts.Model
 	onEvent := opts.OnEvent
 
@@ -589,15 +589,15 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	publish("scaffold_started", ScaffoldStartedPayload{IMPLPath: implPath})
 
 	// Locate scaffold-agent.md prompt.
-	sawRepo := sawRepoPath
-	if sawRepo == "" {
-		sawRepo = os.Getenv("POLYWAVE_REPO")
+	polywaveRepo := polywaveRepoPath
+	if polywaveRepo == "" {
+		polywaveRepo = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepo == "" {
+	if polywaveRepo == "" {
 		home, _ := os.UserHomeDir()
-		sawRepo = filepath.Join(home, "code", "polywave")
+		polywaveRepo = filepath.Join(home, "code", "polywave")
 	}
-	scaffoldMdPath := filepath.Join(sawRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
+	scaffoldMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
 	scaffoldMdContent := "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
 	if scaffoldMdRes := LoadTypePromptWithRefs(scaffoldMdPath); scaffoldMdRes.IsSuccess() {
 		scaffoldMdContent = scaffoldMdRes.GetData()

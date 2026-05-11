@@ -1,10 +1,10 @@
-# scout-and-wave-go
+# polywave-go
 
 [![Blackwell Systems™](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
-[![CI](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/blackwell-systems/scout-and-wave-go)](https://github.com/blackwell-systems/scout-and-wave-go/releases)
+[![CI](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/blackwell-systems/polywave-go)](https://github.com/blackwell-systems/polywave-go/releases)
 
-Go engine and Protocol SDK for Scout-and-Wave (SAW) — a coordination protocol for parallel AI agent development that guarantees merge-conflict-free execution by construction.
+Go engine and Protocol SDK for Polywave — a coordination protocol for parallel AI agent development that guarantees merge-conflict-free execution by construction.
 
 ---
 
@@ -14,7 +14,7 @@ Go engine and Protocol SDK for Scout-and-Wave (SAW) — a coordination protocol 
 
 This is not a convention or a preference. It is a hard constraint enforced before any worktree is created. The result: parallel agents can never produce a merge conflict on agent-owned files. The conflict is structurally impossible because the ownership partition is verified and locked before execution begins.
 
-This is distinct from branch-based coordination. Branches prevent concurrent writes to the same commit, but do nothing to prevent two agents from independently modifying the same file on separate branches — which produces a merge conflict you must resolve manually. SAW prevents the conflict from being possible in the first place.
+This is distinct from branch-based coordination. Branches prevent concurrent writes to the same commit, but do nothing to prevent two agents from independently modifying the same file on separate branches — which produces a merge conflict you must resolve manually. Polywave prevents the conflict from being possible in the first place.
 
 ---
 
@@ -36,7 +36,7 @@ The engine abstracts agent execution behind a `Runtime` interface. Provider rout
 |--------|---------|
 | `anthropic:` | Anthropic API (direct) |
 | `openai:` | OpenAI-compatible endpoint (OpenAI, Ollama, LM Studio, etc.) |
-| `cli:` | Local CLI binary (Claude Code, `SAW_CLI_BINARY`) |
+| `cli:` | Local CLI binary (Claude Code, `POLYWAVE_CLI_BINARY`) |
 | *(none)* | Auto-detect from environment |
 
 ### Per-agent provider routing
@@ -51,7 +51,7 @@ Example: Agent A on `anthropic:claude-haiku-3` (fast, cheap, high-parallelism), 
 
 ## How It Works
 
-SAW decomposes feature work into three phases:
+Polywave decomposes feature work into three phases:
 
 **Scout** — An AI agent analyzes the codebase, runs a suitability gate, designs the file ownership partition, defines interface contracts across agent boundaries, and writes an IMPL doc (a YAML manifest that is the single source of truth for the entire feature).
 
@@ -78,7 +78,7 @@ Every piece of protocol state lives in one YAML file (I4):
 
 Chat output is not the record. If a completion report is written to chat only, it is a protocol violation — downstream agents and the orchestrator cannot see it.
 
-This makes the protocol observable and auditable. Every SAW session can be reconstructed from the IMPL doc and git history alone.
+This makes the protocol observable and auditable. Every Polywave session can be reconstructed from the IMPL doc and git history alone.
 
 ---
 
@@ -94,7 +94,7 @@ Wave N+1 does not launch until Wave N merges and post-merge verification passes 
 
 ## Program Layer
 
-For multi-feature projects, SAW includes a program layer that coordinates multiple IMPL docs through tier-gated execution.
+For multi-feature projects, Polywave includes a program layer that coordinates multiple IMPL docs through tier-gated execution.
 
 A **PROGRAM manifest** decomposes a project into:
 - **Tiers** — groups of independent IMPLs that execute in parallel
@@ -108,7 +108,7 @@ Execution rules:
 - **E33** — `--auto` mode advances tiers automatically after gate pass; human gate is never skipped on failure
 - **E34** — Tier gate failure re-engages the Planner to revise the PROGRAM manifest; human reviews the revised plan before any tier re-executes
 
-The DAG prioritization engine (`sawtools` integrates `PrioritizeIMPLs` / `ScoreTierIMPLs`) scores IMPL execution order within a tier based on dependency depth and downstream unlock count.
+The DAG prioritization engine (`polywave-tools` integrates `PrioritizeIMPLs` / `ScoreTierIMPLs`) scores IMPL execution order within a tier based on dependency depth and downstream unlock count.
 
 ---
 
@@ -122,15 +122,15 @@ Three autonomy levels control how much the orchestrator pauses for human review:
 | `supervised` | Auto-approves wave advancement and gate retry; pauses for IMPL review |
 | `autonomous` | All stages auto-approved; only surfaces gate failures |
 
-The daemon run loop (`sawtools daemon`) enables fully unattended execution across multiple queued IMPLs. Failure classification (E19) routes correctable failures (`transient`, `fixable`) to automatic retry and non-correctable failures (`needs_replan`, `escalate`) to human review, regardless of autonomy level.
+The daemon run loop (`polywave-tools daemon`) enables fully unattended execution across multiple queued IMPLs. Failure classification (E19) routes correctable failures (`transient`, `fixable`) to automatic retry and non-correctable failures (`needs_replan`, `escalate`) to human review, regardless of autonomy level.
 
 The `build-retry-context` command produces structured failure context (error classification, targeted fix suggestions, retry prompt) for re-launching a failed agent with awareness of prior attempts.
 
 ---
 
-## sawtools CLI
+## polywave-tools CLI
 
-The `sawtools` binary provides 60+ commands covering the full protocol lifecycle. Commands are single-purpose with structured JSON output.
+The `polywave-tools` binary provides 60+ commands covering the full protocol lifecycle. Commands are single-purpose with structured JSON output.
 
 ### Wave lifecycle
 
@@ -196,7 +196,7 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | Command | What it does |
 |---------|-------------|
 | `init` | Auto-detect project language, build/test commands; generate `saw.config.json` |
-| `verify-install` | Check prerequisites: sawtools on PATH, skill files, Git version, repo paths |
+| `verify-install` | Check prerequisites: polywave-tools on PATH, skill files, Git version, repo paths |
 
 ### Utilities
 
@@ -207,7 +207,7 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 | `mark-complete` | E15 write SAW:COMPLETE marker + archive to `docs/IMPL/complete/` |
 | `update-context` | E18 update `docs/CONTEXT.md` after feature completion |
 | `list-impls` | Discover IMPL docs (active and archived) |
-| `resume-detect` | Detect interrupted SAW sessions for recovery |
+| `resume-detect` | Detect interrupted Polywave sessions for recovery |
 | `journal-init` | Initialize agent tool journal |
 | `journal-context` | Generate context summary from tool journal (E23A) |
 | `daemon` | Run loop for autonomous multi-IMPL execution |
@@ -218,28 +218,28 @@ The `sawtools` binary provides 60+ commands covering the full protocol lifecycle
 
 ```bash
 # Homebrew (macOS/Linux)
-brew install blackwell-systems/tap/sawtools
+brew install blackwell-systems/tap/polywave-tools
 
 # Or via Go install
-go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+go install github.com/blackwell-systems/polywave-go/cmd/polywave-tools@latest
 ```
 
 <details>
 <summary>Download pre-built binary (no Go/Homebrew required)</summary>
 
-Pre-built binaries for macOS and Linux are attached to every [GitHub release](https://github.com/blackwell-systems/scout-and-wave-go/releases/latest).
+Pre-built binaries for macOS and Linux are attached to every [GitHub release](https://github.com/blackwell-systems/polywave-go/releases/latest).
 
 ```bash
 # Resolve latest version and download (macOS Apple Silicon shown)
-VERSION=$(curl -sI https://github.com/blackwell-systems/scout-and-wave-go/releases/latest | grep -i location | sed 's|.*/v||;s/\r//')
-curl -sL "https://github.com/blackwell-systems/scout-and-wave-go/releases/download/v${VERSION}/sawtools_${VERSION}_darwin_arm64.tar.gz" | tar xz
-mkdir -p ~/.local/bin && mv sawtools ~/.local/bin/
+VERSION=$(curl -sI https://github.com/blackwell-systems/polywave-go/releases/latest | grep -i location | sed 's|.*/v||;s/\r//')
+curl -sL "https://github.com/blackwell-systems/polywave-go/releases/download/v${VERSION}/polywave-tools_${VERSION}_darwin_arm64.tar.gz" | tar xz
+mkdir -p ~/.local/bin && mv polywave-tools ~/.local/bin/
 
 # Available archives:
-#   sawtools_{version}_darwin_arm64.tar.gz   (macOS Apple Silicon)
-#   sawtools_{version}_darwin_amd64.tar.gz   (macOS Intel)
-#   sawtools_{version}_linux_amd64.tar.gz    (Linux x86_64)
-#   sawtools_{version}_linux_arm64.tar.gz    (Linux ARM64)
+#   polywave-tools_{version}_darwin_arm64.tar.gz   (macOS Apple Silicon)
+#   polywave-tools_{version}_darwin_amd64.tar.gz   (macOS Intel)
+#   polywave-tools_{version}_linux_amd64.tar.gz    (Linux x86_64)
+#   polywave-tools_{version}_linux_arm64.tar.gz    (Linux ARM64)
 ```
 </details>
 
@@ -247,8 +247,8 @@ mkdir -p ~/.local/bin && mv sawtools ~/.local/bin/
 <summary>Build from source (for contributors)</summary>
 
 ```bash
-go build -o sawtools ./cmd/sawtools
-cp sawtools ~/.local/bin/sawtools
+go build -o polywave-tools ./cmd/polywave-tools
+cp polywave-tools ~/.local/bin/polywave-tools
 ```
 </details>
 
@@ -259,7 +259,7 @@ cp sawtools ~/.local/bin/sawtools
 The `pkg/protocol` package is the importable core: pure Go, no LLM dependencies, deterministic for all inputs.
 
 ```go
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+import "github.com/blackwell-systems/polywave-go/pkg/protocol"
 
 // Load and validate a manifest
 manifest, err := protocol.Load(ctx, "docs/IMPL/IMPL-feature.yaml")
@@ -275,7 +275,7 @@ wave := protocol.CurrentWave(manifest)
 protocol.SetCompletionReport(manifest, "A", protocol.CompletionReport{
     Status: "complete",
     Commit: "abc123",
-    Branch: "saw/my-feature/wave1-agent-A",
+    Branch: "polywave/my-feature/wave1-agent-A",
     FilesCreated: []string{"pkg/cache/cache.go"},
 })
 protocol.Save(ctx, manifest, "docs/IMPL/IMPL-feature.yaml")
@@ -325,39 +325,39 @@ internal/
 ## Installation
 
 ```bash
-go get github.com/blackwell-systems/scout-and-wave-go
+go get github.com/blackwell-systems/polywave-go
 ```
 
 ---
 
 ## Getting Started
 
-**Using the `/saw` skill (Claude Code):** See the [protocol repository](https://github.com/blackwell-systems/scout-and-wave) for the skill and agent prompts. The `/saw scout <feature>` → `/saw wave` → `/saw wave --auto` workflow is the primary path for Claude Code users.
+**Using the `/polywave` skill (Claude Code):** See the [protocol repository](https://github.com/blackwell-systems/polywave) for the skill and agent prompts. The `/polywave scout <feature>` -> `/polywave wave` -> `/polywave wave --auto` workflow is the primary path for Claude Code users.
 
-**Using sawtools directly:**
+**Using polywave-tools directly:**
 
 ```bash
 # Install the CLI
-go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+go install github.com/blackwell-systems/polywave-go/cmd/polywave-tools@latest
 
 # Initialize your project (auto-detects language, build, and test commands)
 cd your-project
-sawtools init
+polywave-tools init
 
 # Validate an IMPL doc
-sawtools validate docs/IMPL/IMPL-feature.yaml
+polywave-tools validate docs/IMPL/IMPL-feature.yaml
 
 # Prepare wave 1 (baseline gate + worktrees + agent briefs)
-sawtools prepare-wave docs/IMPL/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
+polywave-tools prepare-wave docs/IMPL/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
 
 # After agents complete, finalize the wave (gates + merge + verify)
-sawtools finalize-wave /abs/path/to/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
+polywave-tools finalize-wave /abs/path/to/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
 ```
 
 **Using the engine programmatically:**
 
 ```go
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+import "github.com/blackwell-systems/polywave-go/pkg/engine"
 
 opts := engine.RunScoutOpts{
     Prompt:     "Add rate limiting to the API",
@@ -375,9 +375,9 @@ Three repositories with separation of concerns:
 
 | Repository | Purpose |
 |-----------|---------|
-| [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave) | Protocol specification: invariants (I1–I6), execution rules (E1–E47), agent prompts, `/saw` skill |
-| **scout-and-wave-go** (this repo) | Go engine + Protocol SDK + `sawtools` CLI |
-| [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web) | Web UI + HTTP/SSE server (imports this engine) |
+| [polywave](https://github.com/blackwell-systems/polywave) | Protocol specification: invariants (I1–I6), execution rules (E1–E47), agent prompts, `/saw` skill |
+| **polywave-go** (this repo) | Go engine + Protocol SDK + `polywave-tools` CLI |
+| [polywave-web](https://github.com/blackwell-systems/polywave-web) | Web UI + HTTP/SSE server (imports this engine) |
 
 The protocol repo is the source of truth for semantics. This repo implements them. The web repo provides the UI layer.
 

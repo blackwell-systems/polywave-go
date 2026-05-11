@@ -1,5 +1,5 @@
 // Package config provides unified configuration loading and saving for
-// scout-and-wave. It replaces the scattered config handling previously split
+// Polywave. It replaces the scattered config handling previously split
 // across backend.PolywaveProviders, autonomy.Config, and the web app's
 // service.PolywaveConfig with a single PolywaveConfig type and Load/Save API.
 package config

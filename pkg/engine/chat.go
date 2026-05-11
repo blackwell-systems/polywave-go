@@ -33,22 +33,22 @@ func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result
 	}
 
 	// Resolve SAW repo path.
-	sawRepo := opts.PolywaveRepoPath
-	if sawRepo == "" {
-		sawRepo = os.Getenv("POLYWAVE_REPO")
+	polywaveRepo := opts.PolywaveRepoPath
+	if polywaveRepo == "" {
+		polywaveRepo = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepo == "" {
+	if polywaveRepo == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return result.NewFailure[ChatData]([]result.PolywaveError{
 				result.NewFatal(result.CodeChatFailed, "engine.RunChat: cannot determine home directory").WithCause(err),
 			})
 		}
-		sawRepo = filepath.Join(home, "code", "polywave")
+		polywaveRepo = filepath.Join(home, "code", "polywave")
 	}
 
 	// Build system prompt with IMPL doc context and instructions.
-	systemPrompt := fmt.Sprintf(`You are an expert software architect answering questions about a Scout-and-Wave IMPL doc.
+	systemPrompt := fmt.Sprintf(`You are an expert software architect answering questions about a Polywave IMPL doc.
 Read the IMPL doc at: %s
 Use the Read tool to read it, then answer the user's question concisely.
 You MUST NOT modify the IMPL doc or any source files. Read-only.`, opts.IMPLPath)

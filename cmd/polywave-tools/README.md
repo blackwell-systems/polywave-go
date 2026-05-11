@@ -1,4 +1,4 @@
-# cmd/sawtools/ — Command Landscape (~75 commands)
+# cmd/polywave-tools/ — Command Landscape (~75 commands)
 
 ## Command Groups
 
@@ -42,5 +42,5 @@ call them internally via `pkg/engine` and `pkg/protocol` functions.
 
 - **JSON output** — all commands emit `json.MarshalIndent` to stdout; no human-formatted text in data path
 - **`--repo-dir`** — global flag on root command, defaults to cwd, threaded to all engine calls
-- **`newSawLogger()`** — structured logger from `logger.go`; use for stderr diagnostics
+- **`newPolywaveLogger()`** — structured logger from `logger.go`; use for stderr diagnostics
 - **Thin wrappers** — commands parse flags, call one `engine.*` function, marshal the result; no business logic in cmd/

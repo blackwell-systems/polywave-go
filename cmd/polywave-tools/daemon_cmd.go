@@ -13,7 +13,7 @@ import (
 )
 
 // newDaemonCmd returns the "daemon" subcommand which runs the continuous
-// Scout-and-Wave processing loop.
+// Polywave processing loop.
 func newDaemonCmd() *cobra.Command {
 	var (
 		autonomyLevel string
@@ -23,8 +23,8 @@ func newDaemonCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "daemon",
-		Short: "Run the SAW daemon loop (processes queue items continuously)",
-		Long: `Start the SAW daemon which continuously monitors the IMPL queue,
+		Short: "Run the Polywave daemon loop (processes queue items continuously)",
+		Long: `Start the Polywave daemon which continuously monitors the IMPL queue,
 runs Scout/Wave cycles, auto-remediates failures, and advances the queue.
 Events are streamed as JSON lines to stdout.`,
 		RunE: func(cmd *cobra.Command, args []string) error {

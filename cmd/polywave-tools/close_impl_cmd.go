@@ -29,13 +29,13 @@ func newCloseImplCmd() *cobra.Command {
 This replaces the manual sequence of mark-complete + update-context + git add + git commit.
 
 Examples:
-  sawtools close-impl docs/IMPL/IMPL-feature.yaml
-  sawtools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22`,
+  polywave-tools close-impl docs/IMPL/IMPL-feature.yaml
+  polywave-tools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			manifestPath := args[0]
-			logger := newSawLogger()
+			logger := newPolywaveLogger()
 
 			if date == "" {
 				date = time.Now().Format("2006-01-02")
@@ -132,15 +132,15 @@ Examples:
 				}
 			}
 
-			// Step 6: Restore original branch if currently on a SAW-managed branch.
+			// Step 6: Restore original branch if currently on a Polywave-managed branch.
 			// Priority: (1) manifest.OriginalBranch, (2) .polywave-state prepare-result.json, (3) "main".
 			branchRestored := false
 			branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current")
 			if branchErr == nil {
 				currentBranch := strings.TrimSpace(branchOut)
-				isSAWBranch := strings.HasPrefix(currentBranch, "polywave/") ||
+				isPolywaveBranch := strings.HasPrefix(currentBranch, "polywave/") ||
 					(strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-"))
-				if isSAWBranch {
+				if isPolywaveBranch {
 					restoreBranch := "main"
 					// 1. Check manifest field (most reliable — survives .polywave-state cleanup)
 					if manifest.OriginalBranch != "" {

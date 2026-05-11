@@ -17,7 +17,7 @@ type InitOpts struct {
 	Logger  *slog.Logger // optional
 }
 
-// InitResult is the structured result for sawtools init.
+// InitResult is the structured result for polywave-tools init.
 // The cmd file uses this to print install check output and next-step messages.
 type InitResult struct {
 	ConfigPath    string        `json:"config_path"`

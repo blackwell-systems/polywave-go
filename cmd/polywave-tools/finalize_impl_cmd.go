@@ -24,7 +24,7 @@ Transactional: rolls back manifest on failure (no partial writes).
 Idempotent: safe to run multiple times.
 
 Single-repo IMPL:
-  sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
+  polywave-tools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
 
 Multi-repo IMPL:
   Specify absolute repo paths in the "repo:" field of file_ownership entries.

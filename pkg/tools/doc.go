@@ -1,4 +1,4 @@
-// Package tools provides a flexible, extensible tool system for Scout-and-Wave agents.
+// Package tools provides a flexible, extensible tool system for Polywave agents.
 //
 // # Architecture
 //

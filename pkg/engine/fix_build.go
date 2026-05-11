@@ -71,7 +71,7 @@ func FixBuildFailure(ctx context.Context, opts FixBuildOpts) result.Result[FixBu
 }
 
 func buildFixBuildSystemPrompt() string {
-	return `You are a build failure fixer for the Scout-and-Wave parallel agent system.
+	return `You are a build failure fixer for the Polywave parallel agent system.
 
 After wave agents complete their work and branches are merged, a quality gate (typecheck, test, lint, or build) has failed. Your job is to diagnose the root cause and apply a minimal fix.
 

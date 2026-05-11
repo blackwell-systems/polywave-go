@@ -225,12 +225,12 @@ func TestScopedBranchRegex_Invalid(t *testing.T) {
 		"wave1-A",                      // missing "agent-" prefix
 		"wave-1-agent-A",               // wrong wave format
 		"wave1-agent-a",                // lowercase agent (invalid)
-		"saw/wave1-agent-A",            // missing slug between saw/ and wave
+		"polywave/wave1-agent-A",            // missing slug between saw/ and wave
 		"polywave//wave1-agent-A",           // empty slug
 		"main",                         // not a SAW branch
 		"feature/my-feature",           // different branch pattern
-		"saw/MY-SLUG/wave1-agent-A",    // uppercase in slug (invalid)
-		"saw/my_slug/wave1-agent-A",    // underscore in slug (invalid)
+		"polywave/MY-SLUG/wave1-agent-A",    // uppercase in slug (invalid)
+		"polywave/my_slug/wave1-agent-A",    // underscore in slug (invalid)
 		"wave1-agent-A-extra",          // trailing content
 		"prefix-wave1-agent-A",         // leading content
 		"polywave/my-slug/wave1-agent-A/extra", // trailing content after agent
@@ -312,7 +312,7 @@ func TestParseBranch_Invalid(t *testing.T) {
 		"agent-A",
 		"main",
 		"feature/branch",
-		"saw/my-slug/invalid",
+		"polywave/my-slug/invalid",
 	}
 
 	for _, branch := range invalid {

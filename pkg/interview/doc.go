@@ -1,6 +1,6 @@
-// Package interview implements the SAW requirements interview state machine.
+// Package interview implements the Polywave requirements interview state machine.
 // It provides a multi-turn CLI-driven conversation that elicits project
-// requirements and produces a REQUIREMENTS.md compatible with /saw bootstrap.
+// requirements and produces a REQUIREMENTS.md compatible with /polywave bootstrap.
 //
 // Two modes are supported:
 //   - deterministic: fixed question set, no LLM required (default)

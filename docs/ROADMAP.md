@@ -1,10 +1,10 @@
-# Scout-and-Wave Engine Roadmap
+# Polywave Engine Roadmap
 
 > Last audited: 2026-04-04. Completed items removed; see CHANGELOG.md for shipped features.
 
 This is the engine/SDK roadmap. See also:
-- **scout-and-wave** (protocol repo) `ROADMAP.md` for protocol enhancements and PROGRAM hardening (P2-P7)
-- **scout-and-wave-web** roadmap for UI/UX features (agent progress API, lease visualization, SSE events)
+- **polywave** (protocol repo) `ROADMAP.md` for protocol enhancements and PROGRAM hardening (P2-P7)
+- **polywave-web** roadmap for UI/UX features (agent progress API, lease visualization, SSE events)
 
 ---
 

@@ -29,9 +29,9 @@ Idempotent: already-closed IMPLs and already-merged branches are skipped.
 When --auto is set, automatically advances to the next tier after the gate passes.
 
 Examples:
-  sawtools finalize-tier docs/PROGRAM/PROGRAM.yaml --tier 1
-  sawtools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
-  sawtools finalize-tier program.yaml --tier 1 --auto
+  polywave-tools finalize-tier docs/PROGRAM/PROGRAM.yaml --tier 1
+  polywave-tools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
+  polywave-tools finalize-tier program.yaml --tier 1 --auto
 
 Exit codes:
   0 - All steps succeeded
@@ -45,7 +45,7 @@ Exit codes:
 				ManifestPath: manifestPath,
 				TierNumber:   tierNum,
 				RepoDir:      repoDir,
-				Logger:       newSawLogger(),
+				Logger:       newPolywaveLogger(),
 			})
 			engineResult := engineRes.GetData()
 

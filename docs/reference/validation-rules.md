@@ -45,7 +45,7 @@
 | V039_INVALID_FIELD_VALUE | Invalid Field Value | error | `validateI4RequiredFields` | `verdict` is not `SUITABLE`, `NOT_SUITABLE`, or `SUITABLE_WITH_CAVEATS`; also emitted when `feature_slug` is not kebab-case |
 | V040_UNSCOPED_GATE | Unscoped Gate | error | `validateMultiRepoConsistency` | A multi-repo IMPL has a `quality_gates.gates[]` entry with no `repo:` field |
 | V041_FILE_MISSING | File Missing | error | `ValidateFileExistence` | A `file_ownership` entry with `action=modify` references a file that does not exist on disk (only when `repoPath` is provided) |
-| V042_INVALID_WORKTREE_NAME | Invalid Worktree Name | error | `ValidateWorktreeNames` | Completion report `branch` does not match `wave{N}-agent-{ID}` or `saw/{slug}/wave{N}-agent-{ID}`; or `worktree` path does not contain `wave{N}-agent-{ID}` as a path segment. Solo-wave agents (single agent in the wave) are exempt. |
+| V042_INVALID_WORKTREE_NAME | Invalid Worktree Name | error | `ValidateWorktreeNames` | Completion report `branch` does not match `wave{N}-agent-{ID}` or `polywave/{slug}/wave{N}-agent-{ID}`; or `worktree` path does not contain `wave{N}-agent-{ID}` as a path segment. Solo-wave agents (single agent in the wave) are exempt. |
 | V043_INVALID_VERIFICATION | Invalid Verification | error | `ValidateVerificationField` | `completion_reports[].verification` is non-empty but does not contain `PASS` or `FAIL` as a standalone word |
 | V044_MISSING_CHECKLIST | Missing Checklist | warning | `ValidateIntegrationChecklist` | New API handlers (`pkg/api/*_handler.go`) or React components (`web/src/components/*.tsx`) are declared in `file_ownership` but `post_merge_checklist` is absent or empty |
 | V045_REPO_MISMATCH | Repo Mismatch | error | `ValidateFileExistenceMultiRepo` | All `action=modify` files are missing from disk, suggesting the IMPL targets a different repository |
@@ -245,7 +245,7 @@ The IMPL Markdown document (not the YAML manifest) is validated separately by `V
 `ValidateCompletionReportClaims` (called separately from `FullValidate`) performs live git-backed checks:
 
 - **Commit existence:** `git cat-file -e <sha>` — fatal if commit does not exist in the repo.
-- **Branch reachability:** commit must be reachable from the agent's expected branch (`saw/{slug}/wave{N}-agent-{ID}`); failure is a warning, not a fatal.
+- **Branch reachability:** commit must be reachable from the agent's expected branch (`polywave/{slug}/wave{N}-agent-{ID}`); failure is a warning, not a fatal.
 - **Files changed ownership:** every file in `files_changed` must be in the agent's owned files or in the frozen scaffold paths; violation is fatal (V002).
 - **Files created existence:** every file in `files_created` must exist on disk; violation is fatal (A003).
 - **Worktree path existence:** if `worktree` is set, the path must exist on disk; absence is a warning (may have been cleaned up).
@@ -254,7 +254,7 @@ Gate input validation (`ValidateGateInputs`) separately compares files reported 
 
 ---
 
-## Auto-Fix (`sawtools validate --fix`)
+## Auto-Fix (`polywave-tools validate --fix`)
 
 When `--fix` is passed (or `AutoFix: true` programmatically), `FullValidate` applies two corrections before running validation:
 
@@ -263,4 +263,4 @@ When `--fix` is passed (or `AutoFix: true` programmatically), `FullValidate` app
 
 The `Fixed` field in the output reports how many corrections were applied. After auto-fix, the manifest is re-validated normally; any remaining issues are reported as errors.
 
-The `--fix` flag is also available on `sawtools pre-wave-validate` and is used internally by `sawtools finalize-scout`.
+The `--fix` flag is also available on `polywave-tools pre-wave-validate` and is used internally by `polywave-tools finalize-scout`.

@@ -25,11 +25,11 @@ Supports two modes:
 
 Examples:
   # Sequential mode: 30 agents
-  sawtools assign-agent-ids --count 30
+  polywave-tools assign-agent-ids --count 30
   # Output: A B C ... Z A2 B2 C2 D2
 
   # Grouped mode: 9 agents with categories
-  sawtools assign-agent-ids --count 9 --grouping '[["data"],["data"],["data"],["api"],["api"],["ui"],["ui"],["ui"],["ui"]]'
+  polywave-tools assign-agent-ids --count 9 --grouping '[["data"],["data"],["data"],["api"],["api"],["ui"],["ui"],["ui"],["ui"]]'
   # Output: A A2 A3 B B2 C C2 C3 C4
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {

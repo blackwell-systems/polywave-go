@@ -151,7 +151,7 @@ func insertMembersIntoCargoToml(content []byte, repoRoot string, worktreePaths [
 		}
 		insertLines = append(insertLines, fmt.Sprintf("  %q,", rel))
 	}
-	insertLines = append(insertLines, "  # SAW-managed: restored by finalize-wave")
+	insertLines = append(insertLines, "  # Polywave-managed: restored by finalize-wave")
 
 	// If the closing bracket is on the same line as members (one-liner), we need
 	// to split it into a multi-line form.

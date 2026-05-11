@@ -36,7 +36,7 @@ The orchestrator still launches agents via the Agent tool; this command
 prepares the metadata and briefs for orchestrator consumption.
 
 Example:
-  sawtools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2`,
+  polywave-tools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]

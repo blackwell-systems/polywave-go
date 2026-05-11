@@ -17,7 +17,7 @@ func newListErrorRangesCmd() *cobra.Command {
 as JSON. Lets Scout and agents choose an unoccupied range without guessing.
 
 Example:
-  sawtools list-error-ranges --repo-dir /path/to/repo`,
+  polywave-tools list-error-ranges --repo-dir /path/to/repo`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res := protocol.ListErrorRanges(context.TODO(), repoDir)

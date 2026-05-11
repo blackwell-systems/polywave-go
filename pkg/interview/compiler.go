@@ -9,7 +9,7 @@ import (
 	"github.com/blackwell-systems/polywave-go/pkg/result"
 )
 
-const placeholder = "<!-- placeholder — fill in before running /saw bootstrap -->"
+const placeholder = "<!-- placeholder — fill in before running /polywave bootstrap -->"
 
 // CompileToRequirements converts a completed InterviewDoc into the
 // REQUIREMENTS.md format expected by saw-bootstrap.md Phase 0.

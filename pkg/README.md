@@ -15,7 +15,7 @@
 ## Dependency Direction
 
 ```
-cmd/sawtools          ← CLI shell, imports engine + most pkg/
+cmd/polywave-tools          ← CLI shell, imports engine + most pkg/
   └─ engine           ← orchestration hub, imports ~25 packages
        ├─ orchestrator, agent, protocol, result
        ├─ analyzer, collision, builddiag, hooks
@@ -28,7 +28,7 @@ cmd/sawtools          ← CLI shell, imports engine + most pkg/
 
 | Task | Start here |
 |------|-----------|
-| Add a sawtools command | `cmd/sawtools/` + `pkg/engine/` |
+| Add a polywave-tools command | `cmd/polywave-tools/` + `pkg/engine/` |
 | Add an error code | `pkg/result/codes.go` (pick domain prefix, add constant) |
 | Add an execution rule | `pkg/protocol/` types + `pkg/engine/` logic |
 | Understand wave lifecycle | `pkg/engine/prepare.go` → `runner.go` → `finalize.go` |

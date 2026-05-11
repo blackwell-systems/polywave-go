@@ -17,7 +17,7 @@ type SaveMemoryData struct {
 }
 
 // ProjectMemory represents the contents of docs/CONTEXT.md in structured YAML format.
-// It serves as project memory for Scout-and-Wave protocol implementations.
+// It serves as project memory for Polywave protocol implementations.
 type ProjectMemory struct {
 	Created              string                  `yaml:"created"`
 	ProtocolVersion      string                  `yaml:"protocol_version"`

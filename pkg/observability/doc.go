@@ -1,6 +1,6 @@
 // Package observability provides event types and storage abstractions for
 // tracking cost, agent performance, and orchestrator activity in the
-// Scout-and-Wave protocol.
+// Polywave protocol.
 //
 // # Architecture
 //

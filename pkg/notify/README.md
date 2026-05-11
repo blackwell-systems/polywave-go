@@ -6,7 +6,7 @@ Designed for extraction into an independent Go module.
 ## Quick Start
 
 ```go
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/notify"
+import "github.com/blackwell-systems/polywave-go/pkg/notify"
 
 // Create adapters from config
 slack, _ := notify.NewFromConfig("slack", map[string]string{
@@ -72,7 +72,7 @@ Sends messages via the Bot API `sendMessage` endpoint with HTML formatting
 Implement the `Adapter` and `Formatter` interfaces:
 
 ```go
-import "github.com/blackwell-systems/scout-and-wave-go/pkg/result"
+import "github.com/blackwell-systems/polywave-go/pkg/result"
 
 type Adapter interface {
     Name() string

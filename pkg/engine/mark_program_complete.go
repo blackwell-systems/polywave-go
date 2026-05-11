@@ -49,7 +49,7 @@ type WriteMarkerData struct {
 	Date         string `json:"date"`
 }
 
-// MarkProgramComplete verifies all tiers complete, writes the SAW:PROGRAM:COMPLETE
+// MarkProgramComplete verifies all tiers complete, writes the Polywave:PROGRAM:COMPLETE
 // marker, archives the manifest, updates CONTEXT.md, and commits. Returns a
 // structured result.Result[MarkProgramCompleteResult].
 func MarkProgramComplete(ctx context.Context, opts MarkProgramCompleteOpts) result.Result[MarkProgramCompleteResult] {
@@ -188,7 +188,7 @@ func verifyAllTiersComplete(manifest *protocol.PROGRAMManifest) result.Result[Ve
 }
 
 // writeProgramCompleteMarker updates the manifest YAML file to set state: COMPLETE,
-// completion_date, and appends the SAW:PROGRAM:COMPLETE marker.
+// completion_date, and appends the Polywave:PROGRAM:COMPLETE marker.
 func writeProgramCompleteMarker(manifestPath, date string) result.Result[WriteMarkerData] {
 	data, err := os.ReadFile(manifestPath)
 	if err != nil {

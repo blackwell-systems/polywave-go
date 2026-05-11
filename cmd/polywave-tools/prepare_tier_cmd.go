@@ -32,14 +32,14 @@ This is the counterpart to finalize-tier. Together they bookend tier execution:
 
 When --run-prepare-wave is set, prepare-tier also runs prepare-wave for
 each IMPL in the tier after worktree creation, using --commit-state
-internally to auto-commit SAW state between IMPL preparations. The JSON
+internally to auto-commit Polywave state between IMPL preparations. The JSON
 output gains a prepare_wave_results array with per-IMPL worktrees and
 success status.
 
 Examples:
-  sawtools prepare-tier docs/PROGRAM/PROGRAM.yaml --tier 1
-  sawtools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
-  sawtools prepare-tier program.yaml --tier 1 --run-prepare-wave --wave 1
+  polywave-tools prepare-tier docs/PROGRAM/PROGRAM.yaml --tier 1
+  polywave-tools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
+  polywave-tools prepare-tier program.yaml --tier 1 --run-prepare-wave --wave 1
 
 Exit codes:
   0 - All steps succeeded
@@ -107,7 +107,7 @@ Exit codes:
 							WaveNum:     waveNum,
 							MergeTarget: mergeTargetFlag,
 							CommitState: true,
-							Logger:      newSawLogger(),
+							Logger:      newPolywaveLogger(),
 							OnEvent: func(step, status, detail string) {
 								fmt.Fprintf(os.Stderr, "prepare-tier[%s]: [%s] %s — %s\n", slug, step, status, detail)
 							},
@@ -151,7 +151,7 @@ Exit codes:
 	_ = cmd.MarkFlagRequired("tier")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate for IMPLs missing critic reports")
 	cmd.Flags().BoolVar(&runPrepareWave, "run-prepare-wave", false,
-		"Also run prepare-wave for each IMPL in the tier. Auto-commits SAW state between IMPLs.")
+		"Also run prepare-wave for each IMPL in the tier. Auto-commits Polywave state between IMPLs.")
 	cmd.Flags().IntVar(&waveNumFlag, "wave", 1,
 		"Wave number to pass to prepare-wave (default 1). Only used with --run-prepare-wave.")
 	cmd.Flags().StringVar(&mergeTargetFlag, "merge-target", "",

@@ -1,16 +1,16 @@
-# Binary Architecture: sawtools vs saw
+# Binary Architecture: polywave-tools vs polywave
 
 ## Do Not Merge These Binaries
 
-Scout-and-Wave ships **two separate binaries** from **two separate repositories**. This is a deliberate architectural decision, not an accident or technical debt.
+Polywave ships **two separate binaries** from **two separate repositories**. This is a deliberate architectural decision, not an accident or technical debt.
 
 **Why two binaries exist:**
 
-1. **sawtools** is a protocol engine CLI. It exposes every low-level protocol operation as a command. Its consumers are the `/saw` skill (Claude Code orchestrator), CI/CD pipelines, and the Go SDK. It has zero web dependencies -- no embedded assets, no HTTP server, no React. Adding a web dependency would bloat every CI job and skill invocation with 4+ MB of unused React bundle.
+1. **polywave-tools** is a protocol engine CLI. It exposes every low-level protocol operation as a command. Its consumers are the `/polywave` skill (Claude Code orchestrator), CI/CD pipelines, and the Go SDK. It has zero web dependencies -- no embedded assets, no HTTP server, no React. Adding a web dependency would bloat every CI job and skill invocation with 4+ MB of unused React bundle.
 
-2. **saw** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with ~112 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from scout-and-wave-go as Go libraries -- it never shells out to sawtools.
+2. **saw** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with ~112 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from polywave-go as Go libraries -- it never shells out to polywave-tools.
 
-3. **They share the Go engine, not each other.** Both binaries depend on `scout-and-wave-go/pkg/` packages. Neither binary depends on the other. The web app does not call sawtools. sawtools does not know the web app exists.
+3. **They share the Go engine, not each other.** Both binaries depend on `polywave-go/pkg/` packages. Neither binary depends on the other. The web app does not call polywave-tools. polywave-tools does not know the web app exists.
 
 Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an unused React bundle; every web app user gets 77 CLI commands they never run; the web app repo loses independent deployability. There is no benefit.
 
@@ -20,36 +20,36 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 
 | Binary | Source Repo | Commands | Size | Purpose |
 |--------|-------------|----------|------|---------|
-| **sawtools** | scout-and-wave-go | 77 | ~26 MB | Protocol engine CLI for skill/CI/SDK consumers |
-| **saw** | scout-and-wave-web | 23 | ~24 MB (includes embedded React) | Web application with HTTP API |
+| **polywave-tools** | polywave-go | 77 | ~26 MB | Protocol engine CLI for skill/CI/SDK consumers |
+| **saw** | polywave-web | 23 | ~24 MB (includes embedded React) | Web application with HTTP API |
 
 ---
 
-## sawtools (Protocol Engine CLI)
+## polywave-tools (Protocol Engine CLI)
 
-**Source:** `scout-and-wave-go/cmd/sawtools`
+**Source:** `polywave-go/cmd/polywave-tools`
 
 **Installation:**
 ```bash
 # Homebrew (macOS/Linux)
-brew install blackwell-systems/tap/sawtools
+brew install blackwell-systems/tap/polywave-tools
 
 # Or via Go install
-go install github.com/blackwell-systems/scout-and-wave-go/cmd/sawtools@latest
+go install github.com/blackwell-systems/polywave-go/cmd/polywave-tools@latest
 ```
 
 <details>
 <summary>Build from source</summary>
 
 ```bash
-cd scout-and-wave-go
-go build -o sawtools ./cmd/sawtools
-cp sawtools ~/.local/bin/sawtools
+cd polywave-go
+go build -o polywave-tools ./cmd/polywave-tools
+cp polywave-tools ~/.local/bin/polywave-tools
 ```
 </details>
 
 **Target audience:**
-- **CLI Orchestrators** (the `/saw` skill in Claude Code) -- need `create-worktrees`, `merge-agents`, `prepare-wave`, `finalize-wave` because they cannot import Go packages
+- **CLI Orchestrators** (the `/polywave` skill in Claude Code) -- need `create-worktrees`, `merge-agents`, `prepare-wave`, `finalize-wave` because they cannot import Go packages
 - **CI/CD Pipelines** -- validation, quality gates, conflict detection, build verification
 - **Power Users** -- dependency solver, journal debugging, protocol-level operations
 - **Program Execution** -- multi-IMPL orchestration via `program-execute`, `finalize-tier`, `tier-gate`
@@ -170,15 +170,15 @@ cp sawtools ~/.local/bin/sawtools
 
 ---
 
-## saw (Web Application)
+## polywave (Web Application)
 
-**Source:** `scout-and-wave-web/cmd/saw`
+**Source:** `polywave-web/cmd/polywave`
 
 **Installation:**
 ```bash
-cd scout-and-wave-web
-make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
-./saw serve
+cd polywave-web
+make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd/polywave
+./polywave serve
 ```
 
 **Target audience:**
@@ -203,7 +203,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 **Format Conversion:**
 - `render` -- render YAML IMPL manifest as markdown
 
-**Shared with sawtools** (14 commands):
+**Shared with polywave-tools** (14 commands):
 - `validate`, `extract-context`, `set-completion`, `mark-complete`
 - `run-gates`, `check-conflicts`, `validate-scaffolds`, `freeze-check`
 - `update-agent-prompt`, `analyze-deps`, `analyze-suitability`
@@ -215,28 +215,28 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ scout-and-wave-go (SDK/Engine Repo)                          │
+│ polywave-go (SDK/Engine Repo)                          │
 │                                                               │
 │  pkg/engine/      ◄──┐  Scout, Wave, Merge execution         │
 │  pkg/protocol/    ◄──┤  YAML parsing, validation             │
 │  pkg/agent/       ◄──┤  Claude API client, backends          │
 │  internal/git/    ◄──┤  Git helpers                          │
 │                       │                                       │
-│  cmd/sawtools/  ────► sawtools (77 commands)                      │
+│  cmd/polywave-tools/  ────► polywave-tools (77 commands)                      │
 │                   Protocol engine CLI                         │
 └───────────────────────┬──────────────────────────────────────┘
                         │
                         │ Go package imports (library dependency)
-                        │ NOT a binary dependency — saw never calls sawtools
+                        │ NOT a binary dependency — polywave never calls polywave-tools
                         │
 ┌───────────────────────▼──────────────────────────────────────┐
-│ scout-and-wave-web (Web App Repo)                             │
+│ polywave-web (Web App Repo)                             │
 │                                                               │
 │  pkg/api/         HTTP server, SSE broker, routes            │
 │    │                                                          │
-│    ├─► Imports: scout-and-wave-go/pkg/engine                 │
-│    ├─► Imports: scout-and-wave-go/pkg/protocol               │
-│    ├─► Imports: scout-and-wave-go/pkg/{agent,analyzer,       │
+│    ├─► Imports: polywave-go/pkg/engine                 │
+│    ├─► Imports: polywave-go/pkg/protocol               │
+│    ├─► Imports: polywave-go/pkg/{agent,analyzer,       │
 │    │       autonomy,codereview,commands,config,gatecache,     │
 │    │       interview,journal,observability,queue,result,      │
 │    │       resume,retryctx,scaffold,suitability}             │
@@ -245,12 +245,12 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 │                                                               │
 │  web/             React UI (embedded in binary via go:embed) │
 │                                                               │
-│  cmd/saw/  ────► saw (23 commands)                           │
+│  cmd/polywave/  ────► polywave (23 commands)                           │
 │                   Web UI + orchestration CLI                  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
-**The web app imports `pkg/engine` and `pkg/protocol` as Go packages. It does NOT shell out to sawtools. The two binaries are independent.**
+**The web app imports `pkg/engine` and `pkg/protocol` as Go packages. It does NOT shell out to polywave-tools. The two binaries are independent.**
 
 ---
 
@@ -260,9 +260,9 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 
 `analyze-deps`, `analyze-suitability`, `check-conflicts`, `detect-cascades`, `detect-scaffolds`, `extract-commands`, `extract-context`, `freeze-check`, `mark-complete`, `run-gates`, `set-completion`, `update-agent-prompt`, `validate`, `validate-scaffolds`
 
-**Why the overlap?** Both tools need these operations. sawtools exposes them for CI/CD and CLI orchestration. saw exposes them as convenience commands for users who also have the web UI. Both implementations call the same underlying `pkg/` functions.
+**Why the overlap?** Both tools need these operations. polywave-tools exposes them for CI/CD and CLI orchestration. polywave exposes them as convenience commands for users who also have the web UI. Both implementations call the same underlying `pkg/` functions.
 
-**63 commands are sawtools-only** (protocol engine, worktree management, program execution, journals, daemon, recovery, queue). These are the operations that CLI orchestrators and CI pipelines need but web UI users do not run manually.
+**63 commands are polywave-tools-only** (protocol engine, worktree management, program execution, journals, daemon, recovery, queue). These are the operations that CLI orchestrators and CI pipelines need but web UI users do not run manually.
 
 **9 commands are saw-only** (serve, scout, scaffold, wave, merge, merge-wave, current-wave, status, render). These are high-level orchestration commands and the web server itself.
 
@@ -270,15 +270,15 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 
 ## Execution Models
 
-### CLI Orchestration (uses sawtools)
+### CLI Orchestration (uses polywave-tools)
 **Context:** Inside a Claude Code session (Max plan or Bedrock)
 
 1. Orchestrator (Claude via `/saw` skill) launches agents via Agent tool
-2. Orchestrator calls `sawtools prepare-wave` to set up worktrees, briefs, journals
+2. Orchestrator calls `polywave-tools prepare-wave` to set up worktrees, briefs, journals
 3. Agents run in isolated worktrees
-4. Orchestrator calls `sawtools finalize-wave` to merge, verify, clean up
+4. Orchestrator calls `polywave-tools finalize-wave` to merge, verify, clean up
 
-**Why sawtools?** The orchestrator is a running LLM session. It cannot import Go packages, so it needs CLI commands.
+**Why polywave-tools?** The orchestrator is a running LLM session. It cannot import Go packages, so it needs CLI commands.
 
 ### Web Orchestration (uses saw)
 **Context:** User in browser at `localhost:7432`
@@ -294,7 +294,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 
 ## When to Use Which
 
-### Use sawtools when:
+### Use polywave-tools when:
 - Orchestrating from CLI (e.g., `/saw` skill in Claude Code)
 - Running in CI/CD pipelines
 - Executing multi-IMPL programs (`program-execute`, `finalize-tier`)
@@ -302,7 +302,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 - Need low-level worktree or merge operations
 - Cannot import Go packages
 
-### Use saw when:
+### Use polywave when:
 - Want interactive web UI for IMPL review and wave monitoring
 - Need real-time SSE event streaming
 - Running as a local HTTP server
@@ -315,40 +315,40 @@ make build  # or: cd web && npm run build && cd .. && go build -o saw ./cmd/saw
 
 **For end users:**
 ```bash
-git clone https://github.com/blackwell-systems/scout-and-wave-web.git
-cd scout-and-wave-web
+git clone https://github.com/blackwell-systems/polywave-web.git
+cd polywave-web
 make build
-./saw serve
+./polywave serve
 ```
 
 **For power users / CI/CD:**
 ```bash
-git clone https://github.com/blackwell-systems/scout-and-wave-go.git
-cd scout-and-wave-go
-go build -o sawtools ./cmd/sawtools
-cp sawtools ~/.local/bin/sawtools
+git clone https://github.com/blackwell-systems/polywave-go.git
+cd polywave-go
+go build -o polywave-tools ./cmd/polywave-tools
+cp polywave-tools ~/.local/bin/polywave-tools
 ```
 
-**For developers:** Install both. Use `saw serve` for the development workflow. Use `sawtools` for testing protocol operations.
+**For developers:** Install both. Use `saw serve` for the development workflow. Use `polywave-tools` for testing protocol operations.
 
 ---
 
 ## FAQ
 
 **Q: Why not merge them into one binary?**
-A: Because they serve different execution models with different dependency profiles. sawtools has zero web dependencies (no embedded React, no HTTP server). Merging would add ~4 MB of unused web assets to every CI job and skill invocation, bloat the command list for web users with 63 commands they never run, and couple the web app's release cycle to the protocol engine's. The shared code lives in `pkg/` -- that is the integration point, not a combined binary.
+A: Because they serve different execution models with different dependency profiles. polywave-tools has zero web dependencies (no embedded React, no HTTP server). Merging would add ~4 MB of unused web assets to every CI job and skill invocation, bloat the command list for web users with 63 commands they never run, and couple the web app's release cycle to the protocol engine's. The shared code lives in `pkg/` -- that is the integration point, not a combined binary.
 
-**Q: Does the web app shell out to sawtools?**
+**Q: Does the web app shell out to polywave-tools?**
 A: No. The web app imports `pkg/engine` and `pkg/protocol` as Go packages. It calls Go functions directly. The only external commands it runs are git and user-specified test/lint commands.
 
-**Q: Why is saw larger than sawtools?**
-A: Despite having fewer commands, saw embeds the entire React UI via `//go:embed all:dist`, adding ~4 MB of web assets to the binary.
+**Q: Why is polywave larger than polywave-tools?**
+A: Despite having fewer commands, polywave embeds the entire React UI via `//go:embed all:dist`, adding ~4 MB of web assets to the binary.
 
-**Q: Which binary should I use for the `/saw` skill?**
-A: sawtools. The skill orchestrates from CLI and needs commands like `prepare-wave`, `finalize-wave`, and `merge-agents`.
+**Q: Which binary should I use for the `/polywave` skill?**
+A: polywave-tools. The skill orchestrates from CLI and needs commands like `prepare-wave`, `finalize-wave`, and `merge-agents`.
 
-**Q: Can I use saw for CI/CD?**
-A: You would be missing 63 commands including `prepare-wave`, `finalize-wave`, `solve`, `verify-commits`, `verify-build`, `scan-stubs`, and all program execution commands. Use sawtools.
+**Q: Can I use polywave for CI/CD?**
+A: You would be missing 63 commands including `prepare-wave`, `finalize-wave`, `solve`, `verify-commits`, `verify-build`, `scan-stubs`, and all program execution commands. Use polywave-tools.
 
 ---
 

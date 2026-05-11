@@ -33,12 +33,12 @@ type VerifyInstallOpts struct {
 }
 
 // RunVerifyInstall runs all prerequisite checks and returns a structured result.
-// It checks: sawtools binary, git version, skill directory, skill files,
+// It checks: polywave-tools binary, git version, skill directory, skill files,
 // config file, configured repos, Claude Code hook registration, and Agent permission.
 func RunVerifyInstall(opts VerifyInstallOpts) InstallResult {
 	var checks []InstallCheck
 
-	// 1. sawtools binary
+	// 1. polywave-tools binary
 	checks = append(checks, checkSawtoolsBinary())
 
 	// 2. Git version
@@ -396,12 +396,12 @@ func allHookCommands(s *settingsJSON) []string {
 	return cmds
 }
 
-// criticalSAWHooks are the hook script names whose absence breaks core SAW workflows:
-//   - inject_skill_context: without this, /saw doesn't exist as a command
+// criticalPolywaveHooks are the hook script names whose absence breaks core Polywave workflows:
+//   - inject_skill_context: without this, /polywave doesn't exist as a command
 //   - validate_agent_launch: without this, agent context injection is skipped
 //   - check_wave_ownership: without this, agents write to unowned files silently
 //   - validate_agent_completion: without this, completion reporting is skipped
-var criticalSAWHooks = []string{
+var criticalPolywaveHooks = []string{
 	"inject_skill_context",
 	"validate_agent_launch",
 	"check_wave_ownership",
@@ -421,7 +421,7 @@ func checkHooksRegistered() InstallCheck {
 
 	cmds := allHookCommands(s)
 	var missing []string
-	for _, name := range criticalSAWHooks {
+	for _, name := range criticalPolywaveHooks {
 		found := false
 		for _, cmd := range cmds {
 			if strings.Contains(cmd, name) {
@@ -438,7 +438,7 @@ func checkHooksRegistered() InstallCheck {
 		return InstallCheck{
 			Name:   "hooks_registered",
 			Status: "pass",
-			Detail: fmt.Sprintf("all %d critical hooks registered", len(criticalSAWHooks)),
+			Detail: fmt.Sprintf("all %d critical hooks registered", len(criticalPolywaveHooks)),
 		}
 	}
 

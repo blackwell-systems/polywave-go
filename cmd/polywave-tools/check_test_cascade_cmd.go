@@ -23,7 +23,7 @@ Exit code 0: all test callers are covered.
 Exit code 1: orphaned test callers found.
 
 Example:
-  sawtools check-test-cascade docs/IMPL/IMPL-feature.yaml --repo-dir /path/to/repo`,
+  polywave-tools check-test-cascade docs/IMPL/IMPL-feature.yaml --repo-dir /path/to/repo`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			manifestPath := args[0]

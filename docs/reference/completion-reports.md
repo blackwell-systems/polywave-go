@@ -88,7 +88,7 @@ The `CompletionReportBuilder.Validate()` method enforces the following rules bef
 | `failure_type` forbidden when complete | `failure_type` must NOT be set when `status` is `complete` |
 | `failure_type` must be valid | When present, `failure_type` must be one of the recognized `FailureTypeEnum` values (see table above) |
 
-The `sawtools set-completion` CLI and the `AppendToManifest` builder method both run these checks before writing to disk.
+The `polywave-tools set-completion` CLI and the `AppendToManifest` builder method both run these checks before writing to disk.
 
 ---
 
@@ -182,10 +182,10 @@ The `ErrReportNotFound` sentinel (`protocol.ErrReportNotFound`) is returned when
 
 ---
 
-## `sawtools set-completion` CLI
+## `polywave-tools set-completion` CLI
 
 ```
-sawtools set-completion <manifest-path> [flags]
+polywave-tools set-completion <manifest-path> [flags]
 ```
 
 | Flag | Required | Description |

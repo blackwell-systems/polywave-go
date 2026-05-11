@@ -12,7 +12,7 @@ import (
 
 // FinalizeScoutResult holds the combined result of all Scout finalization checks.
 type FinalizeScoutResult struct {
-	// Step 1: Schema/structural validation (sawtools validate --fix)
+	// Step 1: Schema/structural validation (polywave-tools validate --fix)
 	Validation protocol.FullValidateData `json:"validation"`
 
 	// Step 2: Pre-wave validation (E35 + test cascade + wave structure)
@@ -21,7 +21,7 @@ type FinalizeScoutResult struct {
 	WaveStructure    WaveStructureCheckResult `json:"wave_structure"`
 	StaleConstraints StaleConstraintsResult   `json:"stale_constraints"`
 
-	// Step 3: Brief accuracy validation (sawtools validate-briefs)
+	// Step 3: Brief accuracy validation (polywave-tools validate-briefs)
 	BriefValidation *protocol.BriefValidationData `json:"brief_validation,omitempty"`
 
 	// Step 4: Injection method (auto-set)
@@ -40,9 +40,9 @@ func newFinalizeScoutCmd() *cobra.Command {
 		Short: "Run all Scout finalization checks in sequence",
 		Long: `Consolidates Scout steps 16-18 into a single command:
 
-  1. Schema/structural validation (sawtools validate --fix)
+  1. Schema/structural validation (polywave-tools validate --fix)
   2. Pre-wave validation: E35 gaps, test cascade, wave structure
-  3. Brief accuracy validation (sawtools validate-briefs)
+  3. Brief accuracy validation (polywave-tools validate-briefs)
   4. Auto-set injection_method
 
 Outputs structured JSON showing which step failed and why.
@@ -50,7 +50,7 @@ Scout retains the fix-between-retries loop — this command does
 validation only, not auto-retry.
 
 Example:
-  sawtools finalize-scout docs/IMPL/IMPL-feature.yaml --injection-method hook`,
+  polywave-tools finalize-scout docs/IMPL/IMPL-feature.yaml --injection-method hook`,
 		Args:         cobra.ExactArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

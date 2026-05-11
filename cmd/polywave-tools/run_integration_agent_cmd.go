@@ -32,10 +32,10 @@ func newRunIntegrationAgentCmd() *cobra.Command {
 
 Examples:
   # Basic usage
-  sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 1
+  polywave-tools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 1
 
   # After finalize-wave detects gaps
-  sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
+  polywave-tools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
 
 Output:
   - JSON with success status, gap count, and completion report
@@ -96,7 +96,7 @@ Output:
 				WaveNum:  waveNum,
 				Report:   existingReport,
 				Model:    integrationModel,
-				Logger:   newSawLogger(),
+				Logger:   newPolywaveLogger(),
 			}, func(ev engine.Event) {
 				// Print progress events to stderr
 				if ev.Event == "integration_agent_output" {

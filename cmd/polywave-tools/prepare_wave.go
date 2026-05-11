@@ -42,13 +42,13 @@ NOTE: For solo agents (1 agent in wave), use prepare-agent --no-worktree instead
 prepare-wave always creates worktrees, which is unnecessary overhead for single-agent
 waves that execute on the main branch.
 
-SAW-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md)
+Polywave-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md)
 are auto-committed before the working-directory check by default, so tools
 that write to the IMPL doc between the critic commit and prepare-wave
 (e.g., pre-wave-validate --fix, set-injection-method) do not cause false
 dirty-dir failures. User code changes are NOT auto-committed; they still
 cause the command to fail with a descriptive error. Use --commit-state=false
-to disable auto-commit of SAW state files.`,
+to disable auto-commit of Polywave state files.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if waveNum == 0 {
@@ -75,7 +75,7 @@ to disable auto-commit of SAW state files.`,
 					}
 				} else {
 					if manifest.CriticReport == nil {
-						return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'sawtools run-critic' first or use --skip-critic")
+						return fmt.Errorf("prepare-wave: E37 critic gate: no critic report found — run 'polywave-tools run-critic' first or use --skip-critic")
 					}
 					return fmt.Errorf("prepare-wave: E37 critic gate: ISSUES verdict contains blocking errors — review critic report and fix errors before proceeding")
 				}
@@ -97,7 +97,7 @@ to disable auto-commit of SAW state files.`,
 				CommitBaseline:   commitBaseline,
 				CommitState:      commitState,
 				NoWorkspaceSetup: noWorkspaceSetup || noGoWork,
-				Logger:           newSawLogger(),
+				Logger:           newPolywaveLogger(),
 				OnEvent: func(step string, status string, detail string) {
 					if !jsonOnly {
 						fmt.Fprintf(os.Stderr, "prepare-wave: [%s] %s — %s\n", step, status, detail)
@@ -143,7 +143,7 @@ to disable auto-commit of SAW state files.`,
 	cmd.Flags().BoolVar(&noCache, "no-cache", false, "Disable baseline gate result caching")
 	cmd.Flags().StringVar(&mergeTarget, "merge-target", "", "Baseline branch for verification (default: current HEAD)")
 	cmd.Flags().BoolVar(&commitBaseline, "commit-baseline", false, "Auto-commit baseline fixes if working directory is dirty")
-	cmd.Flags().BoolVar(&commitState, "commit-state", true, "Auto-commit SAW-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md) before working-dir check. Does not commit user code. Use --commit-state=false to disable.")
+	cmd.Flags().BoolVar(&commitState, "commit-state", true, "Auto-commit Polywave-owned state changes (IMPL yaml, gate-cache, docs/IMPL/, docs/CONTEXT.md) before working-dir check. Does not commit user code. Use --commit-state=false to disable.")
 	cmd.Flags().BoolVar(&jsonOnly, "json-only", false, "Suppress progress messages (only output JSON result)")
 	cmd.Flags().BoolVar(&skipCritic, "skip-critic", false, "Auto-skip E37 critic gate if no critic report exists")
 	cmd.Flags().BoolVar(&noGoWork, "no-gowork", false, "Skip go.work setup for LSP cross-package resolution (Go repos only)")

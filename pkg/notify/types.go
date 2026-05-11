@@ -16,7 +16,7 @@ const (
 	SeverityError   Severity = "error"
 )
 
-// Event is a generic notification event. CRITICAL: no SAW-specific imports.
+// Event is a generic notification event. CRITICAL: no Polywave-specific imports.
 type Event struct {
 	Type      string            // e.g. "wave_complete", "agent_failed"
 	Severity  Severity

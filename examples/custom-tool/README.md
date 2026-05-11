@@ -21,7 +21,7 @@ package main
 import (
     "context"
     "fmt"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/tools"
+    "github.com/blackwell-systems/polywave-go/pkg/agent/tools"
 )
 
 type VectorDBExecutor struct {

@@ -1,8 +1,8 @@
 # API Endpoints
 
-> **Note:** The HTTP API is implemented in [scout-and-wave-web](https://github.com/blackwell-systems/scout-and-wave-web), which imports the engine (`scout-and-wave-go`) as a library. This document describes the full API surface.
+> **Note:** The HTTP API is implemented in [polywave-web](https://github.com/blackwell-systems/polywave-web), which imports the engine (`polywave-go`) as a library. This document describes the full API surface.
 >
-> **Endpoint count:** 115 registered routes (verified 2026-04-04 against `scout-and-wave-web` source).
+> **Endpoint count:** 115 registered routes (verified 2026-04-04 against `polywave-web` source).
 
 ## Base URL
 
@@ -14,7 +14,7 @@ http://localhost:7432/api
 
 **Current:** None. The API is intended for localhost development only.
 
-**Future:** API key or OAuth for remote deployments (see `scout-and-wave-web` roadmap).
+**Future:** API key or OAuth for remote deployments (see `polywave-web` roadmap).
 
 ## Error Responses
 
@@ -216,7 +216,7 @@ List all IMPL documents across all configured repos.
 ]
 ```
 
-Scans `docs/IMPL/` and `docs/IMPL/complete/` in every repo from `saw.config.json`.
+Scans `docs/IMPL/` and `docs/IMPL/complete/` in every repo from `polywave.config.json`.
 
 ---
 
@@ -389,7 +389,7 @@ Get a unified diff of an agent's branch changes for a specific file.
 {
   "agent": "A",
   "file": "src/auth.go",
-  "branch": "saw/add-user-auth/wave1-agent-A",
+  "branch": "polywave/add-user-auth/wave1-agent-A",
   "diff": "--- a/src/auth.go\n+++ b/src/auth.go\n..."
 }
 ```
@@ -427,7 +427,7 @@ Get the critic review result for an IMPL.
 
 ### `POST /api/impl/{slug}/run-critic`
 
-Trigger an async critic review via `sawtools run-critic`.
+Trigger an async critic review via `polywave-tools run-critic`.
 
 **Response:** `202 Accepted`
 
@@ -880,7 +880,7 @@ Reconstruct wave/agent status from disk (survives server restarts).
       "agent": "A",
       "wave": 1,
       "status": "complete",
-      "branch": "saw/add-user-auth/wave1-agent-A",
+      "branch": "polywave/add-user-auth/wave1-agent-A",
       "commit": "abc1234",
       "files": ["src/auth.go"],
       "failure_type": "",
@@ -963,7 +963,7 @@ Scan all configured repos for interrupted SAW sessions.
 Get a recursive directory tree for a repository.
 
 **Query params:**
-- `repo` (string, required) — Repo name from `saw.config.json`
+- `repo` (string, required) — Repo name from `polywave.config.json`
 - `path` (string, optional) — Relative path within repo (default: repo root)
 
 **Response:** `200 OK`
@@ -1111,7 +1111,7 @@ List all SAW-managed git worktrees for an IMPL.
 {
   "worktrees": [
     {
-      "branch": "saw/add-user-auth/wave1-agent-A",
+      "branch": "polywave/add-user-auth/wave1-agent-A",
       "path": "/abs/path/.claude/worktrees/...",
       "status": "merged",
       "has_unsaved": false,
@@ -1148,7 +1148,7 @@ Batch delete worktrees and branches.
 **Request:**
 ```json
 {
-  "branches": ["saw/slug/wave1-agent-A", "saw/slug/wave1-agent-B"],
+  "branches": ["polywave/slug/wave1-agent-A", "polywave/slug/wave1-agent-B"],
   "force": false
 }
 ```
@@ -1157,7 +1157,7 @@ Batch delete worktrees and branches.
 ```json
 {
   "results": [
-    { "branch": "saw/slug/wave1-agent-A", "deleted": true, "error": "" }
+    { "branch": "polywave/slug/wave1-agent-A", "deleted": true, "error": "" }
   ],
   "deleted_count": 2,
   "failed_count": 0
@@ -1331,7 +1331,7 @@ Subscribe to `GET /api/interview/{runID}/events` for questions and completion.
 
 ### `GET /api/config`
 
-Get the current SAW configuration.
+Get the current Polywave configuration.
 
 **Response:** `200 OK`
 ```json
@@ -1356,13 +1356,13 @@ Get the current SAW configuration.
 }
 ```
 
-Falls back to defaults if `saw.config.json` does not exist.
+Falls back to defaults if `polywave.config.json` does not exist.
 
 ---
 
 ### `POST /api/config`
 
-Save SAW configuration (atomic write).
+Save Polywave configuration (atomic write).
 
 **Request:** `SAWConfig` JSON body (same shape as GET response).
 
@@ -1558,7 +1558,7 @@ Save `docs/CONTEXT.md` (atomic write, max 10 MB body).
 
 ### `GET /api/notifications/preferences`
 
-Get notification preferences from `saw.config.json`.
+Get notification preferences from `polywave.config.json`.
 
 **Response:** `200 OK`
 ```json
@@ -1592,7 +1592,7 @@ Save notification preferences (preserves all other config fields).
 
 ### `GET /api/webhooks`
 
-Get configured webhook adapters from `saw.config.json`.
+Get configured webhook adapters from `polywave.config.json`.
 
 **Response:** `200 OK`
 ```json

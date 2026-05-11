@@ -84,7 +84,7 @@ func TestGoWorkspaceManager_Restore_RestoresFromBackup(t *testing.T) {
 
 	// Create a current go.work that should be replaced
 	goWorkPath := filepath.Join(dir, "go.work")
-	if err := os.WriteFile(goWorkPath, []byte("go 1.21\n\nuse .\n// SAW-managed\n"), 0644); err != nil {
+	if err := os.WriteFile(goWorkPath, []byte("go 1.21\n\nuse .\n// Polywave-managed\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,7 +113,7 @@ func TestGoWorkspaceManager_Restore_DeletesGoWorkWhenNoBackup(t *testing.T) {
 
 	// Create a go.work file (no backup exists)
 	goWorkPath := filepath.Join(dir, "go.work")
-	if err := os.WriteFile(goWorkPath, []byte("go 1.21\n\nuse .\n// SAW-managed\n"), 0644); err != nil {
+	if err := os.WriteFile(goWorkPath, []byte("go 1.21\n\nuse .\n// Polywave-managed\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 

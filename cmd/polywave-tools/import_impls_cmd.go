@@ -24,13 +24,13 @@ func newImportImplsCmd() *cobra.Command {
 
 Examples:
   # Discover all IMPL docs in the repo
-  sawtools import-impls --program PROGRAM-my-feature.yaml --discover
+  polywave-tools import-impls --program PROGRAM-my-feature.yaml --discover
 
   # Import specific IMPL docs
-  sawtools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml IMPL-b.yaml
+  polywave-tools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml IMPL-b.yaml
 
   # Discover from a specific repo directory
-  sawtools import-impls --program PROGRAM-my-feature.yaml --discover --repo-dir /path/to/repo`,
+  polywave-tools import-impls --program PROGRAM-my-feature.yaml --discover --repo-dir /path/to/repo`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if programPath == "" {
 				return fmt.Errorf("import-impls: --program flag is required")

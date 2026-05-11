@@ -202,7 +202,7 @@ func updatePyprojectExtraPaths(content []byte, relPaths []string) ([]byte, error
 			"",
 			"[tool.pyright]",
 			fmt.Sprintf("extraPaths = [%s]", pathLiterals),
-			"# SAW-managed: restored by finalize-wave",
+			"# Polywave-managed: restored by finalize-wave",
 		)
 		return joinLines(lines), nil
 	}

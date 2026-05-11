@@ -54,7 +54,7 @@ The detection algorithm:
 
 ## Integration
 
-The `sawtools pre-wave-validate` command combines:
+The `polywave-tools pre-wave-validate` command combines:
 - E16 validation (existing FullValidate pipeline)
 - E35 gap detection (new)
 
@@ -77,7 +77,7 @@ Output format:
           "pkg/protocol/program_tier_prepare.go:45",
           "pkg/protocol/program_tier_prepare.go:82"
         ],
-        "package": "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+        "package": "github.com/blackwell-systems/polywave-go/pkg/protocol"
       }
     ]
   }
@@ -86,10 +86,10 @@ Output format:
 
 ## Files Created
 
-- `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/e35_detection.go` - Core detection logic
-- `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/e35_detection_test.go` - Unit tests
-- `/Users/dayna.blackwell/code/scout-and-wave-go/cmd/sawtools/pre_wave_validate_cmd.go` - CLI command
-- Updated `/Users/dayna.blackwell/code/scout-and-wave-go/cmd/sawtools/main.go` - Registered command
+- `/Users/dayna.blackwell/code/polywave-go/pkg/protocol/e35_detection.go` - Core detection logic
+- `/Users/dayna.blackwell/code/polywave-go/pkg/protocol/e35_detection_test.go` - Unit tests
+- `/Users/dayna.blackwell/code/polywave-go/cmd/polywave-tools/pre_wave_validate_cmd.go` - CLI command
+- Updated `/Users/dayna.blackwell/code/polywave-go/cmd/polywave-tools/main.go` - Registered command
 
 ## Verification
 
@@ -110,9 +110,9 @@ The implementation:
 ## Usage
 
 ```bash
-cd /Users/dayna.blackwell/code/scout-and-wave-go
-go build -o sawtools ./cmd/sawtools
+cd /Users/dayna.blackwell/code/polywave-go
+go build -o polywave-tools ./cmd/polywave-tools
 
 # Once build issues are resolved:
-./sawtools pre-wave-validate docs/IMPL/IMPL-example.yaml --wave 1
+./polywave-tools pre-wave-validate docs/IMPL/IMPL-example.yaml --wave 1
 ```

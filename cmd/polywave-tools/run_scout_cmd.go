@@ -11,7 +11,7 @@ import (
 func newRunScoutCmd() *cobra.Command {
 	var (
 		repoPath            string
-		sawRepoPath         string
+		polywaveRepoPath         string
 		implOutputPath      string // --impl-output-path: explicit IMPL doc output path
 		scoutModel          string
 		timeout             int    // minutes
@@ -34,13 +34,13 @@ func newRunScoutCmd() *cobra.Command {
 
 Examples:
   # Basic usage (infers repo from current directory)
-  sawtools run-scout "Add audit logging to auth module"
+  polywave-tools run-scout "Add audit logging to auth module"
 
   # Specify target repository
-  sawtools run-scout "Add audit logging" --repo-dir /path/to/project
+  polywave-tools run-scout "Add audit logging" --repo-dir /path/to/project
 
   # Custom Scout model
-  sawtools run-scout "Add audit logging" --scout-model claude-opus-4-6
+  polywave-tools run-scout "Add audit logging" --scout-model claude-opus-4-6
 
 Output:
   - IMPL doc created at docs/IMPL/IMPL-<slug>.yaml
@@ -68,14 +68,14 @@ Output:
 				Feature:             featureDesc,
 				RepoPath:            repoPath,
 				ImplOutputPath:      implOutputPath,
-				PolywaveRepoPath:         sawRepoPath,
+				PolywaveRepoPath:         polywaveRepoPath,
 				ScoutModel:          scoutModel,
 				Timeout:             timeout,
 				ProgramManifestPath: programManifestPath,
 				NoCritic:            noCritic,
 				CriticModel:         criticModel,
 				RefreshBrief:        refreshBrief,
-				Logger:              newSawLogger(),
+				Logger:              newPolywaveLogger(),
 			}
 
 			scoutResult := engine.RunScoutFull(cmd.Context(), opts, func(chunk string) {
@@ -94,14 +94,14 @@ Output:
 			fmt.Println()
 			fmt.Println("Next steps:")
 			fmt.Println("  1. Review the IMPL doc")
-			fmt.Println("  2. Run: sawtools run-wave --wave 1")
+			fmt.Println("  2. Run: polywave-tools run-wave --wave 1")
 
 			return nil
 		},
 	}
 
 	cmd.Flags().StringVar(&repoPath, "repo-dir", "", "Target repository path (default: current directory)")
-	cmd.Flags().StringVar(&sawRepoPath, "protocol-repo", "", "Polywave protocol repo path (default: $POLYWAVE_REPO or ~/code/scout-and-wave)")
+	cmd.Flags().StringVar(&polywaveRepoPath, "protocol-repo", "", "Polywave protocol repo path (default: $POLYWAVE_REPO or ~/code/polywave)")
 	cmd.Flags().StringVar(&implOutputPath, "impl-output-path", "", "Explicit IMPL doc output path (overrides default derivation from --repo-dir + slug)")
 	cmd.Flags().StringVar(&scoutModel, "scout-model", "", "Scout model override (e.g., claude-opus-4-6)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Timeout in minutes (default: 10)")

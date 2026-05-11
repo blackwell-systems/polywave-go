@@ -58,26 +58,26 @@ SQLite with two tables:
 ### CLI Interface
 ```bash
 # Build/rebuild index
-sawtools index-codebase --repo-dir . [--lang go,typescript]
+polywave-tools index-codebase --repo-dir . [--lang go,typescript]
 
 # Query symbols
-sawtools query-symbols --repo-dir . --kind function --exported --package "pkg/api"
-sawtools query-symbols --repo-dir . --callers-of "RegisterHandler"
-sawtools query-symbols --repo-dir . --unused-exports
+polywave-tools query-symbols --repo-dir . --kind function --exported --package "pkg/api"
+polywave-tools query-symbols --repo-dir . --callers-of "RegisterHandler"
+polywave-tools query-symbols --repo-dir . --unused-exports
 
 # JSON output for agent consumption
-sawtools query-symbols --repo-dir . --unused-exports --format json
+polywave-tools query-symbols --repo-dir . --unused-exports --format json
 ```
 
 ### Integration Points
 
 **Scout (suitability analysis)**:
-- Step 1: `sawtools index-codebase` before analyzing
+- Step 1: `polywave-tools index-codebase` before analyzing
 - Step 3 (dependency mapping): `query-symbols --callers-of` replaces manual grep
 - Step 8 (file ownership): `query-symbols --package` surfaces file clusters
 
 **E25 integration detection**:
-- `sawtools validate-integration` uses `query-symbols --unused-exports` instead of heuristic pattern matching
+- `polywave-tools validate-integration` uses `query-symbols --unused-exports` instead of heuristic pattern matching
 - Zero false positives from `New*` pattern matching non-constructor functions
 
 **prepare-wave baseline**:
@@ -85,7 +85,7 @@ sawtools query-symbols --repo-dir . --unused-exports --format json
 - `--incremental` flag for fast updates
 
 ### Dependencies
-- `github.com/tree-sitter/go-tree-sitter` — Official pure-Go tree-sitter bindings (released 2024, no CGo). **Do NOT use `github.com/smacker/go-tree-sitter`** — that binding uses CGo, which complicates cross-compilation and breaks simple `go build` for the `sawtools` binary (darwin/arm64 or linux/amd64). The official bindings are CGo-free and drop in as a standard Go module.
+- `github.com/tree-sitter/go-tree-sitter` — Official pure-Go tree-sitter bindings (released 2024, no CGo). **Do NOT use `github.com/smacker/go-tree-sitter`** — that binding uses CGo, which complicates cross-compilation and breaks simple `go build` for the `polywave-tools` binary (darwin/arm64 or linux/amd64). The official bindings are CGo-free and drop in as a standard Go module.
 - Language grammars: `tree-sitter-go`, `tree-sitter-typescript`, `tree-sitter-python`, `tree-sitter-rust` (not yet in go.mod)
 - `modernc.org/sqlite` — Pure Go SQLite (already in go.mod, used by `pkg/observability/sqlite/`)
 

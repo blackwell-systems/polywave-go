@@ -1,13 +1,13 @@
 # E11 Conflict Prediction
 
-E11 runs automatically inside `sawtools finalize-wave` before any agent branches are merged. It can also be invoked directly via `sawtools predict-conflicts`.
+E11 runs automatically inside `polywave-tools finalize-wave` before any agent branches are merged. It can also be invoked directly via `polywave-tools predict-conflicts`.
 
 **What E11 detects:** files that appear in two or more agents' completion reports (across `files_changed` and `files_created`) and whose edits are likely to produce a 3-way merge conflict.
 
 **When it runs:** after all agents in a wave report completion, before `merge-agents`. If E11 returns a conflict, `finalize-wave` stops with a failed step result and does not proceed to merge.
 
 **What E11 does not flag:**
-- Files under `docs/IMPL/` or `.saw-state/` — these are protocol-managed and are expected to be touched by multiple agents.
+- Files under `docs/IMPL/` or `.polywave-state/` — these are protocol-managed and are expected to be touched by multiple agents.
 - Files reported by only one agent.
 - Files where all agents produced identical final content (convergent edits, Pass 1).
 - Files where agents edited non-overlapping line ranges (cascade patches, Pass 2).
@@ -102,12 +102,12 @@ For pure insertions, `Start == End == anchor_line`.
 
 ---
 
-## `sawtools predict-conflicts`
+## `polywave-tools predict-conflicts`
 
 Runs E11 against an IMPL manifest file. Useful for diagnosing conflict predictions without triggering a full `finalize-wave`.
 
 ```
-sawtools predict-conflicts <manifest-path> --wave <n>
+polywave-tools predict-conflicts <manifest-path> --wave <n>
 ```
 
 ### Flags
@@ -155,13 +155,13 @@ predict-conflicts: <n> file(s) have overlapping edits (merge conflict likely)
 E11 derives agent branch names from the manifest's `feature_slug` and the wave number:
 
 ```
-saw/<feature_slug>/wave<n>-agent-<agentID>
+polywave/<feature_slug>/wave<n>-agent-<agentID>
 ```
 
 For example, with `feature_slug: add-cache`, wave 1, agent A2:
 
 ```
-saw/add-cache/wave1-agent-A2
+polywave/add-cache/wave1-agent-A2
 ```
 
 This convention must match how `prepare-wave` created the worktree branches. If branches do not exist at the expected names, E11's git calls fail and it defaults to flagging the file as a conflict.

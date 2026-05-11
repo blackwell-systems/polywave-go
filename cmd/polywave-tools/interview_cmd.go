@@ -18,7 +18,7 @@ func init() {
 }
 
 // newInterviewCmd creates the interview subcommand.
-// Usage: sawtools interview "<description>" [flags]
+// Usage: polywave-tools interview "<description>" [flags]
 //
 // Drives the AskUserQuestion interaction loop: prints each question to stdout,
 // reads stdin for each answer, writes state to INTERVIEW-<slug>.yaml after each
@@ -38,17 +38,17 @@ func newInterviewCmd() *cobra.Command {
 		Use:   `interview "<description>"`,
 		Short: "Conduct a structured requirements interview",
 		Long: `Conduct a structured requirements interview that produces a REQUIREMENTS.md
-file suitable for /saw bootstrap or /saw scout.
+file suitable for /polywave bootstrap or /polywave scout.
 
 The interview walks through 6 phases: overview, scope, requirements, interfaces,
 stories, and review. Each phase collects structured data that is compiled into
 a complete requirements document.
 
 Examples:
-  sawtools interview "Build a REST API for user management"
-  sawtools interview "Add OAuth2 support" --max-questions 12
-  sawtools interview --resume docs/INTERVIEW-my-feature.yaml
-  echo "My App\nA CLI tool\n..." | sawtools interview "test" --non-interactive`,
+  polywave-tools interview "Build a REST API for user management"
+  polywave-tools interview "Add OAuth2 support" --max-questions 12
+  polywave-tools interview --resume docs/INTERVIEW-my-feature.yaml
+  echo "My App\nA CLI tool\n..." | polywave-tools interview "test" --non-interactive`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate: need either a description or --resume
@@ -137,7 +137,7 @@ Examples:
 					if saveResult := mgr.Save(doc, docPath); saveResult.IsFatal() {
 						fmt.Fprintf(cmd.ErrOrStderr(), "Warning: failed to save interview state: %v\n", saveResult.Errors)
 					}
-					fmt.Fprintf(writer, "\nInterview paused. Resume with:\n  sawtools interview --resume %s\n", docPath)
+					fmt.Fprintf(writer, "\nInterview paused. Resume with:\n  polywave-tools interview --resume %s\n", docPath)
 					return fmt.Errorf("interview paused: resume with --resume %s", docPath)
 				}
 				answer := reader.Text()
@@ -175,7 +175,7 @@ Examples:
 			fmt.Fprintf(writer, "\nInterview complete. (%d/%d questions)\n", len(doc.History), doc.MaxQuestions)
 			fmt.Fprintf(writer, "REQUIREMENTS.md written to: %s\n", outPath)
 			fmt.Fprintf(writer, "Interview doc saved to: %s\n", docPath)
-			fmt.Fprintf(writer, "Next step: /saw bootstrap or /saw scout\n")
+			fmt.Fprintf(writer, "Next step: /polywave bootstrap or /polywave scout\n")
 
 			return nil
 		},

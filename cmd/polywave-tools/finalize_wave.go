@@ -112,7 +112,7 @@ All pipeline steps are handled by the engine. The engine supports:
 				WaveNum:                   waveNum,
 				MergeTarget:               mergeTarget,
 				SkipMerge:                 skipMerge,
-				Logger:                    newSawLogger(),
+				Logger:                    newPolywaveLogger(),
 				CollisionDetectionEnabled: true,
 				ClosedLoopRetryEnabled:    true,
 				OnEvent:                   onEvent,
@@ -146,7 +146,7 @@ All pipeline steps are handled by the engine. The engine supports:
 					RepoPath: defaultRepoPath,
 					WaveNum:  waveNum,
 					Errors:   r.Data.CallerCascadeErrors,
-					Logger:   newSawLogger(),
+					Logger:   newPolywaveLogger(),
 				}, func(ev engine.Event) {
 					if ev.Event == "hotfix_agent_output" {
 						if data, ok := ev.Data.(map[string]string); ok {
@@ -196,7 +196,7 @@ All pipeline steps are handled by the engine. The engine supports:
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false,
 		"Show what cascade errors would be hotfixed without running the agent")
 	cmd.Flags().BoolVar(&commitState, "commit-state", false,
-		"Auto-commit SAW-owned state files (IMPL docs, .polywave-state/) before merge. Prevents dirty-workdir merge failures.")
+		"Auto-commit Polywave-owned state files (IMPL docs, .polywave-state/) before merge. Prevents dirty-workdir merge failures.")
 	return cmd
 }
 

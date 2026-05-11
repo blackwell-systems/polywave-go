@@ -89,7 +89,7 @@ interface_contracts:
         type RunScaffoldOpts struct {
             IMPLPath     string
             RepoPath     string
-            SAWRepoPath  string
+            PolywaveRepoPath  string
             Model        string
             OnEvent      func(Event)
         }
@@ -164,7 +164,7 @@ waves:
             type RunScaffoldOpts struct {
                 IMPLPath     string      // absolute path to IMPL manifest
                 RepoPath     string      // absolute path to target repository
-                SAWRepoPath  string      // absolute path to scout-and-wave repo (for prompts)
+                PolywaveRepoPath  string      // absolute path to polywave repo (for prompts)
                 Model        string      // optional model override; empty = backend default
                 OnEvent      func(Event) // event callback for progress updates
             }
@@ -174,7 +174,7 @@ waves:
 
             Current signature (line ~515):
             ```go
-            func RunScaffold(ctx context.Context, implPath, repoPath, sawRepoPath, model string, onEvent func(Event)) error
+            func RunScaffold(ctx context.Context, implPath, repoPath, polywaveRepoPath, model string, onEvent func(Event)) error
             ```
 
             New signature:
@@ -186,7 +186,7 @@ waves:
             Replace all parameter references with `opts.FieldName`:
             - `implPath` → `opts.IMPLPath`
             - `repoPath` → `opts.RepoPath`
-            - `sawRepoPath` → `opts.SAWRepoPath`
+            - `polywaveRepoPath` → `opts.PolywaveRepoPath`
             - `model` → `opts.Model`
             - `onEvent` → `opts.OnEvent`
 
@@ -195,7 +195,7 @@ waves:
             Search for all `RunScaffold(` calls in the codebase (expected: ~8 call sites).
             For each call site, transform from:
             ```go
-            RunScaffold(ctx, implPath, repoPath, sawRepoPath, model, onEvent)
+            RunScaffold(ctx, implPath, repoPath, polywaveRepoPath, model, onEvent)
             ```
 
             To:
@@ -203,7 +203,7 @@ waves:
             RunScaffold(ctx, RunScaffoldOpts{
                 IMPLPath:    implPath,
                 RepoPath:    repoPath,
-                SAWRepoPath: sawRepoPath,
+                PolywaveRepoPath: polywaveRepoPath,
                 Model:       model,
                 OnEvent:     onEvent,
             })
@@ -595,7 +595,7 @@ critic_report:
             issues:
                 - check: symbol_accuracy
                   severity: error
-                  description: 'Brief states MergeAgents has ~83 call sites (marked as HIGH IMPACT), but only 14 actual call sites exist: 1 in sawtools CLI, 11 in test files, 2 in pkg/engine. This drastically overstates the refactor scope and risk.'
+                  description: 'Brief states MergeAgents has ~83 call sites (marked as HIGH IMPACT), but only 14 actual call sites exist: 1 in polywave-tools CLI, 11 in test files, 2 in pkg/engine. This drastically overstates the refactor scope and risk.'
                   file: pkg/protocol/merge_agents.go
                   symbol: MergeAgents
         D:

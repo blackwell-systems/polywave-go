@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// validateProgramOutput is the JSON structure printed by sawtools validate-program.
+// validateProgramOutput is the JSON structure printed by polywave-tools validate-program.
 type validateProgramOutput struct {
 	Valid  bool                        `json:"valid"`
 	Errors []validateProgramError      `json:"errors"`

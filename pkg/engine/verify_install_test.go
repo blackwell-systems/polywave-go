@@ -208,7 +208,7 @@ func TestCheckHooksRegistered_AllCriticalPresent(t *testing.T) {
 	// Build a settings.json with all critical hooks present
 	hooks := make(map[string]interface{})
 	var entries []interface{}
-	for _, name := range criticalSAWHooks {
+	for _, name := range criticalPolywaveHooks {
 		entries = append(entries, map[string]interface{}{
 			"hooks": []map[string]string{{"command": "/home/user/.local/bin/" + name}},
 		})

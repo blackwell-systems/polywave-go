@@ -31,8 +31,8 @@ func newCleanupStaleCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "cleanup-stale",
-		Short: "Detect and remove stale SAW worktrees",
-		Long: `Scans for stale SAW worktrees (completed IMPLs, orphaned branches,
+		Short: "Detect and remove stale Polywave worktrees",
+		Long: `Scans for stale Polywave worktrees (completed IMPLs, orphaned branches,
 merged-but-not-cleaned) and optionally removes them.
 
 Use --slug <slug> to target a specific IMPL slug.

@@ -84,7 +84,7 @@ func init() {
 			Title:     "IMPL Validation",
 			PlainText: "IMPL doc has structural errors.",
 			Remediation: []string{
-				"Run sawtools validate --fix to auto-correct common issues.",
+				"Run polywave-tools validate --fix to auto-correct common issues.",
 			},
 			SeeAlso: "protocol/execution-rules.md#E16",
 		},

@@ -432,7 +432,7 @@ func TestDetect_ResumeCommand(t *testing.T) {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
 	s := sessions[0]
-	want := fmt.Sprintf("sawtools run-wave %s --wave 1", implPath)
+	want := fmt.Sprintf("polywave-tools run-wave %s --wave 1", implPath)
 	if s.ResumeCommand != want {
 		t.Errorf("ResumeCommand = %q, want %q", s.ResumeCommand, want)
 	}
@@ -456,7 +456,7 @@ func TestDetect_ResumeCommand_FailedAgent(t *testing.T) {
 		t.Fatalf("expected 1 session, got %d", len(sessions))
 	}
 	s := sessions[0]
-	want := fmt.Sprintf("sawtools retry %s --wave 1", implPath)
+	want := fmt.Sprintf("polywave-tools retry %s --wave 1", implPath)
 	if s.ResumeCommand != want {
 		t.Errorf("ResumeCommand = %q, want %q", s.ResumeCommand, want)
 	}
@@ -676,7 +676,7 @@ func TestDetermineCurrentWave_FallbackToWorktrees(t *testing.T) {
 	// No completion reports at all.
 
 	// Simulate orphaned worktree paths that embed wave numbers in their path.
-	// SAW worktrees are stored at paths like .claude/worktrees/polywave/{slug}/wave{N}-agent-{ID}.
+	// Polywave worktrees are stored at paths like .claude/worktrees/polywave/{slug}/wave{N}-agent-{ID}.
 	orphaned := []string{
 		"/repo/.claude/worktrees/polywave/test-feature/wave2-agent-A",
 		"/repo/.claude/worktrees/polywave/test-feature/wave1-agent-B",

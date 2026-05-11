@@ -29,15 +29,15 @@ to IMPL YAML files (for cross-repo programs).
 
 Examples:
   # Generate a PROGRAM from two IMPL slugs
-  sawtools create-program --from-impls feature-a --from-impls feature-b
+  polywave-tools create-program --from-impls feature-a --from-impls feature-b
 
   # Generate a PROGRAM using absolute paths (cross-repo)
-  sawtools create-program \
+  polywave-tools create-program \
     --from-impls /path/to/repo1/docs/IMPL/IMPL-feature-a.yaml \
     --from-impls /path/to/repo2/docs/IMPL/IMPL-feature-b.yaml
 
   # Mix slugs and absolute paths
-  sawtools create-program \
+  polywave-tools create-program \
     --from-impls feature-a \
     --from-impls /path/to/other-repo/docs/IMPL/IMPL-feature-b.yaml \
     --slug my-program --title "My Program"`,
@@ -103,9 +103,9 @@ and detects overlapping files across IMPLs. Returns a structured JSON report.
 Exit code 1 if conflicts found, 0 if all disjoint.
 
 Examples:
-  sawtools check-impl-conflicts --impls feature-a --impls feature-b
-  sawtools check-impl-conflicts --impls feature-a --impls feature-b --repo-dir /path/to/repo
-  sawtools check-impl-conflicts \
+  polywave-tools check-impl-conflicts --impls feature-a --impls feature-b
+  polywave-tools check-impl-conflicts --impls feature-a --impls feature-b --repo-dir /path/to/repo
+  polywave-tools check-impl-conflicts \
     --impls /path/to/repo1/docs/IMPL/IMPL-feature-a.yaml \
     --impls /path/to/repo2/docs/IMPL/IMPL-feature-b.yaml`,
 		RunE: func(cmd *cobra.Command, args []string) error {

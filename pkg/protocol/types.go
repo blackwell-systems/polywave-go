@@ -271,7 +271,7 @@ type ReactionEntry struct {
 	MaxAttempts int `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
 }
 
-// ProtocolState represents the current state of the IMPL manifest in the SAW protocol state machine.
+// ProtocolState represents the current state of the IMPL manifest in the Polywave protocol state machine.
 type ProtocolState string
 
 const (

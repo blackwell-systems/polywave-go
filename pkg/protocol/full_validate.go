@@ -26,7 +26,7 @@ type FullValidateOpts struct {
 }
 
 // FullValidate runs all validation checks on an IMPL manifest file.
-// This is the single entry point for CLI (sawtools validate), web API,
+// This is the single entry point for CLI (polywave-tools validate), web API,
 // and programmatic validation when you have a file path.
 //
 // Pipeline (in order):

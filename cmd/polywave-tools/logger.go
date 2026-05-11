@@ -5,9 +5,9 @@ import (
 	"os"
 )
 
-// newSawLogger constructs the slog.Logger for CLI commands.
+// newPolywaveLogger constructs the slog.Logger for CLI commands.
 // Level is controlled by POLYWAVE_LOG_LEVEL env var (default: WARN).
-func newSawLogger() *slog.Logger {
+func newPolywaveLogger() *slog.Logger {
 	level := slog.LevelWarn
 	if v := os.Getenv("POLYWAVE_LOG_LEVEL"); v != "" {
 		var l slog.Level

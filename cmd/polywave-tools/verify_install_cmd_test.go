@@ -85,7 +85,7 @@ func TestVerifyInstallCmd_HumanFlag(t *testing.T) {
 	// Build a known result to verify human output format
 	result := engine.InstallResult{
 		Checks: []engine.InstallCheck{
-			{Name: "polywave_tools_binary", Status: "pass", Detail: "at /usr/local/bin/sawtools"},
+			{Name: "polywave_tools_binary", Status: "pass", Detail: "at /usr/local/bin/polywave-tools"},
 			{Name: "git_version", Status: "pass", Detail: "2.43 >= 2.20"},
 			{Name: "skill_directory", Status: "fail", Detail: "~/.claude/skills/polywave/ not found"},
 		},

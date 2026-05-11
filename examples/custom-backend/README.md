@@ -20,7 +20,7 @@ package main
 
 import (
     "context"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+    "github.com/blackwell-systems/polywave-go/pkg/agent/backend"
 )
 
 type GroqBackend struct {
@@ -113,4 +113,4 @@ go run main.go
 - [ ] Add tool serialization (OpenAI-compatible format)
 - [ ] Add streaming SSE parser
 - [ ] Add tool call loop
-- [ ] Test with Scout and Wave agents
+- [ ] Test with Polywave agents

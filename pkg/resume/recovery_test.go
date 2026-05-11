@@ -9,7 +9,7 @@ import (
 
 func TestBuildRecoverySteps_NoFailures(t *testing.T) {
 	state := SessionState{
-		ResumeCommand:   "sawtools run-wave docs/IMPL/IMPL-test.yaml --wave 1",
+		ResumeCommand:   "polywave-tools run-wave docs/IMPL/IMPL-test.yaml --wave 1",
 		SuggestedAction: "Resume wave 1",
 	}
 	steps := BuildRecoverySteps(state, nil)
@@ -32,7 +32,7 @@ func TestBuildRecoverySteps_ResumeCommandEmpty(t *testing.T) {
 func TestBuildRecoverySteps_FailedAgent(t *testing.T) {
 	state := SessionState{
 		FailedAgents:  []string{"X"},
-		ResumeCommand: "sawtools run-wave x",
+		ResumeCommand: "polywave-tools run-wave x",
 	}
 	manifest := &protocol.IMPLManifest{
 		CompletionReports: map[string]protocol.CompletionReport{
@@ -81,12 +81,12 @@ func TestBuildRecoverySteps_OrphanedClean(t *testing.T) {
 	steps := BuildRecoverySteps(state, nil)
 	found := false
 	for _, s := range steps {
-		if s.Priority == 2 && strings.Contains(s.Command, "sawtools cleanup") {
+		if s.Priority == 2 && strings.Contains(s.Command, "polywave-tools cleanup") {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("expected at least one step with priority 2 and command containing 'sawtools cleanup'")
+		t.Error("expected at least one step with priority 2 and command containing 'polywave-tools cleanup'")
 	}
 }

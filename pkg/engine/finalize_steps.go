@@ -861,7 +861,7 @@ func StepAutoMergeAppendConflicts(ctx context.Context, opts FinalizeWaveOpts, ma
 	}, results, nil
 }
 
-// StepCommitState commits uncommitted SAW-owned state files (IMPL docs,
+// StepCommitState commits uncommitted Polywave-owned state files (IMPL docs,
 // .polywave-state/) before merge-agents runs. Non-fatal on failure — reports
 // warning and continues. This prevents dirty working directory from blocking
 // git merge.
@@ -881,7 +881,7 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 	}
 
 	if status == "" {
-		detail := "working directory clean — no SAW state to commit"
+		detail := "working directory clean — no Polywave state to commit"
 		emitStepEvent(onEvent, stepName, "complete", detail)
 		return &StepResult{
 			Step:   stepName,
@@ -890,15 +890,15 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 		}, nil
 	}
 
-	var sawFiles []string
+	var polywaveFiles []string
 	var userFileCount int
 	for _, line := range strings.Split(status, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		if isSAWOwnedPath(line, opts.IMPLPath, opts.RepoPath) {
-			sawFiles = append(sawFiles, line)
+		if isPolywaveOwnedPath(line, opts.IMPLPath, opts.RepoPath) {
+			polywaveFiles = append(polywaveFiles, line)
 		} else {
 			userFileCount++
 		}
@@ -906,11 +906,11 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 
 	if userFileCount > 0 {
 		emitStepEvent(onEvent, stepName, "warning",
-			fmt.Sprintf("%d non-SAW file(s) also dirty (ignored for pre-merge commit)", userFileCount))
+			fmt.Sprintf("%d non-Polywave file(s) also dirty (ignored for pre-merge commit)", userFileCount))
 	}
 
-	if len(sawFiles) == 0 {
-		detail := "no SAW-owned files dirty"
+	if len(polywaveFiles) == 0 {
+		detail := "no Polywave-owned files dirty"
 		emitStepEvent(onEvent, stepName, "complete", detail)
 		return &StepResult{
 			Step:   stepName,
@@ -919,8 +919,8 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 		}, nil
 	}
 
-	// Stage each SAW-owned file individually
-	for _, f := range sawFiles {
+	// Stage each Polywave-owned file individually
+	for _, f := range polywaveFiles {
 		// Trim the 2-char git status prefix (e.g. "M " or "?? ")
 		trimmed := f
 		if len(f) > 2 {
@@ -937,7 +937,7 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 	}
 
 	// Build commit message
-	commitMsg := "chore: commit SAW state (pre-merge commit)"
+	commitMsg := "chore: commit Polywave state (pre-merge commit)"
 	if manifest.State != "" {
 		commitMsg = fmt.Sprintf("chore: advance IMPL state to %s (pre-merge commit)", manifest.State)
 	}
@@ -951,7 +951,7 @@ func StepCommitState(ctx context.Context, opts FinalizeWaveOpts,
 		}, nil
 	}
 
-	detail := fmt.Sprintf("committed %d SAW state file(s)", len(sawFiles))
+	detail := fmt.Sprintf("committed %d Polywave state file(s)", len(polywaveFiles))
 	emitStepEvent(onEvent, stepName, "complete", detail)
 	return &StepResult{
 		Step:   stepName,

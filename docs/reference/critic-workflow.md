@@ -1,6 +1,6 @@
 # Critic Workflow (E37)
 
-The critic is a pre-wave gate that reviews every agent brief in the IMPL doc against the actual codebase before wave execution begins. It is implemented as a single agent launched by `sawtools run-critic` (or by `engine.RunCritic` programmatically).
+The critic is a pre-wave gate that reviews every agent brief in the IMPL doc against the actual codebase before wave execution begins. It is implemented as a single agent launched by `polywave-tools run-critic` (or by `engine.RunCritic` programmatically).
 
 ---
 
@@ -8,7 +8,7 @@ The critic is a pre-wave gate that reviews every agent brief in the IMPL doc aga
 
 ### `CriticData`
 
-Written to `IMPLManifest.CriticReport` (`critic_report` in YAML) by `WriteCriticReview` / `WriteCriticReviewResult` after the critic agent calls `sawtools set-critic-review`.
+Written to `IMPLManifest.CriticReport` (`critic_report` in YAML) by `WriteCriticReview` / `WriteCriticReviewResult` after the critic agent calls `polywave-tools set-critic-review`.
 
 | Field | Type | YAML key | Description |
 |---|---|---|---|
@@ -117,10 +117,10 @@ A warnings-only report in auto mode is treated as safe to proceed. In manual mod
 
 ## How `critic_report` Is Populated
 
-1. The orchestrator calls `sawtools run-critic <impl-path>` (or `engine.RunCritic` directly).
+1. The orchestrator calls `polywave-tools run-critic <impl-path>` (or `engine.RunCritic` directly).
 2. `engine.BuildCriticPrompt` loads the IMPL doc, resolves repo roots, loads `critic-agent.md` from the SAW protocol repo with reference injection, and assembles the prompt.
 3. `engine.RunCritic` applies a context timeout (default 20 minutes), initializes a backend from the model option, and launches a critic agent via `agent.NewRunner`.
-4. The critic agent performs its checks and calls `sawtools set-critic-review <impl-path> --verdict <V> --summary <S> --issue-count <N> --agent-reviews <JSON>`.
+4. The critic agent performs its checks and calls `polywave-tools set-critic-review <impl-path> --verdict <V> --summary <S> --issue-count <N> --agent-reviews <JSON>`.
 5. `set-critic-review` parses the JSON array of `AgentCriticReview` objects, builds a `CriticData`, and calls `protocol.WriteCriticReview` to persist it to `IMPLManifest.CriticReport`.
 6. `engine.RunCritic` reloads the manifest, reads `CriticReport`, and returns a `RunCriticResult` to the caller.
 
@@ -128,10 +128,10 @@ If the critic agent completes but no `critic_report` was written, `RunCritic` re
 
 ---
 
-## `sawtools run-critic` CLI
+## `polywave-tools run-critic` CLI
 
 ```
-sawtools run-critic <impl-path> [flags]
+polywave-tools run-critic <impl-path> [flags]
 ```
 
 `<impl-path>` must be an absolute path to an existing IMPL YAML file.
@@ -149,19 +149,19 @@ sawtools run-critic <impl-path> [flags]
 - `1` — verdict is `ISSUES`; error message directs operator to correct the IMPL doc before proceeding
 
 **SAW repo resolution** (for loading `critic-agent.md`):
-1. `$SAW_REPO` environment variable
-2. `~/code/scout-and-wave` (default fallback)
+1. `$POLYWAVE_REPO` environment variable
+2. `~/code/polywave` (default fallback)
 
 The `critic-agent.md` prompt is loaded from `<saw-repo>/implementations/claude-code/prompts/agents/critic-agent.md` with reference injection via `engine.LoadTypePromptWithRefs`. If the file cannot be loaded, `RunCritic` returns a fatal error.
 
 ---
 
-## `sawtools set-critic-review` CLI
+## `polywave-tools set-critic-review` CLI
 
 Used by critic agents to write their output. Not intended for direct human use.
 
 ```
-sawtools set-critic-review <impl-path> \
+polywave-tools set-critic-review <impl-path> \
   --verdict <PASS|ISSUES> \
   --summary <text> \
   [--issue-count <N>] \
@@ -193,12 +193,12 @@ On success, prints a JSON confirmation object with `verdict`, `issue_count`, `re
 
 ---
 
-## `sawtools set-critic-verdict` CLI
+## `polywave-tools set-critic-verdict` CLI
 
 Used by the orchestrator to atomically update the `critic_report.verdict` field in an existing IMPL doc. Typical use case: after correcting issues flagged by the critic, transition the verdict from `ISSUES` to `PASS` without manually editing YAML or re-running the full critic agent.
 
 ```
-sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
+polywave-tools set-critic-verdict <impl-path> --verdict <pass|issues>
 ```
 
 `--verdict` is required (case-insensitive; normalized to uppercase). Exits 1 if no `critic_report` exists in the IMPL doc.

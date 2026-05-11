@@ -61,7 +61,7 @@ func TestDetectAndRestore_GoRepo_RemovesGoWork(t *testing.T) {
 	}
 
 	// Write go.work to simulate a SAW-created workspace file.
-	gowork := []byte("go 1.21\n\nuse .\n\n// SAW-managed: restored by finalize-wave\n")
+	gowork := []byte("go 1.21\n\nuse .\n\n// Polywave-managed: restored by finalize-wave\n")
 	if err := os.WriteFile(filepath.Join(dir, "go.work"), gowork, 0644); err != nil {
 		t.Fatalf("writing go.work: %v", err)
 	}

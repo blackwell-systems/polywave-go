@@ -1,6 +1,6 @@
 # Library Usage Example
 
-This example shows how to use the Scout-and-Wave engine as a library in your Go application.
+This example shows how to use the Polywave engine as a library in your Go application.
 
 ## Overview
 
@@ -27,9 +27,9 @@ import (
     "fmt"
     "log"
 
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
-    "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+    "github.com/blackwell-systems/polywave-go/pkg/engine"
+    "github.com/blackwell-systems/polywave-go/pkg/orchestrator"
+    "github.com/blackwell-systems/polywave-go/pkg/protocol"
 )
 ```
 

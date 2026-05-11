@@ -18,7 +18,7 @@ type WorkspaceManager interface {
 	// Backs up existing config to BackupDir(repoRoot, waveNum) before modification.
 	Setup(repoRoot string, waveNum int, worktreePaths []string) error
 	// Restore reverts workspace configuration to its pre-wave state.
-	// If a backup exists, it is restored and deleted. If no backup, the SAW-created file is deleted.
+	// If a backup exists, it is restored and deleted. If no backup, the Polywave-created file is deleted.
 	Restore(repoRoot string, waveNum int) error
 }
 

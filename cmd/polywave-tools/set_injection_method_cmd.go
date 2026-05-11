@@ -25,7 +25,7 @@ The injection_method field captures the context delivery mechanism:
 Written by the Scout agent to the IMPL doc before completing.
 
 Example:
-  sawtools set-injection-method docs/IMPL/IMPL-feature.yaml --method hook`,
+  polywave-tools set-injection-method docs/IMPL/IMPL-feature.yaml --method hook`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Validate --method before loading

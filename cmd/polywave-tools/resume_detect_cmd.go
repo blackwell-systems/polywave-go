@@ -9,16 +9,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newResumeDetectCmd returns the cobra.Command for "sawtools resume-detect".
-// It scans the repository for interrupted SAW sessions and outputs a JSON array
+// newResumeDetectCmd returns the cobra.Command for "polywave-tools resume-detect".
+// It scans the repository for interrupted Polywave sessions and outputs a JSON array
 // of SessionState objects to stdout. Exit code is always 0.
 func newResumeDetectCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "resume-detect",
-		Short: "Detect interrupted SAW sessions in the repository",
+		Short: "Detect interrupted Polywave sessions in the repository",
 		Long: `Scans docs/IMPL/ for IMPL manifests that are not complete or unsuitable,
 inspects completion reports and git worktrees, and reports the state of any
-in-progress SAW sessions. Output is a JSON array written to stdout.
+in-progress Polywave sessions. Output is a JSON array written to stdout.
 
 An empty array is written when no interrupted sessions are found.`,
 		Args: cobra.NoArgs,

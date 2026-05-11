@@ -14,7 +14,7 @@ import (
 
 func newAutoCmd() *cobra.Command {
 	var (
-		sawRepoPath string
+		polywaveRepoPath string
 		scoutModel  string
 		waveModel   string
 		timeout     int
@@ -23,7 +23,7 @@ func newAutoCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "auto <feature-description>",
-		Short: "Scout + confirm + wave: the full SAW flow in one command",
+		Short: "Scout + confirm + wave: the full Polywave flow in one command",
 		Long: `Collapses the three-step scout -> review -> wave flow into one command.
 
 The human confirmation checkpoint is preserved: after Scout completes, you will
@@ -38,9 +38,9 @@ Behavior by verdict:
 Use --skip-confirm to omit the confirmation prompt (expert/CI use only).
 
 Examples:
-  sawtools auto "Add audit logging to auth module"
-  sawtools auto "Add caching layer" --repo-dir /path/to/project
-  sawtools auto "Refactor storage layer" --skip-confirm`,
+  polywave-tools auto "Add audit logging to auth module"
+  polywave-tools auto "Add caching layer" --repo-dir /path/to/project
+  polywave-tools auto "Refactor storage layer" --skip-confirm`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			featureDesc := args[0]
@@ -62,10 +62,10 @@ Examples:
 			scoutOpts := engine.RunScoutFullOpts{
 				Feature:     featureDesc,
 				RepoPath:    repoDir,
-				PolywaveRepoPath: sawRepoPath,
+				PolywaveRepoPath: polywaveRepoPath,
 				ScoutModel:  scoutModel,
 				Timeout:     timeout,
-				Logger:      newSawLogger(),
+				Logger:      newPolywaveLogger(),
 			}
 			scoutResultR := engine.RunScoutFull(cmd.Context(), scoutOpts, func(chunk string) {
 				fmt.Print(chunk)
@@ -95,7 +95,7 @@ Examples:
 				fmt.Println("Reason:")
 				fmt.Println(manifest.SuitabilityAssessment)
 				fmt.Println()
-				fmt.Println("Suggested alternative: implement sequentially or run /saw interview first.")
+				fmt.Println("Suggested alternative: implement sequentially or run /polywave interview first.")
 				return nil
 			}
 
@@ -128,7 +128,7 @@ Examples:
 				response := strings.TrimSpace(scanner.Text())
 				if !strings.EqualFold(response, "y") && !strings.EqualFold(response, "yes") {
 					fmt.Println("Auto flow cancelled. Review the IMPL doc and run:")
-					fmt.Printf("  sawtools run-wave %s --wave 1\n", implPath)
+					fmt.Printf("  polywave-tools run-wave %s --wave 1\n", implPath)
 					return nil
 				}
 				fmt.Println()
@@ -163,7 +163,7 @@ Examples:
 		},
 	}
 
-	cmd.Flags().StringVar(&sawRepoPath, "protocol-repo", "", "Polywave protocol repo path")
+	cmd.Flags().StringVar(&polywaveRepoPath, "protocol-repo", "", "Polywave protocol repo path")
 	cmd.Flags().StringVar(&scoutModel, "scout-model", "", "Scout model override (e.g., claude-opus-4-6)")
 	cmd.Flags().StringVar(&waveModel, "wave-model", "", "Wave model override (reserved for future use)")
 	cmd.Flags().IntVar(&timeout, "timeout", 10, "Scout timeout in minutes (default: 10)")

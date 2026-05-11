@@ -93,10 +93,10 @@ func (m *GoWorkspaceManager) Setup(repoRoot string, waveNum int, worktreePaths [
 		_, _ = useCmd.CombinedOutput()
 	}
 
-	// Append SAW-managed comment to go.work.
+	// Append Polywave-managed comment to go.work.
 	f, err := os.OpenFile(goWorkPath, os.O_APPEND|os.O_WRONLY, 0644)
 	if err == nil {
-		_, _ = f.WriteString("\n// SAW-managed: restored by finalize-wave\n")
+		_, _ = f.WriteString("\n// Polywave-managed: restored by finalize-wave\n")
 		_ = f.Close()
 	}
 

@@ -54,7 +54,7 @@ Rules from the I-series (I1–I6) are invariants summarized at the end of this d
 
 ### E2 — Interface Freeze
 
-After worktrees are created (`sawtools create-worktrees`), the `interface_contracts` and `scaffolds` sections of the IMPL doc are frozen. A SHA-256 hash of each section is written to `frozen_contracts_hash` and `frozen_scaffolds_hash` on the manifest at freeze time.
+After worktrees are created (`polywave-tools create-worktrees`), the `interface_contracts` and `scaffolds` sections of the IMPL doc are frozen. A SHA-256 hash of each section is written to `frozen_contracts_hash` and `frozen_scaffolds_hash` on the manifest at freeze time.
 
 On subsequent reads, `CheckFreeze` recomputes the hashes and returns a `FreezeViolation` for any section that changed. The pre-wave gate does not re-run CheckFreeze directly, but worktree creation calls `SetFreezeTimestamp`, and any mutation to contracts after that point is detectable.
 
@@ -82,7 +82,7 @@ Two passes reduce false positives:
 
 The result is `Partial` (warnings) rather than `Fatal`. The finalize pipeline logs the warnings but does not block merge by default. The caller (orchestrator or CLI) decides how to handle conflict predictions.
 
-IMPL doc files (`docs/IMPL/`) and state files (`.saw-state/`) are exempt from conflict prediction because multiple agents are expected to update them.
+IMPL doc files (`docs/IMPL/`) and state files (`.polywave-state/`) are exempt from conflict prediction because multiple agents are expected to update them.
 
 **Implementation:** `pkg/protocol/conflict_predict.go` — `PredictConflictsFromReports`.
 
@@ -92,7 +92,7 @@ IMPL doc files (`docs/IMPL/`) and state files (`.saw-state/`) are exempt from co
 
 At the start of a wave agent's work (Field 0), `VerifyIsolation` checks:
 - The current git directory is inside a known worktree path (contains `.claude/worktrees/` or `.claire/worktrees/` in the resolved absolute path).
-- The current branch matches the expected branch name for this agent (`saw/{slug}/waveN-agent-{ID}` or legacy `waveN-agent-{ID}`).
+- The current branch matches the expected branch name for this agent (`polywave/{slug}/waveN-agent-{ID}` or legacy `waveN-agent-{ID}`).
 - At least one worktree is registered with git (guards against running on main).
 
 A violation returns `CodeIsolationVerifyFailed` (fatal). The agent must not proceed if isolation verification fails.
@@ -115,12 +115,12 @@ The marker write uses a date string (`YYYY-MM-DD`). If `MarkIMPLCompleteOpts.Dat
 
 `Validate` runs all structural invariant checks on a parsed `IMPLManifest`. Called at multiple lifecycle points:
 - After Scout generates the IMPL doc (scout correction loop validates before accepting output).
-- Before wave execution (`sawtools finalize-impl`, `FinalizeIMPL`).
+- Before wave execution (`polywave-tools finalize-impl`, `FinalizeIMPL`).
 - As part of the pre-wave gate.
 
 Failures are `SAWError` slices using V-series codes (formerly E16_* variants). Common checks triggered by E16: disjoint ownership (V002), same-wave dependencies (V003), required fields (V005), invalid state (V008), unknown YAML keys (V013), file existence for `action=modify` (V041), repo mismatch when all modify-files are absent (V045).
 
-Auto-fix: `sawtools validate --fix` can correct some common issues (invalid gate types rewritten to `custom`).
+Auto-fix: `polywave-tools validate --fix` can correct some common issues (invalid gate types rewritten to `custom`).
 
 **Implementation:** `pkg/protocol/validation.go` — `Validate`, `ValidateBytes`, `FullValidate`.
 
@@ -427,15 +427,15 @@ The rationale: detecting collisions before launch is cheaper than discovering th
 
 ### E42 — SubagentStop Validation
 
-At the SubagentStop lifecycle event, a hook validates that the completing agent has fulfilled its protocol obligations before the agent session closes. The hook identifies SAW agents by parsing the `[SAW:...]` tag from `agent_description` and runs agent-type-specific checks. Non-SAW agents pass through immediately (exit 0).
+At the SubagentStop lifecycle event, a hook validates that the completing agent has fulfilled its protocol obligations before the agent session closes. The hook identifies Polywave agents by parsing the `[PW:...]` tag from `agent_description` and runs agent-type-specific checks. Non-Polywave agents pass through immediately (exit 0).
 
 Validation matrix by agent type:
 - **Wave agents:** I1 ownership verification (`git diff --name-only` vs `.saw-ownership.json`), I5 commit verification (at least 1 commit ahead of merge base), completion report presence in IMPL doc.
 - **Critic agents:** `critic_report:` field present with `verdict`, `agents_reviewed`, and `issues` keys.
-- **Scout agents:** IMPL doc exists at expected path and passes `sawtools validate`.
+- **Scout agents:** IMPL doc exists at expected path and passes `polywave-tools validate`.
 - **Scaffold agents:** All scaffold entries have `status: committed (...)`.
 
-Exit codes: 0 = pass, 2 = block (unfulfilled obligations). The active IMPL path is read from `.saw-state/active-impl` (written by `prepare-wave`), falling back to extraction from `agent_description`.
+Exit codes: 0 = pass, 2 = block (unfulfilled obligations). The active IMPL path is read from `.polywave-state/active-impl` (written by `prepare-wave`), falling back to extraction from `agent_description`.
 
 **Implementation:** Claude Code hook script (`validate_agent_stop`); `pkg/protocol/ownership_check.go`, `pkg/protocol/commit_check.go`.
 
@@ -446,9 +446,9 @@ Exit codes: 0 = pass, 2 = block (unfulfilled obligations). The active IMPL path 
 Orchestrator ensures Claude Code lifecycle hooks are installed and active before launching wave agents. Hook-based enforcement supersedes instruction-based isolation (agents following written protocol).
 
 Four-hook defense-in-depth:
-1. **SubagentStart (`inject_worktree_env`):** Sets `SAW_AGENT_WORKTREE`, `SAW_AGENT_ID`, `SAW_WAVE_NUMBER`, `SAW_IMPL_PATH`, `SAW_BRANCH` environment variables. Non-blocking.
-2. **PreToolUse:Bash (`inject_bash_cd`):** Prepends `cd $SAW_AGENT_WORKTREE &&` to every bash command. Fires only when `SAW_AGENT_WORKTREE` is non-empty (skips solo waves). Non-blocking.
-3. **PreToolUse:Write/Edit (`validate_write_paths`):** Blocks relative paths and paths outside worktree boundaries (exit 2). Fires only when `SAW_AGENT_WORKTREE` is non-empty.
+1. **SubagentStart (`inject_worktree_env`):** Sets `POLYWAVE_AGENT_WORKTREE`, `POLYWAVE_AGENT_ID`, `POLYWAVE_WAVE_NUMBER`, `POLYWAVE_IMPL_PATH`, `POLYWAVE_BRANCH` environment variables. Non-blocking.
+2. **PreToolUse:Bash (`inject_bash_cd`):** Prepends `cd $POLYWAVE_AGENT_WORKTREE &&` to every bash command. Fires only when `POLYWAVE_AGENT_WORKTREE` is non-empty (skips solo waves). Non-blocking.
+3. **PreToolUse:Write/Edit (`validate_write_paths`):** Blocks relative paths and paths outside worktree boundaries (exit 2). Fires only when `POLYWAVE_AGENT_WORKTREE` is non-empty.
 4. **SubagentStop (`verify_worktree_compliance`):** Checks completion report exists (E42/I4) and commits exist on branch (I5). Non-blocking (warnings logged to stderr for audit trail).
 
 E43 enforces E4 mechanically. Before E43, agents followed written protocol and violations were possible via agent error or context compaction loss. After E43, relative paths and out-of-bounds writes are blocked at the tool boundary.
@@ -459,13 +459,13 @@ E43 enforces E4 mechanically. Before E43, agents followed written protocol and v
 
 ### E44 — Context Injection Observability
 
-**Scout obligation:** Before completing, the Scout calls `sawtools set-injection-method <impl-doc-path> --method <value>` to record how reference files were received. Valid values: `hook`, `manual-fallback`, `unknown`.
+**Scout obligation:** Before completing, the Scout calls `polywave-tools set-injection-method <impl-doc-path> --method <value>` to record how reference files were received. Valid values: `hook`, `manual-fallback`, `unknown`.
 
-**Orchestrator obligation:** `sawtools prepare-agent` automatically writes `context_source` to each agent entry when extracting the brief. Valid values: `prepared-brief`, `cross-repo-full`. The orchestrator may write `fallback-full-context` manually when the fallback prompt path was used.
+**Orchestrator obligation:** `polywave-tools prepare-agent` automatically writes `context_source` to each agent entry when extracting the brief. Valid values: `prepared-brief`, `cross-repo-full`. The orchestrator may write `fallback-full-context` manually when the fallback prompt path was used.
 
-**Enforcement:** `sawtools validate` warns (non-blocking) when `injection_method` is absent on an active IMPL, and warns when `context_source` is absent on wave agents in `WAVE_EXECUTING`/`WAVE_MERGING`/`WAVE_VERIFIED` state.
+**Enforcement:** `polywave-tools validate` warns (non-blocking) when `injection_method` is absent on an active IMPL, and warns when `context_source` is absent on wave agents in `WAVE_EXECUTING`/`WAVE_MERGING`/`WAVE_VERIFIED` state.
 
-**Implementation:** `pkg/protocol/fieldvalidation.go` (injection_method/context_source checks); `cmd/sawtools/set_injection_method.go`.
+**Implementation:** `pkg/protocol/fieldvalidation.go` (injection_method/context_source checks); `cmd/polywave-tools/set_injection_method.go`.
 
 ---
 
@@ -480,9 +480,9 @@ Detection heuristics:
 
 Does NOT trigger for types from external packages, types in existing codebase files not owned by any agent, or types mentioned in only one agent's task.
 
-**Automated tool:** `sawtools detect-shared-types <impl-doc>` automates this detection. Scout invokes it after writing agent prompts and merges output into the Scaffolds section.
+**Automated tool:** `polywave-tools detect-shared-types <impl-doc>` automates this detection. Scout invokes it after writing agent prompts and merges output into the Scaffolds section.
 
-**Implementation:** `pkg/protocol/shared_type_detection.go`; `cmd/sawtools/detect_shared_types.go`.
+**Implementation:** `pkg/protocol/shared_type_detection.go`; `cmd/polywave-tools/detect_shared_types.go`.
 
 ---
 
@@ -491,12 +491,12 @@ Does NOT trigger for types from external packages, types in existing codebase fi
 When an interface contract involves signature changes, test files referencing the interface must be detected and assigned to an agent in the same wave.
 
 Detection layers:
-1. **Scout-time (primary):** During dependency analysis, Scout scans for `*_test.go` files that reference changed interfaces using `sawtools check-callers`. Unowned test files are assigned to the interface-changing agent.
-2. **Pre-wave validation (E35 extension):** `sawtools pre-wave-validate` runs E35 detection including `detectTestCascades()`. Reports orphaned test files as E35Gap entries. Also runs `check-test-cascade` for a whole-repo scan; exits 1 if any orphaned test callers are found.
+1. **Scout-time (primary):** During dependency analysis, Scout scans for `*_test.go` files that reference changed interfaces using `polywave-tools check-callers`. Unowned test files are assigned to the interface-changing agent.
+2. **Pre-wave validation (E35 extension):** `polywave-tools pre-wave-validate` runs E35 detection including `detectTestCascades()`. Reports orphaned test files as E35Gap entries. Also runs `check-test-cascade` for a whole-repo scan; exits 1 if any orphaned test callers are found.
 
 Rationale: Interface signature changes break test files, but test files are often not included in file_ownership because Scout focuses on implementation files. E46 prevents the 30+ minute manual post-merge fix cycle.
 
-**Implementation:** `pkg/protocol/e35_detection.go` — `detectTestCascades`; `cmd/sawtools/check_test_cascade.go`.
+**Implementation:** `pkg/protocol/e35_detection.go` — `detectTestCascades`; `cmd/polywave-tools/check_test_cascade.go`.
 
 ---
 
@@ -504,7 +504,7 @@ Rationale: Interface signature changes break test files, but test files are ofte
 
 When `finalize-wave`'s verify-build step completes with `CallerCascadeOnly=true` — meaning ALL build errors are in future-wave-owned or unowned files (caller cascade side-effects, not genuine wave N failures) — the hotfix step runs automatically.
 
-`finalize-wave` detects `CallerCascadeOnly=true` and runs `apply-cascade-hotfix` inline (step 6a). The hotfix agent is restricted to files in `CallerCascadeErrors` and applies minimal caller fixes: `result.Result[T]` unwrapping, ctx param additions, deleted symbol replacements. Commits as `[SAW:wave{N}:integration-hotfix]`.
+`finalize-wave` detects `CallerCascadeOnly=true` and runs `apply-cascade-hotfix` inline (step 6a). The hotfix agent is restricted to files in `CallerCascadeErrors` and applies minimal caller fixes: `result.Result[T]` unwrapping, ctx param additions, deleted symbol replacements. Commits as `[PW:wave{N}:integration-hotfix]`.
 
 **Distinction from E26:** E26 wires unconnected exports (logical gaps, no compile error). E47 fixes compile errors in callers caused by signature changes in the wave that just completed.
 

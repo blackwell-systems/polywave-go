@@ -17,9 +17,9 @@ var (
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print sawtools version",
+		Short: "Print polywave-tools version",
 		Run: func(cmd *cobra.Command, args []string) {
-			fmt.Printf("sawtools %s (commit: %s, built: %s)\n", version, commit, date)
+			fmt.Printf("polywave-tools %s (commit: %s, built: %s)\n", version, commit, date)
 		},
 	}
 }
@@ -27,7 +27,7 @@ func newVersionCmd() *cobra.Command {
 func main() {
 	rootCmd := newRootCmd()
 	rootCmd.Version = fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date)
-	rootCmd.SetVersionTemplate("sawtools {{.Version}}\n")
+	rootCmd.SetVersionTemplate("polywave-tools {{.Version}}\n")
 	rootCmd.AddCommand(
 		newVersionCmd(),
 		newCreateWorktreesCmd(),
@@ -78,7 +78,7 @@ func main() {
 		newAssignAgentIDsCmd(),
 		newInterviewCmd(),
 		newRunScoutCmd(),       // I3: Phase 5 integration
-		newAutoCmd(),           // /saw auto: scout + confirm + wave in one command
+		newAutoCmd(),           // /polywave auto: scout + confirm + wave in one command
 		newRunCriticCmd(),      // E37: Pre-wave brief review
 		newSetCriticReviewCmd(),     // E37: Used by critic agents to write results
 		newSetCriticVerdictCmd(),    // E37: Update verdict after Orchestrator corrections

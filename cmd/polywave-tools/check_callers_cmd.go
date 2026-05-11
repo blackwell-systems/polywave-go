@@ -19,8 +19,8 @@ Test files are included. Returns JSON array of {file, line, context}.
 Used by Scout during test cascade detection to ensure no callers are missed.
 
 Example:
-  sawtools check-callers "cache.Get" --repo-dir /path/to/repo
-  sawtools check-callers "ParseFile" --repo-dir /path/to/repo`,
+  polywave-tools check-callers "cache.Get" --repo-dir /path/to/repo
+  polywave-tools check-callers "ParseFile" --repo-dir /path/to/repo`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			symbolName := args[0]

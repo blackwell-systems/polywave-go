@@ -30,11 +30,11 @@ func newDebugJournalCmd() *cobra.Command {
 Agent path format: wave1/agent-A or wave2-agent-B
 
 Examples:
-  sawtools debug-journal wave1/agent-A                    # dump full journal (JSONL)
-  sawtools debug-journal wave1/agent-A --summary          # human-readable summary
-  sawtools debug-journal wave1/agent-A --failures-only    # show only failed tool calls
-  sawtools debug-journal wave1/agent-A --last 20          # show last N entries
-  sawtools debug-journal wave1/agent-A --export timeline.html  # export HTML timeline
+  polywave-tools debug-journal wave1/agent-A                    # dump full journal (JSONL)
+  polywave-tools debug-journal wave1/agent-A --summary          # human-readable summary
+  polywave-tools debug-journal wave1/agent-A --failures-only    # show only failed tool calls
+  polywave-tools debug-journal wave1/agent-A --last 20          # show last N entries
+  polywave-tools debug-journal wave1/agent-A --export timeline.html  # export HTML timeline
 `,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {

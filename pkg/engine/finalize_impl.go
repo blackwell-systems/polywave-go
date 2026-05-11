@@ -15,7 +15,7 @@ type FinalizeIMPLEngineOpts struct {
 }
 
 // FinalizeIMPLEngine is the canonical engine wrapper around protocol.FinalizeIMPL.
-// Both CLI (`sawtools finalize-impl`) and web app automation should use this
+// Both CLI (`polywave-tools finalize-impl`) and web app automation should use this
 // function to ensure consistent behavior: context cancellation support,
 // parameter validation, and SSE-compatible result types.
 //

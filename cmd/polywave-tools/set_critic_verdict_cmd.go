@@ -23,7 +23,7 @@ transition the verdict from ISSUES to PASS without manually editing YAML.
 Exits 1 if critic_report does not exist in the IMPL doc.
 
 Example:
-  sawtools set-critic-verdict /path/to/IMPL-feature.yaml --verdict pass`,
+  polywave-tools set-critic-verdict /path/to/IMPL-feature.yaml --verdict pass`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			implPath := args[0]

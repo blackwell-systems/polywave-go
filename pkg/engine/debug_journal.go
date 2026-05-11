@@ -97,7 +97,7 @@ func DebugJournal(opts DebugJournalOpts) result.Result[DebugJournalResult] {
 	if _, err := os.Stat(journalPath); os.IsNotExist(err) {
 		return result.NewFailure[DebugJournalResult]([]result.PolywaveError{
 			result.NewFatal(result.CodeExportNoEntries,
-				fmt.Sprintf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'sawtools list-impls' to see available IMPL docs, then check .polywave-state/ for agent journals.", opts.AgentPath, journalPath)),
+				fmt.Sprintf("journal not found for agent %s\n\nExpected location: %s\n\nHint: Run 'polywave-tools list-impls' to see available IMPL docs, then check .polywave-state/ for agent journals.", opts.AgentPath, journalPath)),
 		})
 	}
 

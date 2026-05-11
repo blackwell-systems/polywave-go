@@ -22,7 +22,7 @@ merging agent branches. They are declared in the IMPL manifest under
 11. [Docs-Only Wave Skipping](#docs-only-wave-skipping)
 12. [Build System Skipping](#build-system-skipping)
 13. [Example Configurations](#example-configurations)
-14. [CLI: `sawtools run-gates`](#cli-sawtools-run-gates)
+14. [CLI: `polywave-tools run-gates`](#cli-polywave-tools-run-gates)
 15. [See Also](#see-also)
 
 ---
@@ -66,7 +66,7 @@ quality_gates:
       timing: post-merge
       phase: POST_VALIDATION
       description: "vet after merge"
-      repo: scout-and-wave-go
+      repo: polywave-go
 ```
 
 ---
@@ -299,7 +299,7 @@ the later finalize-wave gate run to avoid redundant execution.
 
 ## Caching
 
-Pre-merge gates use a result cache stored under `.saw/` in the repo directory.
+Pre-merge gates use a result cache stored under `.polywave/` in the repo directory.
 The cache key combines the HEAD commit SHA, staged diff stat, unstaged diff
 stat, and the gate command string.
 
@@ -428,20 +428,20 @@ quality_gates:
     - type: test
       command: go test ./...
       required: true
-      repo: scout-and-wave-go    # only runs in this repo
+      repo: polywave-go    # only runs in this repo
 
     - type: test
       command: npm test
       required: true
-      repo: scout-and-wave-web   # only runs in this repo
+      repo: polywave-web   # only runs in this repo
 ```
 
 ---
 
-## CLI: `sawtools run-gates`
+## CLI: `polywave-tools run-gates`
 
 ```
-sawtools run-gates <manifest-path> [flags]
+polywave-tools run-gates <manifest-path> [flags]
 ```
 
 | Flag | Default | Description |
@@ -454,7 +454,7 @@ wave via `RunGatesWithCache`, and prints results as JSON. If any required gate
 fails, the command exits with a non-zero status.
 
 When `--no-cache` is omitted, the cache is backed by
-`.saw/gate-cache.json` in the repo directory.
+`.polywave/gate-cache.json` in the repo directory.
 
 ---
 
@@ -467,5 +467,5 @@ When `--no-cache` is omitted, the cache is backed by
 - `pkg/engine/finalize_steps.go` — `StepRunGates` and closed-loop retry integration
 - `pkg/gatecache` — gate result cache implementation
 - `pkg/format/detect.go` — `DetectFormatter` auto-detection logic
-- `cmd/sawtools/run_gates_cmd.go` — `sawtools run-gates` CLI command
+- `cmd/polywave-tools/run_gates_cmd.go` — `polywave-tools run-gates` CLI command
 - `docs/reference/orchestration.md` — FinalizeWave pipeline overview

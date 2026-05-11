@@ -108,7 +108,7 @@
 // including StepGoWorkSetup). Both pipelines stop on the first fatal error and
 // return a partial result so callers can inspect which step failed. Individual
 // steps are exported and callable independently for testing, CLI integration
-// (sawtools finalize-wave --step-by-step), or custom orchestration.
+// (polywave-tools finalize-wave --step-by-step), or custom orchestration.
 //
 // EventCallback is the single extension point that separates CLI and web
 // behavior without branching in the engine:

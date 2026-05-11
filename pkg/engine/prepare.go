@@ -80,12 +80,12 @@ func loadPolywaveConfigRepos(configPath string) []protocol.RepoEntry {
 	return cfg.Repos
 }
 
-// isSAWOwnedPath reports whether the given git-porcelain relative path
-// is a SAW-managed state file that is safe to auto-commit in program context.
-// A path is SAW-owned if it matches any of: the IMPL yaml file (repo-relative),
+// isPolywaveOwnedPath reports whether the given git-porcelain relative path
+// is a Polywave-managed state file that is safe to auto-commit in program context.
+// A path is Polywave-owned if it matches any of: the IMPL yaml file (repo-relative),
 // any path under .polywave-state/, any path under docs/IMPL/, docs/CONTEXT.md,
 // go.work, or go.work.sum.
-func isSAWOwnedPath(path, implPath, projectRoot string) bool {
+func isPolywaveOwnedPath(path, implPath, projectRoot string) bool {
 	// Normalize implPath to repo-relative
 	rel, err := filepath.Rel(projectRoot, implPath)
 	if err != nil {
@@ -159,9 +159,9 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	projectRoot := opts.RepoPath
 
 	// Write active-impl marker so SubagentStop hooks can find the IMPL doc.
-	sawStateDir := protocol.PolywaveStateDir(projectRoot)
-	_ = os.MkdirAll(sawStateDir, 0o755)
-	_ = os.WriteFile(filepath.Join(sawStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
+	polywaveStateDir := protocol.PolywaveStateDir(projectRoot)
+	_ = os.MkdirAll(polywaveStateDir, 0o755)
+	_ = os.WriteFile(filepath.Join(polywaveStateDir, "active-impl"), []byte(opts.IMPLPath), 0o644)
 
 	// Step: Resume detection — warn on orphaned worktrees
 	if detectRes := resume.Detect(ctx, projectRoot); detectRes.IsSuccess() {
@@ -472,18 +472,18 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 			recordStep(res, opts.OnEvent, "commit_baseline", "success",
 				fmt.Sprintf("committed %d file(s)", fileCount))
 		} else if opts.CommitState {
-			// Classify dirty files: SAW-owned vs user code
+			// Classify dirty files: Polywave-owned vs user code
 			var sawFiles []string
 			var userFiles []string
 			for _, f := range modifiedFiles {
-				if isSAWOwnedPath(f, opts.IMPLPath, projectRoot) {
+				if isPolywaveOwnedPath(f, opts.IMPLPath, projectRoot) {
 					sawFiles = append(sawFiles, f)
 				} else {
 					userFiles = append(userFiles, f)
 				}
 			}
 			if len(userFiles) > 0 {
-				detail := fmt.Sprintf("%d user-code file(s) modified — --commit-state only commits SAW state files; commit user code manually", len(userFiles))
+				detail := fmt.Sprintf("%d user-code file(s) modified — --commit-state only commits Polywave state files; commit user code manually", len(userFiles))
 				recordStep(res, opts.OnEvent, "working_dir_check", "failed", detail)
 				return res, fmt.Errorf("working directory has user-code changes: %d file(s) (--commit-state does not commit user code)", len(userFiles))
 			}
@@ -491,7 +491,7 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 				recordStep(res, opts.OnEvent, "working_dir_check", "success", "working directory is clean")
 			} else {
 				for _, f := range sawFiles {
-					// Stage each SAW-owned file individually (not -A)
+					// Stage each Polywave-owned file individually (not -A)
 					trimmed := strings.TrimSpace(f)
 					if len(trimmed) > 3 {
 						trimmed = strings.TrimSpace(trimmed[2:])
@@ -502,20 +502,20 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 					if addErr := git.AddForce(projectRoot, trimmed); addErr != nil {
 						recordStep(res, opts.OnEvent, "commit_state", "failed",
 							fmt.Sprintf("failed to stage %s: %v", trimmed, addErr))
-						return res, fmt.Errorf("failed to stage SAW state file %s: %w", trimmed, addErr)
+						return res, fmt.Errorf("failed to stage Polywave state file %s: %w", trimmed, addErr)
 					}
 				}
-				commitMsg := fmt.Sprintf("chore: update SAW state for wave %d preparation\n\nAuto-committed %d SAW state file(s): %s",
+				commitMsg := fmt.Sprintf("chore: update Polywave state for wave %d preparation\n\nAuto-committed %d Polywave state file(s): %s",
 					opts.WaveNum, len(sawFiles), strings.Join(sawFiles, ", "))
 				// Pass POLYWAVE_ALLOW_MAIN_COMMIT per-subprocess to avoid the process-wide
 				// env race under concurrent PrepareWave calls.
 				if commitErr := gitCommitAllowMain(projectRoot, "-m", commitMsg); commitErr != nil {
 					recordStep(res, opts.OnEvent, "commit_state", "failed",
 						fmt.Sprintf("failed to commit: %v", commitErr))
-					return res, fmt.Errorf("failed to commit SAW state files: %w", commitErr)
+					return res, fmt.Errorf("failed to commit Polywave state files: %w", commitErr)
 				}
 				recordStep(res, opts.OnEvent, "commit_state", "success",
-					fmt.Sprintf("committed %d SAW state file(s)", len(sawFiles)))
+					fmt.Sprintf("committed %d Polywave state file(s)", len(sawFiles)))
 			}
 		} else {
 			// Working directory is dirty but auto-commit not requested
@@ -976,8 +976,8 @@ func extractBriefsAndInitJournals(
 			return nil, fmt.Errorf("failed to write brief for agent %s: %w", agentID, err)
 		}
 
-		// Write .saw-worktree-env for PreToolUse hook enforcement (E43 / saw-worktree-boundary.sh).
-		// POLYWAVE_WORKTREE_ROOT is read by hooks/saw-worktree-boundary.sh to hard-deny writes
+		// Write .saw-worktree-env for PreToolUse hook enforcement (E43 / polywave-worktree-boundary.sh).
+		// POLYWAVE_WORKTREE_ROOT is read by hooks/polywave-worktree-boundary.sh to hard-deny writes
 		// targeting the main repo instead of the agent's assigned worktree.
 		worktreeEnvPath := filepath.Join(wtInfo.Path, ".saw-worktree-env")
 		worktreeEnvContent := fmt.Sprintf("POLYWAVE_WORKTREE_ROOT=%s\n", wtInfo.Path)

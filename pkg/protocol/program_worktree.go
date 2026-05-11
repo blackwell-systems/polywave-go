@@ -10,13 +10,13 @@ import (
 )
 
 // ProgramBranchName returns the slug-scoped branch name for a program-tier IMPL.
-// Format: saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+// Format: polywave/program/{program-slug}/tier{N}-impl-{impl-slug}
 func ProgramBranchName(programSlug string, tierNumber int, implSlug string) string {
-	return fmt.Sprintf("saw/program/%s/tier%d-impl-%s", programSlug, tierNumber, implSlug)
+	return fmt.Sprintf("polywave/program/%s/tier%d-impl-%s", programSlug, tierNumber, implSlug)
 }
 
 // ProgramWorktreeDir returns the worktree directory path for a program-tier IMPL.
-// Format: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+// Format: {repoDir}/.claude/worktrees/polywave/program/{program-slug}/tier{N}-impl-{impl-slug}
 func ProgramWorktreeDir(repoDir, programSlug string, tierNumber int, implSlug string) string {
 	return filepath.Join(repoDir, ".claude", "worktrees", "polywave", "program", programSlug,
 		fmt.Sprintf("tier%d-impl-%s", tierNumber, implSlug))

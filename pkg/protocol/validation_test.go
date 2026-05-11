@@ -1144,7 +1144,7 @@ func TestValidateMultiRepoConsistency_Mixed(t *testing.T) {
 	m := &IMPLManifest{
 		FileOwnership: []FileOwnership{
 			{File: "pkg/engine/foo.go", Agent: "A", Wave: 1},           // implicit
-			{File: "protocol/bar.md", Agent: "B", Wave: 2, Repo: "scout-and-wave"}, // explicit
+			{File: "protocol/bar.md", Agent: "B", Wave: 2, Repo: "polywave"}, // explicit
 		},
 	}
 	errs := validateMultiRepoConsistency(m)

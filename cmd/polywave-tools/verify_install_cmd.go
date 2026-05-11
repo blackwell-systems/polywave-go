@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// newVerifyInstallCmd returns a cobra.Command for "sawtools verify-install".
+// newVerifyInstallCmd returns a cobra.Command for "polywave-tools verify-install".
 // Checks:
-//  1. sawtools binary is on PATH and executable
+//  1. polywave-tools binary is on PATH and executable
 //  2. Git version >= 2.20 (worktree support)
 //  3. ~/.claude/skills/polywave/ directory exists with expected symlinks
 //  4. polywave.config.json exists and has valid repos entries
@@ -23,7 +23,7 @@ func newVerifyInstallCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "verify-install",
-		Short: "Check that all SAW prerequisites are met",
+		Short: "Check that all Polywave prerequisites are met",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			result := engine.RunVerifyInstall(engine.VerifyInstallOpts{})
 

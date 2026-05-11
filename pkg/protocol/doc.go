@@ -31,8 +31,8 @@
 //	          files_changed:
 //	            - src/auth.go
 //
-// See the scout-and-wave protocol spec for full format definition:
-// https://github.com/blackwell-systems/scout-and-wave/tree/main/protocol
+// See the Polywave protocol spec for full format definition:
+// https://github.com/blackwell-systems/polywave/tree/main/protocol
 //
 // # Loading and Saving
 //
@@ -109,7 +109,7 @@
 //
 // # Architecture
 //
-// The protocol package provides a YAML-based implementation of the Scout-and-Wave
+// The protocol package provides a YAML-based implementation of the Polywave
 // protocol. All IMPL documents are now YAML manifests (*.yaml or *.yml).
 // Markdown parsing support has been removed.
 //

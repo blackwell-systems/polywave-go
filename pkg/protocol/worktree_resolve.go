@@ -26,7 +26,7 @@ func ResolveWorktreePath(repoDir string, branch string) string {
 	// The directory-local part of the branch (wave{N}-agent-{ID})
 	localPart := branch
 	if slug != "" {
-		// Strip "saw/{slug}/" prefix to get local directory name
+		// Strip "polywave/{slug}/" prefix to get local directory name
 		localPart = LegacyBranchName(0, "") // placeholder; parse properly
 		if w, a, ok := ParseBranch(branch); ok {
 			localPart = LegacyBranchName(w, a)

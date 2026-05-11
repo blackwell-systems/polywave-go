@@ -24,8 +24,8 @@ Verifies that contract source files exist and are committed to HEAD.
 Updates the manifest's contract state.
 
 Examples:
-  sawtools freeze-contracts docs/PROGRAM/PROGRAM.yaml --tier 1
-  sawtools freeze-contracts program.yaml --tier 2 --repo-dir /path/to/repo
+  polywave-tools freeze-contracts docs/PROGRAM/PROGRAM.yaml --tier 1
+  polywave-tools freeze-contracts program.yaml --tier 2 --repo-dir /path/to/repo
 
 Exit codes:
   0 - Success (all matching contracts frozen)

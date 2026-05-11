@@ -1,4 +1,4 @@
-// Package orchestrator implements the SAW protocol state machine and
+// Package orchestrator implements the Polywave protocol state machine and
 // the Orchestrator struct that drives wave coordination.
 package orchestrator
 

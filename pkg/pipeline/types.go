@@ -31,15 +31,15 @@ type Step struct {
 
 // State carries mutable data through the pipeline.
 type State struct {
-	// RepoPath is unused by standard SAW steps; pass the repository path
+	// RepoPath is unused by standard Polywave steps; pass the repository path
 	// via Values["repo_path"] instead. Retained for future direct-field
 	// access once steps are updated.
 	RepoPath string
-	// IMPLPath is unused by standard SAW steps; pass the IMPL doc path
+	// IMPLPath is unused by standard Polywave steps; pass the IMPL doc path
 	// via Values["impl_path"] instead. Retained for future direct-field
 	// access once steps are updated.
 	IMPLPath string
-	// WaveNum is unused by standard SAW steps; pass the wave number
+	// WaveNum is unused by standard Polywave steps; pass the wave number
 	// via Values["wave_num"] if needed. Retained for future use.
 	WaveNum int
 	Values  map[string]any

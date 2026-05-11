@@ -65,7 +65,7 @@ func TestPrepareTierResult_JSONFields(t *testing.T) {
 			{ImplSlug: "my-impl", Valid: true, Fixed: 0},
 		},
 		Branches: []ProgramWorktreeInfo{
-			{ImplSlug: "my-impl", Path: "/tmp/wt", Branch: "saw/program/p/tier1-impl-my-impl"},
+			{ImplSlug: "my-impl", Path: "/tmp/wt", Branch: "polywave/program/p/tier1-impl-my-impl"},
 		},
 		Success: true,
 	}

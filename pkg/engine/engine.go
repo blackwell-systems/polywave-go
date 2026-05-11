@@ -49,7 +49,7 @@ type Event struct {
 type RunScoutOpts struct {
 	Feature              string                  // human feature description (required)
 	RepoPath             string                  // absolute path to the repository being scouted (required)
-	PolywaveRepoPath          string                  // path to scout-and-wave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave)
+	PolywaveRepoPath          string                  // path to Polywave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/polywave)
 	IMPLOutPath          string                  // where to write the IMPL doc (required)
 	ScoutModel           string                  // optional: model override for the Scout agent (e.g. "claude-opus-4-6")
 	ProgramManifestPath  string                  // optional: path to PROGRAM manifest; Scout receives frozen contracts as input
@@ -63,7 +63,7 @@ type RunScoutOpts struct {
 type RunPlannerOpts struct {
 	Description    string // human project description (required)
 	RepoPath       string // absolute path to the repository being planned (required)
-	PolywaveRepoPath    string // path to scout-and-wave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/scout-and-wave)
+	PolywaveRepoPath    string // path to Polywave protocol repo (optional; falls back to $POLYWAVE_REPO then ~/code/polywave)
 	ProgramOutPath string // where to write the PROGRAM manifest (required)
 	PlannerModel   string // optional: model override for the Planner agent
 }
@@ -127,7 +127,7 @@ type ChatMessage struct {
 type RunChatOpts struct {
 	IMPLPath    string        // path to IMPL doc for context (required)
 	RepoPath    string        // absolute path to the repository (required)
-	PolywaveRepoPath string        // path to scout-and-wave protocol repo (optional)
+	PolywaveRepoPath string        // path to Polywave protocol repo (optional)
 	History     []ChatMessage // previous conversation turns (optional)
 	Message     string        // current user message (required)
 	ChatModel   string        // model override (e.g. "ollama:qwen2.5-coder:32b"); empty = backend default

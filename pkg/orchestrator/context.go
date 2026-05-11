@@ -44,7 +44,7 @@ func UpdateContextMD(_ context.Context, repoPath string, entry ContextMDEntry) r
 					fmt.Sprintf("UpdateContextMD: create docs dir: %s", err.Error())),
 			})
 		}
-		canonical := fmt.Sprintf(`# docs/CONTEXT.md — Project memory for Scout-and-Wave (E17/E18)
+		canonical := fmt.Sprintf(`# docs/CONTEXT.md — Project memory for Polywave (E17/E18)
 created: %s
 protocol_version: "0.14.0"
 

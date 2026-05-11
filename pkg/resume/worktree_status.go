@@ -25,7 +25,7 @@ type DirtyWorktree struct {
 // ClassifyWorktrees inspects each worktree path to determine if it has uncommitted
 // changes (dirty) or is clean. It uses `git status --porcelain` on each path.
 //
-// Only worktrees whose branch name matches the SAW pattern and belongs to the given
+// Only worktrees whose branch name matches the Polywave pattern and belongs to the given
 // manifest's FeatureSlug are included. Worktrees with non-matching branches are
 // skipped. Paths that do not exist are silently skipped. Git failures are treated
 // as clean (not an error). Locked worktrees are conservatively treated as dirty.
@@ -63,7 +63,7 @@ func ClassifyWorktrees(worktreePaths []string, manifest *protocol.IMPLManifest, 
 		// Strip refs/heads/ prefix for pattern matching.
 		branch = strings.TrimPrefix(branch, "refs/heads/")
 
-		// Match against the SAW worktree pattern (defined in detect.go, same package).
+		// Match against the Polywave worktree pattern (defined in detect.go, same package).
 		m := worktreePattern.FindStringSubmatch(branch)
 		if m == nil {
 			continue

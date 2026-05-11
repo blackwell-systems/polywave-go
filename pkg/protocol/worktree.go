@@ -29,7 +29,7 @@ type CreateWorktreesData struct {
 // For cross-repo waves, agents' files are looked up in the file ownership table
 // to determine which repo each agent belongs to. If a Repo column is present,
 // worktrees are created in sibling directories (e.g., if repoDir is
-// /path/to/scout-and-wave and an agent has Repo=polywave-go, the worktree
+// /path/to/polywave and an agent has Repo=polywave-go, the worktree
 // is created at /path/to/polywave-go/.claude/worktrees/...).
 //
 // Each worktree is created at {agentRepoDir}/.claude/worktrees/saw/{slug}/wave{N}-agent-{Letter}

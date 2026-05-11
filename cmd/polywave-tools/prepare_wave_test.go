@@ -96,7 +96,7 @@ func TestPrepareWaveCmd_AgentBriefInfoJSON(t *testing.T) {
 		JournalDir:  "/tmp/journal",
 		FilesOwned:  3,
 		Repo:        "polywave-go",
-		MergeTarget: "saw/program/my-prog/tier1-impl-foo",
+		MergeTarget: "polywave/program/my-prog/tier1-impl-foo",
 	}
 	data, err := json.Marshal(info)
 	if err != nil {
@@ -142,12 +142,12 @@ func TestPrepareWaveCmd_AgentBriefInfoOmitEmpty(t *testing.T) {
 func TestPrepareWave_RepoMismatchBlocksWorktreeCreation(t *testing.T) {
 	doc := &protocol.IMPLManifest{
 		FileOwnership: []protocol.FileOwnership{
-			{File: "pkg/api/handler.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-web", Action: "modify"},
+			{File: "pkg/api/handler.go", Agent: "A", Wave: 1, Repo: "polywave-web", Action: "modify"},
 		},
 	}
 
 	configRepos := []protocol.RepoEntry{
-		{Name: "scout-and-wave-web", Path: "/tmp/saw-web"},
+		{Name: "polywave-web", Path: "/tmp/saw-web"},
 	}
 
 	res := protocol.ValidateRepoMatch(doc, "/tmp/saw-go", configRepos)
@@ -470,7 +470,7 @@ func TestVerifyDependenciesAvailable_Wave2DepComplete(t *testing.T) {
 
 // TestPrepareWave_MergeTargetIncludedInBrief verifies merge target handling.
 func TestPrepareWave_MergeTargetIncludedInBrief(t *testing.T) {
-	mergeTarget := "saw/program/my-prog/tier1-impl-foo"
+	mergeTarget := "polywave/program/my-prog/tier1-impl-foo"
 
 	mergeTargetSection := fmt.Sprintf(
 		"\n\n## Merge Target\n\n**Merge your branch to:** `%s`\n\n"+
@@ -516,7 +516,7 @@ func TestPrepareWave_NoMergeTargetNoBriefSection(t *testing.T) {
 }
 
 // TestPrepareWaveCmd_CommitStateFlagDefaultsToTrue verifies that the
-// --commit-state flag defaults to true (auto-commit SAW state before
+// --commit-state flag defaults to true (auto-commit Polywave state before
 // working-dir check is on by default).
 func TestPrepareWaveCmd_CommitStateFlagDefaultsToTrue(t *testing.T) {
 	cmd := newPrepareWaveCmd()

@@ -87,14 +87,14 @@ func TestDetectStaleConstraints_OwnFileReference(t *testing.T) {
 func TestDetectStaleConstraints_CrossWaveStaleReference(t *testing.T) {
 	m := makeManifestForStaleTest(
 		[]FileOwnership{
-			{File: "cmd/sawtools/main.go", Agent: "A", Wave: 1},
+			{File: "cmd/polywave-tools/main.go", Agent: "A", Wave: 1},
 		},
 		[]Wave{
 			{Number: 1, Agents: []Agent{
-				{ID: "A", Task: "Add the new subcommand in cmd/sawtools/main.go.", Files: []string{"cmd/sawtools/main.go"}},
+				{ID: "A", Task: "Add the new subcommand in cmd/polywave-tools/main.go.", Files: []string{"cmd/polywave-tools/main.go"}},
 			}},
 			{Number: 2, Agents: []Agent{
-				{ID: "B", Task: "Wire the new flag into cmd/sawtools/main.go.", Files: []string{"pkg/engine/wiring.go"}},
+				{ID: "B", Task: "Wire the new flag into cmd/polywave-tools/main.go.", Files: []string{"pkg/engine/wiring.go"}},
 			}},
 		},
 	)
@@ -107,8 +107,8 @@ func TestDetectStaleConstraints_CrossWaveStaleReference(t *testing.T) {
 	if w.AgentID != "B" {
 		t.Errorf("expected AgentID=B, got %q", w.AgentID)
 	}
-	if w.MentionedFile != "cmd/sawtools/main.go" {
-		t.Errorf("expected MentionedFile=cmd/sawtools/main.go, got %q", w.MentionedFile)
+	if w.MentionedFile != "cmd/polywave-tools/main.go" {
+		t.Errorf("expected MentionedFile=cmd/polywave-tools/main.go, got %q", w.MentionedFile)
 	}
 	if w.OwnedByAgent != "A" {
 		t.Errorf("expected OwnedByAgent=A, got %q", w.OwnedByAgent)

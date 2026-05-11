@@ -63,7 +63,7 @@ func GenerateReport(config ReportConfig) error`,
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
-	// Run sawtools detect-scaffolds --stage pre-agent
+	// Run polywave-tools detect-scaffolds --stage pre-agent
 	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "pre-agent")
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -198,7 +198,7 @@ type Logger interface {
 		t.Fatalf("Failed to save test manifest: %v", saveRes.Errors)
 	}
 
-	// Run sawtools detect-scaffolds --stage post-agent
+	// Run polywave-tools detect-scaffolds --stage post-agent
 	cmd := exec.Command("polywave-tools", "detect-scaffolds", manifestPath, "--stage", "post-agent")
 	output, err := cmd.CombinedOutput()
 	if err != nil {

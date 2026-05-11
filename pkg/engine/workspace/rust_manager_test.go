@@ -116,9 +116,9 @@ func TestRustManager_Setup_AddsMembers_MultiLine(t *testing.T) {
 		t.Errorf("expected Cargo.toml to contain %q\ngot:\n%s", rel, modified)
 	}
 
-	// Verify SAW marker is present.
-	if !strings.Contains(modified, "SAW-managed") {
-		t.Errorf("expected Cargo.toml to contain SAW-managed comment\ngot:\n%s", modified)
+	// Verify Polywave marker is present.
+	if !strings.Contains(modified, "Polywave-managed") {
+		t.Errorf("expected Cargo.toml to contain Polywave-managed comment\ngot:\n%s", modified)
 	}
 
 	// Verify original member is still present.

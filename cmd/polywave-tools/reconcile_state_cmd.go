@@ -52,8 +52,8 @@ Derived states:
   (unchanged)     — cannot determine a better state from observations
 
 Examples:
-  sawtools reconcile-state docs/IMPL/IMPL-feature.yaml
-  sawtools --repo-dir /path/to/repo reconcile-state docs/IMPL/IMPL-feature.yaml`,
+  polywave-tools reconcile-state docs/IMPL/IMPL-feature.yaml
+  polywave-tools --repo-dir /path/to/repo reconcile-state docs/IMPL/IMPL-feature.yaml`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -320,14 +320,14 @@ func deriveState(
 			}
 		}
 		if allComplete {
-			return protocol.StateWaveVerified, "run `sawtools finalize-wave` to merge and verify the build"
+			return protocol.StateWaveVerified, "run `polywave-tools finalize-wave` to merge and verify the build"
 		}
 	}
 
 	// Check REVIEWED: critic report with non-empty verdict AND current state is pre-wave.
 	if criticHasVerdict {
 		if currentState == protocol.StateScoutPending || currentState == protocol.StateScoutValidating {
-			return protocol.StateReviewed, "run `sawtools prepare-wave` to create agent worktrees"
+			return protocol.StateReviewed, "run `polywave-tools prepare-wave` to create agent worktrees"
 		}
 	}
 
@@ -343,12 +343,12 @@ func deriveState(
 		}
 	}
 	if anyBranch || anyReport {
-		return protocol.StateWaveExecuting, "wait for remaining agents to complete, then run `sawtools finalize-wave`"
+		return protocol.StateWaveExecuting, "wait for remaining agents to complete, then run `polywave-tools finalize-wave`"
 	}
 
 	// Check SCOUT_PENDING: no branches, no reports, no critic.
 	if !anyBranch && !anyReport && !criticHasVerdict {
-		return protocol.StateScoutPending, "run `sawtools run-scout` to begin planning"
+		return protocol.StateScoutPending, "run `polywave-tools run-scout` to begin planning"
 	}
 
 	// Cannot determine a clear state — keep current.

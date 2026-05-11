@@ -95,7 +95,7 @@ func ValidateScoutWrites(repoPath, expectedIMPLPath string, startTime time.Time)
 					"Scout's role is reconnaissance only. " +
 					"Orchestrator writes docs/REQUIREMENTS.md (bootstrap); " +
 					"Wave agents write source code; " +
-					"Tools (sawtools) manage CONTEXT.md and archiving.",
+					"Tools (polywave-tools) manage CONTEXT.md and archiving.",
 			}
 		}
 

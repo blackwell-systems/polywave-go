@@ -11,7 +11,7 @@ import (
 
 // RetryAttempt is the unified per-attempt state carrier.
 // It replaces both the old RetryAttempt and RetryResult types.
-// It preserves identical JSON field names for sawtools build-retry-context binary contract.
+// It preserves identical JSON field names for polywave-tools build-retry-context binary contract.
 type RetryAttempt struct {
 	AttemptNumber  int        `json:"attempt_number"`
 	AgentID        string     `json:"agent_id"`

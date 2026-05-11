@@ -1,7 +1,7 @@
 # Autonomy Levels
 
 The autonomy system controls how much human approval the daemon requires before
-advancing through the Scout-and-Wave execution cycle. Every decision point in
+advancing through the Polywave execution cycle. Every decision point in
 the cycle is a **stage**; each stage is either auto-approved or gated depending
 on the configured **level**.
 
@@ -64,7 +64,7 @@ The authoritative logic is:
 
 ## Config fields
 
-Autonomy configuration lives under the `"autonomy"` key in `saw.config.json`.
+Autonomy configuration lives under the `"autonomy"` key in `polywave.config.json`.
 
 | Field | Type | Default | Purpose |
 |---|---|---|---|
@@ -74,7 +74,7 @@ Autonomy configuration lives under the `"autonomy"` key in `saw.config.json`.
 
 ### Defaults
 
-If `saw.config.json` does not exist, or the `"autonomy"` key is absent, the
+If `polywave.config.json` does not exist, or the `"autonomy"` key is absent, the
 engine uses:
 
 ```json
@@ -90,7 +90,7 @@ top-level keys are preserved when the autonomy section is written back.
 
 ---
 
-## Setting autonomy level in saw.config.json
+## Setting autonomy level in polywave.config.json
 
 Add or update the `"autonomy"` key. Other top-level sections are preserved.
 
@@ -136,14 +136,14 @@ feature_description: |
 
 ### CLI override
 
-The `sawtools daemon` command accepts an `--autonomy` flag that replaces
+The `polywave-tools daemon` command accepts an `--autonomy` flag that replaces
 `cfg.Level` before the daemon starts:
 
 ```
-sawtools daemon --autonomy supervised
+polywave-tools daemon --autonomy supervised
 ```
 
-This takes precedence over `saw.config.json` for the lifetime of that daemon
+This takes precedence over `polywave.config.json` for the lifetime of that daemon
 process.
 
 ---

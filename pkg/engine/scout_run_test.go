@@ -175,7 +175,7 @@ func TestCriticThresholdMet_EmptyManifest(t *testing.T) {
 func TestCountAgentsFromErrors_Found(t *testing.T) {
 	errs := []result.PolywaveError{
 		{Code: "agent-id", Line: 10, Message: "bad agent ID"},
-		{Code: "agent-id", Line: 0, Message: "Run: sawtools assign-agent-ids --count 5"},
+		{Code: "agent-id", Line: 0, Message: "Run: polywave-tools assign-agent-ids --count 5"},
 	}
 	got := countAgentsFromErrors(errs)
 	if got != 5 {

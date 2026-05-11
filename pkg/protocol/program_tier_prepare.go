@@ -205,7 +205,7 @@ func PrepareTier(opts PrepareTierOpts) result.Result[*PrepareTierResult] {
 				e37vr := IMPLValidationResult{
 					ImplSlug: slug,
 					Valid:    false,
-					Errors:   []string{"E37 critic gate required but not satisfied — run `sawtools run-critic` or `sawtools run-critic --skip` before prepare-tier"},
+					Errors:   []string{"E37 critic gate required but not satisfied — run `polywave-tools run-critic` or `polywave-tools run-critic --skip` before prepare-tier"},
 				}
 				res.Validations = append(res.Validations, e37vr)
 				hasFailure = true

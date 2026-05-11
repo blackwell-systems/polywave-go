@@ -21,13 +21,13 @@ func ParseProgramManifest(path string) (*PROGRAMManifest, error) {
 		return nil, fmt.Errorf("failed to read PROGRAM manifest file: %w", err)
 	}
 
-	// Strip the SAW:PROGRAM:COMPLETE marker line before YAML parsing.
+	// Strip the Polywave:PROGRAM:COMPLETE marker line before YAML parsing.
 	// mark-program-complete appends this as a bare non-YAML string; the YAML
 	// parser rejects it with "could not find expected ':'".
 	data = bytes.ReplaceAll(data, []byte("\nSAW:PROGRAM:COMPLETE\n"), []byte("\n"))
 	data = bytes.TrimSuffix(data, []byte("\nSAW:PROGRAM:COMPLETE"))
 
-	// Cannot use LoadYAML: data has been pre-processed above to strip the SAW:PROGRAM:COMPLETE
+	// Cannot use LoadYAML: data has been pre-processed above to strip the Polywave:PROGRAM:COMPLETE
 	// marker line before YAML parsing. LoadYAML reads raw file bytes without that transformation.
 	var manifest PROGRAMManifest
 	if err := yaml.Unmarshal(data, &manifest); err != nil {

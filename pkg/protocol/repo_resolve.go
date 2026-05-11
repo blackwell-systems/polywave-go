@@ -41,7 +41,7 @@ func configLookupCI(lookup map[string]string, name string) (string, bool) {
 }
 
 // RepoEntry maps a repository name to its absolute path on disk.
-// Used by cmd/saw and web app to pass configured repository locations.
+// Used by cmd/polywave and web app to pass configured repository locations.
 type RepoEntry struct {
 	Name         string `json:"name"`
 	Path         string `json:"path"`

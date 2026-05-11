@@ -1,10 +1,10 @@
-# sawtools CLI Reference
+# polywave-tools CLI Reference
 
-`sawtools` is the SAW Protocol SDK command-line toolkit. All commands accept a global `--repo-dir` flag (default `.`) specifying the repository root.
+`polywave-tools` is the SAW Protocol SDK command-line toolkit. All commands accept a global `--repo-dir` flag (default `.`) specifying the repository root.
 
 ```
-sawtools [command] [args] [flags]
-sawtools --repo-dir /path/to/repo [command] ...
+polywave-tools [command] [args] [flags]
+polywave-tools --repo-dir /path/to/repo [command] ...
 ```
 
 ## Quick Reference
@@ -111,7 +111,7 @@ sawtools --repo-dir /path/to/repo [command] ...
 Validate a YAML IMPL manifest against protocol invariants and E16 typed-block rules.
 
 ```
-sawtools validate <manifest-path> [flags]
+polywave-tools validate <manifest-path> [flags]
 ```
 
 **Arguments:**
@@ -127,9 +127,9 @@ sawtools validate <manifest-path> [flags]
 
 **Example:**
 ```bash
-sawtools validate docs/IMPL/my-feature.yaml
-sawtools validate docs/IMPL/my-feature.yaml --solver
-sawtools validate docs/IMPL/my-feature.yaml --fix
+polywave-tools validate docs/IMPL/my-feature.yaml
+polywave-tools validate docs/IMPL/my-feature.yaml --solver
+polywave-tools validate docs/IMPL/my-feature.yaml --fix
 ```
 
 **`file_ownership` entry fields:**
@@ -154,7 +154,7 @@ Each entry in the `file_ownership` array supports the following fields:
 Validate a YAML PROGRAM manifest against schema rules.
 
 ```
-sawtools validate-program <program-manifest>
+polywave-tools validate-program <program-manifest>
 ```
 
 **Arguments:**
@@ -166,7 +166,7 @@ sawtools validate-program <program-manifest>
 
 **Example:**
 ```bash
-sawtools validate-program docs/PROGRAM.yaml
+polywave-tools validate-program docs/PROGRAM.yaml
 ```
 
 ---
@@ -176,7 +176,7 @@ sawtools validate-program docs/PROGRAM.yaml
 Scan a completed wave for unconnected exports using Go AST analysis. Detects heuristic integration gaps and optionally checks wiring declarations (E35 Layer 3B). Persists reports back to the manifest.
 
 ```
-sawtools validate-integration <manifest-path> --wave <n> [flags]
+polywave-tools validate-integration <manifest-path> --wave <n> [flags]
 ```
 
 **Arguments:**
@@ -192,8 +192,8 @@ sawtools validate-integration <manifest-path> --wave <n> [flags]
 
 **Example:**
 ```bash
-sawtools validate-integration docs/IMPL/my-feature.yaml --wave 1
-sawtools validate-integration docs/IMPL/my-feature.yaml --wave 2 --wiring=false
+polywave-tools validate-integration docs/IMPL/my-feature.yaml --wave 1
+polywave-tools validate-integration docs/IMPL/my-feature.yaml --wave 2 --wiring=false
 ```
 
 ---
@@ -203,7 +203,7 @@ sawtools validate-integration docs/IMPL/my-feature.yaml --wave 2 --wiring=false
 Compute optimal wave assignments from dependency declarations using topological sort. Rewrites the manifest in-place with corrected wave numbers.
 
 ```
-sawtools solve <manifest-path> [--dry-run]
+polywave-tools solve <manifest-path> [--dry-run]
 ```
 
 **Arguments:**
@@ -218,8 +218,8 @@ sawtools solve <manifest-path> [--dry-run]
 
 **Example:**
 ```bash
-sawtools solve docs/IMPL/my-feature.yaml --dry-run
-sawtools solve docs/IMPL/my-feature.yaml
+polywave-tools solve docs/IMPL/my-feature.yaml --dry-run
+polywave-tools solve docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -231,7 +231,7 @@ sawtools solve docs/IMPL/my-feature.yaml
 Extract the per-agent context payload from a YAML IMPL manifest. Used to build agent prompts (E23).
 
 ```
-sawtools extract-context <manifest-path> --agent <agent-id>
+polywave-tools extract-context <manifest-path> --agent <agent-id>
 ```
 
 **Arguments:**
@@ -246,7 +246,7 @@ sawtools extract-context <manifest-path> --agent <agent-id>
 
 **Example:**
 ```bash
-sawtools extract-context docs/IMPL/my-feature.yaml --agent A
+polywave-tools extract-context docs/IMPL/my-feature.yaml --agent A
 ```
 
 ---
@@ -256,7 +256,7 @@ sawtools extract-context docs/IMPL/my-feature.yaml --agent A
 List IMPL manifests found in a directory. Excludes completed manifests by default. Prints JSON summaries with path, feature slug, verdict, current wave, and total waves.
 
 ```
-sawtools list-impls [flags]
+polywave-tools list-impls [flags]
 ```
 
 **Flags:**
@@ -269,9 +269,9 @@ sawtools list-impls [flags]
 
 **Example:**
 ```bash
-sawtools list-impls
-sawtools list-impls --dir /path/to/impls
-sawtools list-impls --include-complete
+polywave-tools list-impls
+polywave-tools list-impls --dir /path/to/impls
+polywave-tools list-impls --include-complete
 ```
 
 ---
@@ -281,7 +281,7 @@ sawtools list-impls --include-complete
 List PROGRAM manifests found in a directory.
 
 ```
-sawtools list-programs [flags]
+polywave-tools list-programs [flags]
 ```
 
 **Flags:**
@@ -293,8 +293,8 @@ sawtools list-programs [flags]
 
 **Example:**
 ```bash
-sawtools list-programs
-sawtools list-programs --dir /path/to/programs
+polywave-tools list-programs
+polywave-tools list-programs --dir /path/to/programs
 ```
 
 ---
@@ -304,7 +304,7 @@ sawtools list-programs --dir /path/to/programs
 Extract build, test, lint, and format commands from CI configuration files (GitHub Actions, GitLab CI, CircleCI) and build system files (Makefile, package.json). Uses priority-based resolution and falls back to language defaults when no config files are present.
 
 ```
-sawtools extract-commands <repo-root> [flags]
+polywave-tools extract-commands <repo-root> [flags]
 ```
 
 **Arguments:**
@@ -319,8 +319,8 @@ sawtools extract-commands <repo-root> [flags]
 
 **Example:**
 ```bash
-sawtools extract-commands .
-sawtools extract-commands /path/to/repo --format json
+polywave-tools extract-commands .
+polywave-tools extract-commands /path/to/repo --format json
 ```
 
 ---
@@ -330,7 +330,7 @@ sawtools extract-commands /path/to/repo --format json
 Analyze Go source files to extract import dependencies, detect cycles, compute topological sort, and assign wave structure for parallel agent execution.
 
 ```
-sawtools analyze-deps <repo-root> --files <file-list> [flags]
+polywave-tools analyze-deps <repo-root> --files <file-list> [flags]
 ```
 
 **Arguments:**
@@ -346,8 +346,8 @@ sawtools analyze-deps <repo-root> --files <file-list> [flags]
 
 **Example:**
 ```bash
-sawtools analyze-deps . --files "pkg/foo.go,pkg/bar.go"
-sawtools analyze-deps /path/to/repo --files "cmd/main.go" --format json
+polywave-tools analyze-deps . --files "pkg/foo.go,pkg/bar.go"
+polywave-tools analyze-deps /path/to/repo --files "cmd/main.go" --format json
 ```
 
 ---
@@ -357,7 +357,7 @@ sawtools analyze-deps /path/to/repo --files "cmd/main.go" --format json
 Scan a codebase to determine which requirements are already implemented (DONE), partially implemented (PARTIAL), or not yet implemented (TODO). Reads a structured markdown requirements document with `Location:` fields.
 
 ```
-sawtools analyze-suitability [flags]
+polywave-tools analyze-suitability [flags]
 ```
 
 **Flags:**
@@ -371,7 +371,7 @@ sawtools analyze-suitability [flags]
 
 **Example:**
 ```bash
-sawtools analyze-suitability --requirements docs/audit.md --repo-root /path/to/repo
+polywave-tools analyze-suitability --requirements docs/audit.md --repo-root /path/to/repo
 ```
 
 ---
@@ -381,7 +381,7 @@ sawtools analyze-suitability --requirements docs/audit.md --repo-root /path/to/r
 Analyze IMPL document to detect types that should be extracted to scaffold files. Pre-agent mode finds types referenced by two or more agents. Post-agent mode detects duplicate type definitions.
 
 ```
-sawtools detect-scaffolds <impl-doc-path> --stage <stage>
+polywave-tools detect-scaffolds <impl-doc-path> --stage <stage>
 ```
 
 **Arguments:**
@@ -396,8 +396,8 @@ sawtools detect-scaffolds <impl-doc-path> --stage <stage>
 
 **Example:**
 ```bash
-sawtools detect-scaffolds docs/IMPL/my-feature.yaml --stage pre-agent
-sawtools detect-scaffolds docs/IMPL/my-feature.yaml --stage post-agent
+polywave-tools detect-scaffolds docs/IMPL/my-feature.yaml --stage pre-agent
+polywave-tools detect-scaffolds docs/IMPL/my-feature.yaml --stage post-agent
 ```
 
 ---
@@ -407,7 +407,7 @@ sawtools detect-scaffolds docs/IMPL/my-feature.yaml --stage post-agent
 Alias for `detect-scaffolds`. Maintained for backward compatibility with older IMPL documents and scripts.
 
 ```
-sawtools detect-shared-types <impl-doc-path> --stage <stage>
+polywave-tools detect-shared-types <impl-doc-path> --stage <stage>
 ```
 
 See `detect-scaffolds` for full documentation.
@@ -419,7 +419,7 @@ See `detect-scaffolds` for full documentation.
 Analyze IMPL document agent task prompts for cross-agent function calls and generate wiring declarations. Detects patterns such as "calls FunctionName()", "uses pkg.FunctionName", "delegates to X", and "invokes FunctionName".
 
 ```
-sawtools detect-wiring <impl-doc-path> [flags]
+polywave-tools detect-wiring <impl-doc-path> [flags]
 ```
 
 **Arguments:**
@@ -434,8 +434,8 @@ sawtools detect-wiring <impl-doc-path> [flags]
 
 **Example:**
 ```bash
-sawtools detect-wiring docs/IMPL/my-feature.yaml
-sawtools detect-wiring docs/IMPL/my-feature.yaml --format json
+polywave-tools detect-wiring docs/IMPL/my-feature.yaml
+polywave-tools detect-wiring docs/IMPL/my-feature.yaml --format json
 ```
 
 ---
@@ -445,7 +445,7 @@ sawtools detect-wiring docs/IMPL/my-feature.yaml --format json
 Detect files affected by type renames in a repository. Outputs cascade candidates with severity levels and reasons.
 
 ```
-sawtools detect-cascades <repo-root> --renames <json>
+polywave-tools detect-cascades <repo-root> --renames <json>
 ```
 
 **Arguments:**
@@ -460,7 +460,7 @@ sawtools detect-cascades <repo-root> --renames <json>
 
 **Example:**
 ```bash
-sawtools detect-cascades . --renames '[{"old":"AuthToken","new":"SessionToken","scope":"pkg/auth"}]'
+polywave-tools detect-cascades . --renames '[{"old":"AuthToken","new":"SessionToken","scope":"pkg/auth"}]'
 ```
 
 ---
@@ -470,7 +470,7 @@ sawtools detect-cascades . --renames '[{"old":"AuthToken","new":"SessionToken","
 Resolve an `--impl` flag value (slug, filename, or path) to an absolute IMPL doc path. Supports auto-selection when exactly one pending IMPL exists. Used by orchestrators to canonicalize IMPL targeting across all commands.
 
 ```
-sawtools resolve-impl [flags]
+polywave-tools resolve-impl [flags]
 ```
 
 **Flags:**
@@ -489,20 +489,20 @@ sawtools resolve-impl [flags]
 
 **Example:**
 ```bash
-sawtools resolve-impl
-sawtools resolve-impl --impl my-feature
-sawtools resolve-impl --impl IMPL-my-feature.yaml
-sawtools resolve-impl --impl /abs/path/to/IMPL-feature.yaml
+polywave-tools resolve-impl
+polywave-tools resolve-impl --impl my-feature
+polywave-tools resolve-impl --impl IMPL-my-feature.yaml
+polywave-tools resolve-impl --impl /abs/path/to/IMPL-feature.yaml
 ```
 
 ---
 
 ### interview
 
-Conduct a structured requirements interview that produces a REQUIREMENTS.md file suitable for `/saw bootstrap` or `/saw scout`. Walks through 6 phases: overview, scope, requirements, interfaces, stories, and review.
+Conduct a structured requirements interview that produces a REQUIREMENTS.md file suitable for `/polywave bootstrap` or `/polywave scout`. Walks through 6 phases: overview, scope, requirements, interfaces, stories, and review.
 
 ```
-sawtools interview "<description>" [flags]
+polywave-tools interview "<description>" [flags]
 ```
 
 **Arguments:**
@@ -523,10 +523,10 @@ sawtools interview "<description>" [flags]
 
 **Example:**
 ```bash
-sawtools interview "Build a REST API for user management"
-sawtools interview "Add OAuth2 support" --max-questions 12
-sawtools interview --resume docs/INTERVIEW-my-feature.yaml
-echo "answers..." | sawtools interview "test" --non-interactive
+polywave-tools interview "Build a REST API for user management"
+polywave-tools interview "Add OAuth2 support" --max-questions 12
+polywave-tools interview --resume docs/INTERVIEW-my-feature.yaml
+echo "answers..." | polywave-tools interview "test" --non-interactive
 ```
 
 ---
@@ -538,7 +538,7 @@ echo "answers..." | sawtools interview "test" --non-interactive
 Create git worktrees for all agents in a given wave. Each agent gets an isolated branch and working directory.
 
 ```
-sawtools create-worktrees <manifest-path> --wave <n>
+polywave-tools create-worktrees <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -553,17 +553,17 @@ sawtools create-worktrees <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools create-worktrees docs/IMPL/my-feature.yaml --wave 1
+polywave-tools create-worktrees docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
 
 ### prepare-agent
 
-Prepare an agent's execution environment by extracting the agent's brief and initializing the journal observer. For worktree-based agents, writes brief to worktree root. For solo agents, writes to `.saw-state/`.
+Prepare an agent's execution environment by extracting the agent's brief and initializing the journal observer. For worktree-based agents, writes brief to worktree root. For solo agents, writes to `.polywave-state/`.
 
 ```
-sawtools prepare-agent <manifest-path> --wave <n> --agent <id> [flags]
+polywave-tools prepare-agent <manifest-path> --wave <n> --agent <id> [flags]
 ```
 
 **Arguments:**
@@ -572,7 +572,7 @@ sawtools prepare-agent <manifest-path> --wave <n> --agent <id> [flags]
 **Flags:**
 - `--wave` -- wave number (required)
 - `--agent` -- agent ID (required)
-- `--no-worktree` -- solo agent mode (write brief to .saw-state instead of worktree) (default: false)
+- `--no-worktree` -- solo agent mode (write brief to .polywave-state instead of worktree) (default: false)
 
 **Output:** JSON with prepared agent details.
 
@@ -580,8 +580,8 @@ sawtools prepare-agent <manifest-path> --wave <n> --agent <id> [flags]
 
 **Example:**
 ```bash
-sawtools prepare-agent docs/IMPL/my-feature.yaml --wave 1 --agent A
-sawtools prepare-agent docs/IMPL/my-feature.yaml --wave 1 --agent A --no-worktree
+polywave-tools prepare-agent docs/IMPL/my-feature.yaml --wave 1 --agent A
+polywave-tools prepare-agent docs/IMPL/my-feature.yaml --wave 1 --agent A --no-worktree
 ```
 
 ---
@@ -591,7 +591,7 @@ sawtools prepare-agent docs/IMPL/my-feature.yaml --wave 1 --agent A --no-worktre
 Atomic batch command that prepares all agents in a wave for parallel execution. Combines check-deps, create-worktrees, and prepare-agent into a single operation.
 
 ```
-sawtools prepare-wave <manifest-path> --wave <n>
+polywave-tools prepare-wave <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -608,7 +608,7 @@ sawtools prepare-wave <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools prepare-wave docs/IMPL/my-feature.yaml --wave 1
+polywave-tools prepare-wave docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -618,7 +618,7 @@ sawtools prepare-wave docs/IMPL/my-feature.yaml --wave 1
 Run pre-wave readiness checks on an IMPL manifest. Checks validation, critic review status (E37), scaffold commits, and IMPL state.
 
 ```
-sawtools pre-wave-gate <manifest-path>
+polywave-tools pre-wave-gate <manifest-path>
 ```
 
 **Arguments:**
@@ -630,7 +630,7 @@ sawtools pre-wave-gate <manifest-path>
 
 **Example:**
 ```bash
-sawtools pre-wave-gate docs/IMPL/my-feature.yaml
+polywave-tools pre-wave-gate docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -640,7 +640,7 @@ sawtools pre-wave-gate docs/IMPL/my-feature.yaml
 Combined pre-wave check that runs E16 validation (invariants, gates, contracts) followed by E35 same-package caller detection. E35 detects when an agent owns a function definition but does not own all call sites in the same package, preventing post-merge build failures caused by signature drift.
 
 ```
-sawtools pre-wave-validate <manifest-path> --wave <n> [flags]
+polywave-tools pre-wave-validate <manifest-path> --wave <n> [flags]
 ```
 
 **Arguments:**
@@ -656,8 +656,8 @@ sawtools pre-wave-validate <manifest-path> --wave <n> [flags]
 
 **Example:**
 ```bash
-sawtools pre-wave-validate docs/IMPL/my-feature.yaml --wave 1
-sawtools pre-wave-validate docs/IMPL/my-feature.yaml --wave 2 --fix
+polywave-tools pre-wave-validate docs/IMPL/my-feature.yaml --wave 1
+polywave-tools pre-wave-validate docs/IMPL/my-feature.yaml --wave 2 --fix
 ```
 
 ---
@@ -667,7 +667,7 @@ sawtools pre-wave-validate docs/IMPL/my-feature.yaml --wave 2 --fix
 Execute the full wave lifecycle: create worktrees, verify commits, merge agents, verify build, and cleanup.
 
 ```
-sawtools run-wave <manifest-path> --wave <n> [flags]
+polywave-tools run-wave <manifest-path> --wave <n> [flags]
 ```
 
 **Arguments:**
@@ -683,8 +683,8 @@ sawtools run-wave <manifest-path> --wave <n> [flags]
 
 **Example:**
 ```bash
-sawtools run-wave docs/IMPL/my-feature.yaml --wave 2
-sawtools run-wave docs/IMPL/my-feature.yaml --wave 1 --no-prioritize
+polywave-tools run-wave docs/IMPL/my-feature.yaml --wave 2
+polywave-tools run-wave docs/IMPL/my-feature.yaml --wave 1 --no-prioritize
 ```
 
 ---
@@ -694,7 +694,7 @@ sawtools run-wave docs/IMPL/my-feature.yaml --wave 1 --no-prioritize
 Fully automated Scout workflow (I3 integration). Launches Scout agent to analyze codebase, creates IMPL doc, validates it (E16), auto-corrects agent IDs (M1), and optionally runs a critic review (E37).
 
 ```
-sawtools run-scout <feature-description> [flags]
+polywave-tools run-scout <feature-description> [flags]
 ```
 
 **Arguments:**
@@ -702,7 +702,7 @@ sawtools run-scout <feature-description> [flags]
 
 **Flags:**
 - `--repo-dir` -- target repository path (default: current directory)
-- `--saw-repo` -- Scout-and-Wave protocol repo path (default: `$SAW_REPO` or `~/code/scout-and-wave`)
+- `--saw-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
 - `--scout-model` -- Scout model override (e.g., `claude-opus-4-6`)
 - `--critic-model` -- critic agent model override (e.g., `claude-opus-4-6`)
 - `--no-critic` -- skip critic gate even if agent count threshold is met (default: false)
@@ -715,9 +715,9 @@ sawtools run-scout <feature-description> [flags]
 
 **Example:**
 ```bash
-sawtools run-scout "Add audit logging to auth module"
-sawtools run-scout "Add audit logging" --repo-dir /path/to/project
-sawtools run-scout "Add audit logging" --scout-model claude-opus-4-6
+polywave-tools run-scout "Add audit logging to auth module"
+polywave-tools run-scout "Add audit logging" --repo-dir /path/to/project
+polywave-tools run-scout "Add audit logging" --scout-model claude-opus-4-6
 ```
 
 ---
@@ -727,7 +727,7 @@ sawtools run-scout "Add audit logging" --scout-model claude-opus-4-6
 Launch a critic agent (E37) that reviews every agent brief in the IMPL doc against the actual codebase before wave execution begins. Verifies file existence, symbol accuracy, pattern accuracy, interface consistency, import chains, and side-effect completeness.
 
 ```
-sawtools run-critic <impl-path> [flags]
+polywave-tools run-critic <impl-path> [flags]
 ```
 
 **Arguments:**
@@ -745,9 +745,9 @@ sawtools run-critic <impl-path> [flags]
 
 **Example:**
 ```bash
-sawtools run-critic docs/IMPL/IMPL-feature.yaml
-sawtools run-critic docs/IMPL/IMPL-feature.yaml --model claude-opus-4-6
-sawtools run-critic docs/IMPL/IMPL-feature.yaml --skip
+polywave-tools run-critic docs/IMPL/IMPL-feature.yaml
+polywave-tools run-critic docs/IMPL/IMPL-feature.yaml --model claude-opus-4-6
+polywave-tools run-critic docs/IMPL/IMPL-feature.yaml --skip
 ```
 
 ---
@@ -757,7 +757,7 @@ sawtools run-critic docs/IMPL/IMPL-feature.yaml --skip
 Automated integration agent workflow (E26). Runs `validate-integration` (or uses an existing integration report from the manifest), and if gaps are found, launches an integration agent to wire the exports. Verifies the build after the agent completes.
 
 ```
-sawtools run-integration-agent <manifest-path> --wave <n>
+polywave-tools run-integration-agent <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -772,8 +772,8 @@ sawtools run-integration-agent <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 1
-sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
+polywave-tools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 1
+polywave-tools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
 ```
 
 ---
@@ -783,7 +783,7 @@ sawtools run-integration-agent docs/IMPL/IMPL-feature.yaml --wave 2
 Execute a planned integration wave (E27) where Scout pre-assigned the wiring work in the IMPL doc. Verifies that the target wave has `type: integration`, extracts agent briefs, and outputs metadata for the orchestrator to launch agents.
 
 ```
-sawtools run-integration-wave <manifest-path> --wave <n>
+polywave-tools run-integration-wave <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -792,13 +792,13 @@ sawtools run-integration-wave <manifest-path> --wave <n>
 **Flags:**
 - `--wave` -- wave number to execute (required; must be a wave with `type: integration`)
 
-**Output:** JSON object with `success` (bool), `wave` (int), and `agents` array. Each agent entry contains `id`, `files`, and `brief` path. Agent briefs are written to `.saw-agent-brief.md` in the repo root. Diagnostic messages go to stderr.
+**Output:** JSON object with `success` (bool), `wave` (int), and `agents` array. Each agent entry contains `id`, `files`, and `brief` path. Agent briefs are written to `.polywave-agent-brief.md` in the repo root. Diagnostic messages go to stderr.
 
 **Exit codes:** 0 on success, 1 if the wave is not found or is not type `integration`.
 
 **Example:**
 ```bash
-sawtools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2
+polywave-tools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2
 ```
 
 ---
@@ -808,19 +808,19 @@ sawtools run-integration-wave docs/IMPL/IMPL-feature.yaml --wave 2
 Collapse the three-step scout → review → wave flow into a single command. Runs Scout, displays the IMPL summary, prompts for confirmation, then executes all waves in sequence. The human confirmation checkpoint is preserved by default.
 
 Behavior by Scout verdict:
-- `NOT_SUITABLE` — shows reason and suggests running `/saw interview` first, exits 0
+- `NOT_SUITABLE` — shows reason and suggests running `/polywave interview` first, exits 0
 - `SUITABLE` — shows IMPL summary, prompts for confirmation, then executes waves
 - `SUITABLE_WITH_CAVEATS` — shows IMPL summary and caveats, prompts for confirmation, then executes waves
 
 ```
-sawtools auto <feature-description> [flags]
+polywave-tools auto <feature-description> [flags]
 ```
 
 **Arguments:**
 - `feature-description` -- description of the feature to implement (required)
 
 **Flags:**
-- `--saw-repo` -- Scout-and-Wave protocol repo path (default: `$SAW_REPO` or `~/code/scout-and-wave`)
+- `--saw-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
 - `--scout-model` -- Scout model override (e.g., `claude-opus-4-6`)
 - `--wave-model` -- wave model override (reserved for future use)
 - `--timeout` -- Scout timeout in minutes (default: 10)
@@ -832,10 +832,10 @@ sawtools auto <feature-description> [flags]
 
 **Example:**
 ```bash
-sawtools auto "Add audit logging to auth module"
-sawtools auto "Add caching layer" --repo-dir /path/to/project
-sawtools auto "Refactor storage layer" --skip-confirm
-sawtools auto "Add OAuth support" --scout-model claude-opus-4-6 --timeout 20
+polywave-tools auto "Add audit logging to auth module"
+polywave-tools auto "Add caching layer" --repo-dir /path/to/project
+polywave-tools auto "Refactor storage layer" --skip-confirm
+polywave-tools auto "Add OAuth support" --scout-model claude-opus-4-6 --timeout 20
 ```
 
 ---
@@ -856,7 +856,7 @@ Execution order:
 8. Cleanup
 
 ```
-sawtools finalize-wave <manifest-path> --wave <n>
+polywave-tools finalize-wave <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -872,7 +872,7 @@ sawtools finalize-wave <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools finalize-wave docs/IMPL/my-feature.yaml --wave 1
+polywave-tools finalize-wave docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -892,7 +892,7 @@ in future-wave-owned or unowned files, not in the current wave's own files.
 2. Agent applies minimal caller fixes: result.Result[T] unwrapping,
    ctx param additions, deleted symbol replacements
 3. Agent commits as:
-   `[SAW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
+   `[PW:wave{N}:integration-hotfix] fix caller cascade after wave N signature changes`
 4. Re-runs `go build ./... && go vet ./...` to confirm clean
 
 **Output fields:** `step` (string), `status` ("success"), `files_fixed`
@@ -912,7 +912,7 @@ through E7/E8 as a genuine build failure.
 Atomic batch command that validates an IMPL doc, extracts build/test/lint commands (H2), populates verification gate blocks for all agents, and validates again. Transactional (rolls back on failure) and idempotent. Supports multi-repo IMPLs.
 
 ```
-sawtools finalize-impl <manifest-path> [flags]
+polywave-tools finalize-impl <manifest-path> [flags]
 ```
 
 **Arguments:**
@@ -927,8 +927,8 @@ sawtools finalize-impl <manifest-path> [flags]
 
 **Example:**
 ```bash
-sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml
-sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
+polywave-tools finalize-impl docs/IMPL/IMPL-feature-x.yaml
+polywave-tools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
 ```
 
 ---
@@ -938,7 +938,7 @@ sawtools finalize-impl docs/IMPL/IMPL-feature-x.yaml --repo-root /path/to/repo
 Batch command that combines the full IMPL close lifecycle into one operation: write completion marker, archive to `complete/`, update CONTEXT.md, and clean stale worktrees for this IMPL.
 
 ```
-sawtools close-impl <manifest-path> [flags]
+polywave-tools close-impl <manifest-path> [flags]
 ```
 
 **Arguments:**
@@ -953,8 +953,8 @@ sawtools close-impl <manifest-path> [flags]
 
 **Example:**
 ```bash
-sawtools close-impl docs/IMPL/IMPL-feature.yaml
-sawtools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22
+polywave-tools close-impl docs/IMPL/IMPL-feature.yaml
+polywave-tools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22
 ```
 
 ---
@@ -964,7 +964,7 @@ sawtools close-impl docs/IMPL/IMPL-feature.yaml --date 2026-03-22
 Verify that each agent branch in a wave has at least one commit. Implements the I5 trip wire check.
 
 ```
-sawtools verify-commits <manifest-path> --wave <n>
+polywave-tools verify-commits <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -979,7 +979,7 @@ sawtools verify-commits <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools verify-commits docs/IMPL/my-feature.yaml --wave 1
+polywave-tools verify-commits docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -989,7 +989,7 @@ sawtools verify-commits docs/IMPL/my-feature.yaml --wave 1
 Merge all agent branches for a wave into the integration branch.
 
 ```
-sawtools merge-agents <manifest-path> --wave <n>
+polywave-tools merge-agents <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -1004,7 +1004,7 @@ sawtools merge-agents <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools merge-agents docs/IMPL/my-feature.yaml --wave 1
+polywave-tools merge-agents docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -1014,7 +1014,7 @@ sawtools merge-agents docs/IMPL/my-feature.yaml --wave 1
 Run the test and lint commands declared in the manifest.
 
 ```
-sawtools verify-build <manifest-path>
+polywave-tools verify-build <manifest-path>
 ```
 
 **Arguments:**
@@ -1026,7 +1026,7 @@ sawtools verify-build <manifest-path>
 
 **Example:**
 ```bash
-sawtools verify-build docs/IMPL/my-feature.yaml
+polywave-tools verify-build docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -1036,7 +1036,7 @@ sawtools verify-build docs/IMPL/my-feature.yaml
 Remove worktrees and branches for a wave after a successful merge.
 
 ```
-sawtools cleanup <manifest-path> --wave <n>
+polywave-tools cleanup <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -1051,7 +1051,7 @@ sawtools cleanup <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools cleanup docs/IMPL/my-feature.yaml --wave 1
+polywave-tools cleanup docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -1061,7 +1061,7 @@ sawtools cleanup docs/IMPL/my-feature.yaml --wave 1
 Detect and remove stale SAW worktrees (completed IMPLs, orphaned branches, merged-but-not-cleaned).
 
 ```
-sawtools cleanup-stale [flags]
+polywave-tools cleanup-stale [flags]
 ```
 
 **Flags:**
@@ -1078,19 +1078,19 @@ sawtools cleanup-stale [flags]
 
 **Example:**
 ```bash
-sawtools cleanup-stale --all --dry-run
-sawtools cleanup-stale --slug my-feature
-sawtools cleanup-stale --all --force
+polywave-tools cleanup-stale --all --dry-run
+polywave-tools cleanup-stale --slug my-feature
+polywave-tools cleanup-stale --all --force
 ```
 
 ---
 
 ### verify-install
 
-Check that all SAW prerequisites are met: sawtools binary on PATH, Git version >= 2.20, skill directory and files, config file, and configured repo paths.
+Check that all SAW prerequisites are met: polywave-tools binary on PATH, Git version >= 2.20, skill directory and files, config file, and configured repo paths.
 
 ```
-sawtools verify-install [flags]
+polywave-tools verify-install [flags]
 ```
 
 **Flags:**
@@ -1102,18 +1102,18 @@ sawtools verify-install [flags]
 
 **Example:**
 ```bash
-sawtools verify-install
-sawtools verify-install --human
+polywave-tools verify-install
+polywave-tools verify-install --human
 ```
 
 ---
 
 ### init
 
-Initialize a new SAW-managed repository with zero configuration. Creates `docs/IMPL/`, `docs/IMPL/complete/`, and `saw.config.json` with sensible defaults.
+Initialize a new SAW-managed repository with zero configuration. Creates `docs/IMPL/`, `docs/IMPL/complete/`, and `polywave.config.json` with sensible defaults.
 
 ```
-sawtools init [flags]
+polywave-tools init [flags]
 ```
 
 **Flags:**
@@ -1125,8 +1125,8 @@ sawtools init [flags]
 
 **Example:**
 ```bash
-sawtools init
-sawtools init --repo-dir /path/to/new/repo
+polywave-tools init
+polywave-tools init --repo-dir /path/to/new/repo
 ```
 
 ---
@@ -1136,7 +1136,7 @@ sawtools init --repo-dir /path/to/new/repo
 Install SAW git hooks in a repository. Installs pre-commit hook for worktree isolation enforcement (E43) and other validation checks.
 
 ```
-sawtools install-hooks [flags]
+polywave-tools install-hooks [flags]
 ```
 
 **Flags:**
@@ -1149,8 +1149,8 @@ sawtools install-hooks [flags]
 
 **Example:**
 ```bash
-sawtools install-hooks
-sawtools install-hooks --repo-dir /path/to/repo --force
+polywave-tools install-hooks
+polywave-tools install-hooks --repo-dir /path/to/repo --force
 ```
 
 ---
@@ -1160,7 +1160,7 @@ sawtools install-hooks --repo-dir /path/to/repo --force
 Run pre-commit validation checks. Called automatically by the pre-commit hook. Validates worktree isolation, file ownership, and other protocol invariants.
 
 ```
-sawtools pre-commit-check [flags]
+polywave-tools pre-commit-check [flags]
 ```
 
 **Flags:**
@@ -1172,7 +1172,7 @@ sawtools pre-commit-check [flags]
 
 **Example:**
 ```bash
-sawtools pre-commit-check
+polywave-tools pre-commit-check
 ```
 
 **Note:** This command is typically called by the pre-commit hook and not invoked manually.
@@ -1184,7 +1184,7 @@ sawtools pre-commit-check
 Set the agent injection method for an IMPL manifest. Controls how agent prompts receive context (e.g., `full`, `incremental`, `minimal`).
 
 ```
-sawtools set-injection-method <manifest-path> --method <method>
+polywave-tools set-injection-method <manifest-path> --method <method>
 ```
 
 **Arguments:**
@@ -1199,7 +1199,7 @@ sawtools set-injection-method <manifest-path> --method <method>
 
 **Example:**
 ```bash
-sawtools set-injection-method docs/IMPL/my-feature.yaml --method incremental
+polywave-tools set-injection-method docs/IMPL/my-feature.yaml --method incremental
 ```
 
 ---
@@ -1209,7 +1209,7 @@ sawtools set-injection-method docs/IMPL/my-feature.yaml --method incremental
 Verify that the current working directory is an isolated agent worktree on the expected branch. Enforces Field 0 / E12.
 
 ```
-sawtools verify-isolation --branch <branch-name>
+polywave-tools verify-isolation --branch <branch-name>
 ```
 
 **Flags:**
@@ -1221,7 +1221,7 @@ sawtools verify-isolation --branch <branch-name>
 
 **Example:**
 ```bash
-sawtools verify-isolation --branch wave1-agent-A
+polywave-tools verify-isolation --branch wave1-agent-A
 ```
 
 ---
@@ -1231,7 +1231,7 @@ sawtools verify-isolation --branch wave1-agent-A
 Verify that the pre-commit hook exists in a worktree's `.git/hooks` directory, contains isolation check logic, and is executable. Layer 0 of worktree isolation enforcement (E4).
 
 ```
-sawtools verify-hook-installed <worktree-path> [flags]
+polywave-tools verify-hook-installed <worktree-path> [flags]
 ```
 
 **Arguments:**
@@ -1246,8 +1246,8 @@ sawtools verify-hook-installed <worktree-path> [flags]
 
 **Example:**
 ```bash
-sawtools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A
-sawtools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A --wave 1
+polywave-tools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A
+polywave-tools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A --wave 1
 ```
 
 ---
@@ -1259,7 +1259,7 @@ sawtools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A --wave 1
 Update an agent's status field in the manifest.
 
 ```
-sawtools update-status <manifest-path> --wave <n> --agent <id> --status <status>
+polywave-tools update-status <manifest-path> --wave <n> --agent <id> --status <status>
 ```
 
 **Arguments:**
@@ -1276,7 +1276,7 @@ sawtools update-status <manifest-path> --wave <n> --agent <id> --status <status>
 
 **Example:**
 ```bash
-sawtools update-status docs/IMPL/my-feature.yaml --wave 1 --agent A --status complete
+polywave-tools update-status docs/IMPL/my-feature.yaml --wave 1 --agent A --status complete
 ```
 
 ---
@@ -1286,7 +1286,7 @@ sawtools update-status docs/IMPL/my-feature.yaml --wave 1 --agent A --status com
 Update the project's `CONTEXT.md` file from the manifest. Implements E18.
 
 ```
-sawtools update-context <manifest-path> [--project-root <path>]
+polywave-tools update-context <manifest-path> [--project-root <path>]
 ```
 
 **Arguments:**
@@ -1301,7 +1301,7 @@ sawtools update-context <manifest-path> [--project-root <path>]
 
 **Example:**
 ```bash
-sawtools update-context docs/IMPL/my-feature.yaml --project-root /path/to/project
+polywave-tools update-context docs/IMPL/my-feature.yaml --project-root /path/to/project
 ```
 
 ---
@@ -1311,7 +1311,7 @@ sawtools update-context docs/IMPL/my-feature.yaml --project-root /path/to/projec
 Check if an agent has a completion report in the manifest. Used by the SubagentStop hook for wave agent validation.
 
 ```
-sawtools check-completion <manifest-path> --agent <id>
+polywave-tools check-completion <manifest-path> --agent <id>
 ```
 
 **Arguments:**
@@ -1326,7 +1326,7 @@ sawtools check-completion <manifest-path> --agent <id>
 
 **Example:**
 ```bash
-sawtools check-completion docs/IMPL/my-feature.yaml --agent A
+polywave-tools check-completion docs/IMPL/my-feature.yaml --agent A
 ```
 
 ---
@@ -1336,7 +1336,7 @@ sawtools check-completion docs/IMPL/my-feature.yaml --agent A
 Atomically transition an IMPL manifest to a new protocol state. Validates the transition against the protocol state machine before writing.
 
 ```
-sawtools set-impl-state <manifest-path> --state <state> [flags]
+polywave-tools set-impl-state <manifest-path> --state <state> [flags]
 ```
 
 **Arguments:**
@@ -1353,8 +1353,8 @@ sawtools set-impl-state <manifest-path> --state <state> [flags]
 
 **Example:**
 ```bash
-sawtools set-impl-state docs/IMPL/my-feature.yaml --state REVIEWED
-sawtools set-impl-state docs/IMPL/my-feature.yaml --state WAVE_PENDING --commit
+polywave-tools set-impl-state docs/IMPL/my-feature.yaml --state REVIEWED
+polywave-tools set-impl-state docs/IMPL/my-feature.yaml --state WAVE_PENDING --commit
 ```
 
 ---
@@ -1364,7 +1364,7 @@ sawtools set-impl-state docs/IMPL/my-feature.yaml --state WAVE_PENDING --commit
 Set a completion report for an agent in the manifest. Records commit, files changed/created, tests added, and verification results.
 
 ```
-sawtools set-completion <manifest-path> --agent <id> --status <status> --commit <sha> [flags]
+polywave-tools set-completion <manifest-path> --agent <id> --status <status> --commit <sha> [flags]
 ```
 
 **Arguments:**
@@ -1387,7 +1387,7 @@ sawtools set-completion <manifest-path> --agent <id> --status <status> --commit 
 
 **Example:**
 ```bash
-sawtools set-completion docs/IMPL/my-feature.yaml \
+polywave-tools set-completion docs/IMPL/my-feature.yaml \
   --agent A --status complete --commit abc1234 \
   --files-changed "pkg/foo.go,pkg/bar.go" \
   --tests-added "pkg/foo_test.go"
@@ -1400,7 +1400,7 @@ sawtools set-completion docs/IMPL/my-feature.yaml \
 Write critic review result to IMPL doc's `critic_report` field. Called by critic agents after completing their review. Not intended for direct human use.
 
 ```
-sawtools set-critic-review <impl-path> --verdict <verdict> --summary <text> [flags]
+polywave-tools set-critic-review <impl-path> --verdict <verdict> --summary <text> [flags]
 ```
 
 **Arguments:**
@@ -1418,7 +1418,7 @@ sawtools set-critic-review <impl-path> --verdict <verdict> --summary <text> [fla
 
 **Example:**
 ```bash
-sawtools set-critic-review docs/IMPL/IMPL-feature.yaml \
+polywave-tools set-critic-review docs/IMPL/IMPL-feature.yaml \
   --verdict PASS --summary "All briefs verified" \
   --agent-reviews '[{"agent_id":"A","verdict":"PASS","issues":[]}]'
 ```
@@ -1433,7 +1433,7 @@ to transition the verdict from `ISSUES` to `PASS` without manually editing YAML.
 This avoids the duplicate-key YAML error that can occur with manual edits.
 
 ```
-sawtools set-critic-verdict <impl-path> --verdict <pass|issues>
+polywave-tools set-critic-verdict <impl-path> --verdict <pass|issues>
 ```
 
 **Arguments:**
@@ -1461,7 +1461,7 @@ to update just the verdict field after manual corrections are applied.
 Write the final completion marker to an IMPL manifest, recording the completion date, and archive it to the `complete/` subdirectory.
 
 ```
-sawtools mark-complete <manifest-path> [--date <YYYY-MM-DD>]
+polywave-tools mark-complete <manifest-path> [--date <YYYY-MM-DD>]
 ```
 
 **Arguments:**
@@ -1476,8 +1476,8 @@ sawtools mark-complete <manifest-path> [--date <YYYY-MM-DD>]
 
 **Example:**
 ```bash
-sawtools mark-complete docs/IMPL/my-feature.yaml
-sawtools mark-complete docs/IMPL/my-feature.yaml --date 2026-03-10
+polywave-tools mark-complete docs/IMPL/my-feature.yaml
+polywave-tools mark-complete docs/IMPL/my-feature.yaml --date 2026-03-10
 ```
 
 ---
@@ -1487,7 +1487,7 @@ sawtools mark-complete docs/IMPL/my-feature.yaml --date 2026-03-10
 Display comprehensive status report for a PROGRAM manifest, including current tier, per-tier IMPL statuses, contract freeze states, and completion tracking.
 
 ```
-sawtools program-status <program-manifest>
+polywave-tools program-status <program-manifest>
 ```
 
 **Arguments:**
@@ -1499,7 +1499,7 @@ sawtools program-status <program-manifest>
 
 **Example:**
 ```bash
-sawtools program-status docs/PROGRAM.yaml
+polywave-tools program-status docs/PROGRAM.yaml
 ```
 
 ---
@@ -1509,7 +1509,7 @@ sawtools program-status docs/PROGRAM.yaml
 Mark a PROGRAM manifest as complete. Verifies all tiers are complete, updates state to PROGRAM_COMPLETE, sets completion date, writes the `SAW:PROGRAM:COMPLETE` marker, updates CONTEXT.md, and commits both files.
 
 ```
-sawtools mark-program-complete <program-manifest> [flags]
+polywave-tools mark-program-complete <program-manifest> [flags]
 ```
 
 **Arguments:**
@@ -1525,8 +1525,8 @@ sawtools mark-program-complete <program-manifest> [flags]
 
 **Example:**
 ```bash
-sawtools mark-program-complete docs/PROGRAM.yaml
-sawtools mark-program-complete docs/PROGRAM.yaml --date 2026-03-15
+polywave-tools mark-program-complete docs/PROGRAM.yaml
+polywave-tools mark-program-complete docs/PROGRAM.yaml --date 2026-03-15
 ```
 
 ---
@@ -1538,7 +1538,7 @@ sawtools mark-program-complete docs/PROGRAM.yaml --date 2026-03-15
 Scan source files for stub/TODO patterns. Implements E20 enforcement. Optionally appends the stub report to a manifest.
 
 ```
-sawtools scan-stubs <file> [file...] [--append-impl <path>] [--wave <n>]
+polywave-tools scan-stubs <file> [file...] [--append-impl <path>] [--wave <n>]
 ```
 
 **Arguments:**
@@ -1554,8 +1554,8 @@ sawtools scan-stubs <file> [file...] [--append-impl <path>] [--wave <n>]
 
 **Example:**
 ```bash
-sawtools scan-stubs pkg/foo.go pkg/bar.go
-sawtools scan-stubs pkg/*.go --append-impl docs/IMPL/my-feature.yaml --wave 2
+polywave-tools scan-stubs pkg/foo.go pkg/bar.go
+polywave-tools scan-stubs pkg/*.go --append-impl docs/IMPL/my-feature.yaml --wave 2
 ```
 
 ---
@@ -1565,7 +1565,7 @@ sawtools scan-stubs pkg/*.go --append-impl docs/IMPL/my-feature.yaml --wave 2
 Run the quality gates declared in the manifest. Gates can be marked as required or optional. Supports gate result caching (E38).
 
 ```
-sawtools run-gates <manifest-path> [flags]
+polywave-tools run-gates <manifest-path> [flags]
 ```
 
 **Arguments:**
@@ -1581,8 +1581,8 @@ sawtools run-gates <manifest-path> [flags]
 
 **Example:**
 ```bash
-sawtools run-gates docs/IMPL/my-feature.yaml --wave 1
-sawtools run-gates docs/IMPL/my-feature.yaml --wave 1 --no-cache
+polywave-tools run-gates docs/IMPL/my-feature.yaml --wave 1
+polywave-tools run-gates docs/IMPL/my-feature.yaml --wave 1 --no-cache
 ```
 
 ---
@@ -1592,7 +1592,7 @@ sawtools run-gates docs/IMPL/my-feature.yaml --wave 1 --no-cache
 Run AI code review on the current diff. Used as a post-merge quality gate.
 
 ```
-sawtools run-review [flags]
+polywave-tools run-review [flags]
 ```
 
 **Flags:**
@@ -1606,9 +1606,9 @@ sawtools run-review [flags]
 
 **Example:**
 ```bash
-sawtools run-review
-sawtools run-review --blocking --threshold 80
-sawtools run-review --model claude-sonnet-4-20250514
+polywave-tools run-review
+polywave-tools run-review --blocking --threshold 80
+polywave-tools run-review --model claude-sonnet-4-20250514
 ```
 
 ---
@@ -1618,7 +1618,7 @@ sawtools run-review --model claude-sonnet-4-20250514
 Detect file ownership conflicts across agent completion reports. Flags files touched by multiple agents.
 
 ```
-sawtools check-conflicts <manifest-path>
+polywave-tools check-conflicts <manifest-path>
 ```
 
 **Arguments:**
@@ -1630,7 +1630,7 @@ sawtools check-conflicts <manifest-path>
 
 **Example:**
 ```bash
-sawtools check-conflicts docs/IMPL/my-feature.yaml
+polywave-tools check-conflicts docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -1640,7 +1640,7 @@ sawtools check-conflicts docs/IMPL/my-feature.yaml
 Predict merge conflicts for a wave using hunk-level diff analysis (E11). For each file touched by multiple agents, runs `git diff --unified=0 mergeBase..branch -- file` per agent, parses `@@` line ranges, and checks whether any two agents' modified line ranges overlap. Non-overlapping edits (e.g., cascade patches where each agent modifies a different function) produce exit 0 — only true line-range overlaps are flagged.
 
 ```
-sawtools predict-conflicts <manifest-path> --wave <n>
+polywave-tools predict-conflicts <manifest-path> --wave <n>
 ```
 
 **Arguments:**
@@ -1655,8 +1655,8 @@ sawtools predict-conflicts <manifest-path> --wave <n>
 
 **Example:**
 ```bash
-sawtools predict-conflicts docs/IMPL/my-feature.yaml --wave 1
-sawtools predict-conflicts docs/IMPL/my-feature.yaml --wave 2
+polywave-tools predict-conflicts docs/IMPL/my-feature.yaml --wave 1
+polywave-tools predict-conflicts docs/IMPL/my-feature.yaml --wave 2
 ```
 
 ---
@@ -1666,7 +1666,7 @@ sawtools predict-conflicts docs/IMPL/my-feature.yaml --wave 2
 Detect dependency conflicts before wave execution. Analyzes IMPL doc file ownership and lock files for missing dependencies and version conflicts.
 
 ```
-sawtools check-deps <impl-doc> [flags]
+polywave-tools check-deps <impl-doc> [flags]
 ```
 
 **Arguments:**
@@ -1681,8 +1681,8 @@ sawtools check-deps <impl-doc> [flags]
 
 **Example:**
 ```bash
-sawtools check-deps docs/IMPL/my-feature.yaml
-sawtools check-deps docs/IMPL/my-feature.yaml --wave 1
+polywave-tools check-deps docs/IMPL/my-feature.yaml
+polywave-tools check-deps docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -1692,7 +1692,7 @@ sawtools check-deps docs/IMPL/my-feature.yaml --wave 1
 Detect type name collisions across agent branches in a wave. Uses AST parsing to extract type names from git diffs (base..branch) and reports duplicate declarations in the same package.
 
 ```
-sawtools check-type-collisions <manifest-path> --wave <n> [flags]
+polywave-tools check-type-collisions <manifest-path> --wave <n> [flags]
 ```
 
 **Arguments:**
@@ -1708,7 +1708,7 @@ sawtools check-type-collisions <manifest-path> --wave <n> [flags]
 
 **Example:**
 ```bash
-sawtools check-type-collisions docs/IMPL/my-feature.yaml --wave 1
+polywave-tools check-type-collisions docs/IMPL/my-feature.yaml --wave 1
 ```
 
 ---
@@ -1718,7 +1718,7 @@ sawtools check-type-collisions docs/IMPL/my-feature.yaml --wave 1
 Validate that all scaffold files declared in the manifest are committed to the repository.
 
 ```
-sawtools validate-scaffolds <manifest-path>
+polywave-tools validate-scaffolds <manifest-path>
 ```
 
 **Arguments:**
@@ -1730,7 +1730,7 @@ sawtools validate-scaffolds <manifest-path>
 
 **Example:**
 ```bash
-sawtools validate-scaffolds docs/IMPL/my-feature.yaml
+polywave-tools validate-scaffolds docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -1740,7 +1740,7 @@ sawtools validate-scaffolds docs/IMPL/my-feature.yaml
 Validate a single scaffold file before committing. Runs a pipeline: syntax check (Go AST), import resolution, type reference check, and partial build.
 
 ```
-sawtools validate-scaffold <scaffold-file> [flags]
+polywave-tools validate-scaffold <scaffold-file> [flags]
 ```
 
 **Arguments:**
@@ -1755,8 +1755,8 @@ sawtools validate-scaffold <scaffold-file> [flags]
 
 **Example:**
 ```bash
-sawtools validate-scaffold pkg/types/scaffold.go
-sawtools validate-scaffold pkg/types/scaffold.go --impl-doc docs/IMPL/my-feature.yaml
+polywave-tools validate-scaffold pkg/types/scaffold.go
+polywave-tools validate-scaffold pkg/types/scaffold.go --impl-doc docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -1766,7 +1766,7 @@ sawtools validate-scaffold pkg/types/scaffold.go --impl-doc docs/IMPL/my-feature
 Check whether a manifest is frozen (worktrees have been created) and detect any freeze violations.
 
 ```
-sawtools freeze-check <manifest-path>
+polywave-tools freeze-check <manifest-path>
 ```
 
 **Arguments:**
@@ -1778,7 +1778,7 @@ sawtools freeze-check <manifest-path>
 
 **Example:**
 ```bash
-sawtools freeze-check docs/IMPL/my-feature.yaml
+polywave-tools freeze-check docs/IMPL/my-feature.yaml
 ```
 
 ---
@@ -1788,7 +1788,7 @@ sawtools freeze-check docs/IMPL/my-feature.yaml
 Update an agent's prompt/task text in the manifest. Saves the manifest in-place.
 
 ```
-sawtools update-agent-prompt <manifest-path> --agent <id> --prompt <text>
+polywave-tools update-agent-prompt <manifest-path> --agent <id> --prompt <text>
 ```
 
 **Arguments:**
@@ -1804,7 +1804,7 @@ sawtools update-agent-prompt <manifest-path> --agent <id> --prompt <text>
 
 **Example:**
 ```bash
-sawtools update-agent-prompt docs/IMPL/my-feature.yaml \
+polywave-tools update-agent-prompt docs/IMPL/my-feature.yaml \
   --agent B --prompt "Implement the HTTP handler for /api/widgets"
 ```
 
@@ -1815,7 +1815,7 @@ sawtools update-agent-prompt docs/IMPL/my-feature.yaml \
 Determinism tool (M5) that scans `file_ownership` for integration-requiring patterns and populates `post_merge_checklist` groups. Detects new API handlers, React components, CLI commands, and background services. Idempotent.
 
 ```
-sawtools populate-integration-checklist <manifest-path> [flags]
+polywave-tools populate-integration-checklist <manifest-path> [flags]
 ```
 
 **Arguments:**
@@ -1830,8 +1830,8 @@ sawtools populate-integration-checklist <manifest-path> [flags]
 
 **Example:**
 ```bash
-sawtools populate-integration-checklist docs/IMPL/my-feature.yaml
-sawtools populate-integration-checklist docs/IMPL/my-feature.yaml --repo-root /path/to/repo
+polywave-tools populate-integration-checklist docs/IMPL/my-feature.yaml
+polywave-tools populate-integration-checklist docs/IMPL/my-feature.yaml --repo-root /path/to/repo
 ```
 
 ---
@@ -1843,7 +1843,7 @@ sawtools populate-integration-checklist docs/IMPL/my-feature.yaml --repo-root /p
 Generate agent IDs following the `^[A-Z][2-9]?$` pattern. Supports sequential mode (A-Z, then A2-Z2, etc.) and grouped mode with category tags.
 
 ```
-sawtools assign-agent-ids --count <n> [flags]
+polywave-tools assign-agent-ids --count <n> [flags]
 ```
 
 **Flags:**
@@ -1856,8 +1856,8 @@ sawtools assign-agent-ids --count <n> [flags]
 
 **Example:**
 ```bash
-sawtools assign-agent-ids --count 5
-sawtools assign-agent-ids --count 9 --grouping '[["data"],["data"],["data"],["api"],["api"],["ui"],["ui"],["ui"],["ui"]]'
+polywave-tools assign-agent-ids --count 5
+polywave-tools assign-agent-ids --count 9 --grouping '[["data"],["data"],["data"],["api"],["api"],["ui"],["ui"],["ui"],["ui"]]'
 ```
 
 ---
@@ -1867,7 +1867,7 @@ sawtools assign-agent-ids --count 9 --grouping '[["data"],["data"],["data"],["ap
 Pattern-match build error logs against known catalogs and suggest fixes. Supports Go, Rust, JavaScript, TypeScript, and Python.
 
 ```
-sawtools diagnose-build-failure <error-log> --language <lang>
+polywave-tools diagnose-build-failure <error-log> --language <lang>
 ```
 
 **Arguments:**
@@ -1882,7 +1882,7 @@ sawtools diagnose-build-failure <error-log> --language <lang>
 
 **Example:**
 ```bash
-sawtools diagnose-build-failure /tmp/build-errors.log --language go
+polywave-tools diagnose-build-failure /tmp/build-errors.log --language go
 ```
 
 ---
@@ -1894,7 +1894,7 @@ sawtools diagnose-build-failure /tmp/build-errors.log --language go
 Mutate a living IMPL doc. Supports three modes: add a new wave, redirect an agent, or extend scope. Exactly one mode flag must be provided.
 
 ```
-sawtools amend-impl <manifest-path> <mode-flag> [flags]
+polywave-tools amend-impl <manifest-path> <mode-flag> [flags]
 ```
 
 **Arguments:**
@@ -1915,9 +1915,9 @@ sawtools amend-impl <manifest-path> <mode-flag> [flags]
 
 **Example:**
 ```bash
-sawtools amend-impl docs/IMPL/my-feature.yaml --add-wave
-sawtools amend-impl docs/IMPL/my-feature.yaml --redirect-agent B --wave 1 --new-task "Fix the handler"
-sawtools amend-impl docs/IMPL/my-feature.yaml --extend-scope
+polywave-tools amend-impl docs/IMPL/my-feature.yaml --add-wave
+polywave-tools amend-impl docs/IMPL/my-feature.yaml --redirect-agent B --wave 1 --new-task "Fix the handler"
+polywave-tools amend-impl docs/IMPL/my-feature.yaml --extend-scope
 ```
 
 ---
@@ -1927,7 +1927,7 @@ sawtools amend-impl docs/IMPL/my-feature.yaml --extend-scope
 Generate a single-agent retry IMPL doc targeting files that failed a quality gate. Implements the E24 verification loop. Does NOT execute the retry agent -- only generates the IMPL doc.
 
 ```
-sawtools retry <impl-doc> --wave <n> --gate-type <type> [flags]
+polywave-tools retry <impl-doc> --wave <n> --gate-type <type> [flags]
 ```
 
 **Arguments:**
@@ -1945,8 +1945,8 @@ sawtools retry <impl-doc> --wave <n> --gate-type <type> [flags]
 
 **Example:**
 ```bash
-sawtools retry docs/IMPL/my-feature.yaml --wave 1 --gate-type build
-sawtools retry docs/IMPL/my-feature.yaml --wave 2 --gate-type test --max-retries 3
+polywave-tools retry docs/IMPL/my-feature.yaml --wave 1 --gate-type build
+polywave-tools retry docs/IMPL/my-feature.yaml --wave 2 --gate-type test --max-retries 3
 ```
 
 ---
@@ -1956,7 +1956,7 @@ sawtools retry docs/IMPL/my-feature.yaml --wave 2 --gate-type test --max-retries
 Build structured retry context for a failed agent attempt. Reads the completion report, classifies the error type, and outputs actionable retry context.
 
 ```
-sawtools build-retry-context <manifest-path> --agent <id> [flags]
+polywave-tools build-retry-context <manifest-path> --agent <id> [flags]
 ```
 
 **Arguments:**
@@ -1972,8 +1972,8 @@ sawtools build-retry-context <manifest-path> --agent <id> [flags]
 
 **Example:**
 ```bash
-sawtools build-retry-context docs/IMPL/my-feature.yaml --agent B
-sawtools build-retry-context docs/IMPL/my-feature.yaml --agent B --attempt 2
+polywave-tools build-retry-context docs/IMPL/my-feature.yaml --agent B
+polywave-tools build-retry-context docs/IMPL/my-feature.yaml --agent B --attempt 2
 ```
 
 ---
@@ -1983,7 +1983,7 @@ sawtools build-retry-context docs/IMPL/my-feature.yaml --agent B --attempt 2
 Detect interrupted SAW sessions in the repository. Scans `docs/IMPL/` for manifests that are not complete or unsuitable, inspects completion reports and git worktrees.
 
 ```
-sawtools resume-detect
+polywave-tools resume-detect
 ```
 
 **Output:** JSON array of interrupted session details. Empty array if none found.
@@ -1992,7 +1992,7 @@ sawtools resume-detect
 
 **Example:**
 ```bash
-sawtools resume-detect
+polywave-tools resume-detect
 ```
 
 ---
@@ -2001,10 +2001,10 @@ sawtools resume-detect
 
 ### journal-init
 
-Initialize the journal directory structure (`.saw-state/journals/wave<N>/agent-<ID>/`) and cursor file for tracking Claude Code session log position.
+Initialize the journal directory structure (`.polywave-state/journals/wave<N>/agent-<ID>/`) and cursor file for tracking Claude Code session log position.
 
 ```
-sawtools journal-init <manifest-path> --wave <n> --agent <id>
+polywave-tools journal-init <manifest-path> --wave <n> --agent <id>
 ```
 
 **Arguments:**
@@ -2020,7 +2020,7 @@ sawtools journal-init <manifest-path> --wave <n> --agent <id>
 
 **Example:**
 ```bash
-sawtools journal-init docs/IMPL/my-feature.yaml --wave 1 --agent A
+polywave-tools journal-init docs/IMPL/my-feature.yaml --wave 1 --agent A
 ```
 
 ---
@@ -2030,7 +2030,7 @@ sawtools journal-init docs/IMPL/my-feature.yaml --wave 1 --agent A
 Manually sync the journal from Claude Code session logs and generate a markdown context summary for an agent. As of `journal-integration`, context generation runs **automatically** during `prepare-wave` and `prepare-agent` — this command is now primarily for manual inspection or regeneration.
 
 ```
-sawtools journal-context <manifest-path> --wave <n> --agent <id> [flags]
+polywave-tools journal-context <manifest-path> --wave <n> --agent <id> [flags]
 ```
 
 **Arguments:**
@@ -2050,12 +2050,12 @@ sawtools journal-context <manifest-path> --wave <n> --agent <id> [flags]
 - `journal_context_available` (bool) — `true` when prior session history exists
 - `journal_context_file` (string) — absolute path to the generated `context.md`
 
-The Orchestrator reads these fields and prepends the context file contents to the agent's launch prompt when `journal_context_available` is `true` (see step 6 in `saw-skill.md`).
+The Orchestrator reads these fields and prepends the context file contents to the agent's launch prompt when `journal_context_available` is `true` (see step 6 in `polywave-skill.md`).
 
 **Example:**
 ```bash
-sawtools journal-context docs/IMPL/my-feature.yaml --wave 1 --agent A
-sawtools journal-context docs/IMPL/my-feature.yaml --wave 1 --agent A --max-entries 50
+polywave-tools journal-context docs/IMPL/my-feature.yaml --wave 1 --agent A
+polywave-tools journal-context docs/IMPL/my-feature.yaml --wave 1 --agent A --max-entries 50
 ```
 
 ---
@@ -2065,7 +2065,7 @@ sawtools journal-context docs/IMPL/my-feature.yaml --wave 1 --agent A --max-entr
 Inspect tool execution journal for a specific agent. Supports multiple output modes.
 
 ```
-sawtools debug-journal <agent-path> [flags]
+polywave-tools debug-journal <agent-path> [flags]
 ```
 
 **Arguments:**
@@ -2084,11 +2084,11 @@ sawtools debug-journal <agent-path> [flags]
 
 **Example:**
 ```bash
-sawtools debug-journal wave1/agent-A
-sawtools debug-journal wave1/agent-A --summary
-sawtools debug-journal wave1/agent-A --failures-only
-sawtools debug-journal wave1/agent-A --last 20
-sawtools debug-journal wave1/agent-A --export timeline.html
+polywave-tools debug-journal wave1/agent-A
+polywave-tools debug-journal wave1/agent-A --summary
+polywave-tools debug-journal wave1/agent-A --failures-only
+polywave-tools debug-journal wave1/agent-A --last 20
+polywave-tools debug-journal wave1/agent-A --export timeline.html
 ```
 
 ---
@@ -2100,7 +2100,7 @@ sawtools debug-journal wave1/agent-A --export timeline.html
 Run the SAW daemon loop that continuously monitors the IMPL queue, runs Scout/Wave cycles, auto-remediates failures, and advances the queue.
 
 ```
-sawtools daemon [flags]
+polywave-tools daemon [flags]
 ```
 
 **Flags:**
@@ -2114,9 +2114,9 @@ sawtools daemon [flags]
 
 **Example:**
 ```bash
-sawtools daemon
-sawtools daemon --autonomy supervised --poll-interval 10s
-sawtools daemon --model claude-opus-4-6
+polywave-tools daemon
+polywave-tools daemon --autonomy supervised --poll-interval 10s
+polywave-tools daemon --model claude-opus-4-6
 ```
 
 ---
@@ -2130,7 +2130,7 @@ Manage the IMPL execution queue. Has three subcommands: `add`, `list`, and `next
 Add an item to the execution queue.
 
 ```
-sawtools queue add [flags]
+polywave-tools queue add [flags]
 ```
 
 **Flags:**
@@ -2145,7 +2145,7 @@ sawtools queue add [flags]
 List all items in the execution queue, sorted by priority.
 
 ```
-sawtools queue list
+polywave-tools queue list
 ```
 
 **Output:** JSON array of queue items with `slug`, `title`, `priority`, and `status`.
@@ -2155,16 +2155,16 @@ sawtools queue list
 Get the next eligible item from the execution queue.
 
 ```
-sawtools queue next
+polywave-tools queue next
 ```
 
 **Output:** JSON with next item's `slug`, `title`, `priority`, or `{"next": null}` if queue is empty.
 
 **Example:**
 ```bash
-sawtools queue add --title "Add audit logging" --priority 10 --description "Add logging to auth module"
-sawtools queue list
-sawtools queue next
+polywave-tools queue add --title "Add audit logging" --priority 10 --description "Add logging to auth module"
+polywave-tools queue list
+polywave-tools queue next
 ```
 
 ---
@@ -2176,7 +2176,7 @@ sawtools queue next
 Show cost and performance metrics for an IMPL from the observability store.
 
 ```
-sawtools metrics <impl-slug> [flags]
+polywave-tools metrics <impl-slug> [flags]
 ```
 
 **Arguments:**
@@ -2185,7 +2185,7 @@ sawtools metrics <impl-slug> [flags]
 **Flags:**
 - `--program` -- show program-level summary instead of IMPL metrics
 - `--breakdown` -- show per-agent cost breakdown (default: false)
-- `--store` -- store DSN (default: `~/.saw/observability.db`)
+- `--store` -- store DSN (default: `~/.polywave/observability.db`)
 
 **Output:** Human-readable table with cost, duration, success rate, and agent stats. With `--breakdown`, includes per-agent cost table.
 
@@ -2193,9 +2193,9 @@ sawtools metrics <impl-slug> [flags]
 
 **Example:**
 ```bash
-sawtools metrics my-feature
-sawtools metrics my-feature --breakdown
-sawtools metrics --program my-program
+polywave-tools metrics my-feature
+polywave-tools metrics my-feature --breakdown
+polywave-tools metrics --program my-program
 ```
 
 ---
@@ -2208,7 +2208,7 @@ Query observability data with various subcommands and filters.
 - `events` -- Query observability events
 
 ```
-sawtools query events [flags]
+polywave-tools query events [flags]
 ```
 
 **Flags:**
@@ -2219,7 +2219,7 @@ sawtools query events [flags]
 - `--since` -- time range (e.g., `24h`, `7d`, `30d`)
 - `--format` -- output format: `table`, `json`, or `csv` (default: `table`)
 - `--limit` -- max results to return (default: 100)
-- `--store` -- store DSN (default: `~/.saw/observability.db`)
+- `--store` -- store DSN (default: `~/.polywave/observability.db`)
 
 **Output:** Events in the selected format (table, JSON, or CSV).
 
@@ -2227,9 +2227,9 @@ sawtools query events [flags]
 
 **Example:**
 ```bash
-sawtools query events --type cost --since 7d
-sawtools query events --impl my-feature --format json
-sawtools query events --agent A --since 24h --limit 50
+polywave-tools query events --type cost --since 7d
+polywave-tools query events --impl my-feature --format json
+polywave-tools query events --agent A --since 24h --limit 50
 ```
 
 ---
@@ -2241,7 +2241,7 @@ sawtools query events --agent A --since 24h --limit 50
 Verify a tier gate for a PROGRAM manifest. Checks that all IMPLs in the specified tier are complete and all required quality gates pass.
 
 ```
-sawtools tier-gate <program-manifest> --tier <n> [flags]
+polywave-tools tier-gate <program-manifest> --tier <n> [flags]
 ```
 
 **Arguments:**
@@ -2257,8 +2257,8 @@ sawtools tier-gate <program-manifest> --tier <n> [flags]
 
 **Example:**
 ```bash
-sawtools tier-gate docs/PROGRAM.yaml --tier 1
-sawtools tier-gate docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
+polywave-tools tier-gate docs/PROGRAM.yaml --tier 1
+polywave-tools tier-gate docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
 ```
 
 ---
@@ -2268,7 +2268,7 @@ sawtools tier-gate docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
 Freeze program contracts at a tier boundary. Verifies that contract source files exist and are committed to HEAD, then updates the manifest's contract state.
 
 ```
-sawtools freeze-contracts <program-manifest> --tier <n> [flags]
+polywave-tools freeze-contracts <program-manifest> --tier <n> [flags]
 ```
 
 **Arguments:**
@@ -2284,8 +2284,8 @@ sawtools freeze-contracts <program-manifest> --tier <n> [flags]
 
 **Example:**
 ```bash
-sawtools freeze-contracts docs/PROGRAM.yaml --tier 1
-sawtools freeze-contracts docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
+polywave-tools freeze-contracts docs/PROGRAM.yaml --tier 1
+polywave-tools freeze-contracts docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
 ```
 
 ---
@@ -2295,7 +2295,7 @@ sawtools freeze-contracts docs/PROGRAM.yaml --tier 2 --repo-dir /path/to/repo
 Re-engage the Planner agent to revise a PROGRAM manifest. Used when a tier gate fails or a user explicitly requests re-planning.
 
 ```
-sawtools program-replan <program-manifest> --reason <text> [flags]
+polywave-tools program-replan <program-manifest> --reason <text> [flags]
 ```
 
 **Arguments:**
@@ -2312,9 +2312,9 @@ sawtools program-replan <program-manifest> --reason <text> [flags]
 
 **Example:**
 ```bash
-sawtools program-replan docs/PROGRAM.yaml --reason "Tier 2 gate failed: integration tests failing"
-sawtools program-replan docs/PROGRAM.yaml --reason "User-initiated replan" --tier 0
-sawtools program-replan docs/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --model claude-opus-4-6
+polywave-tools program-replan docs/PROGRAM.yaml --reason "Tier 2 gate failed: integration tests failing"
+polywave-tools program-replan docs/PROGRAM.yaml --reason "User-initiated replan" --tier 0
+polywave-tools program-replan docs/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --model claude-opus-4-6
 ```
 
 ---
@@ -2324,7 +2324,7 @@ sawtools program-replan docs/PROGRAM.yaml --reason "Blocked IMPL" --tier 3 --mod
 Execute a PROGRAM manifest through the tier loop (E28-E34). Launches parallel Scouts for pending IMPLs, executes waves, runs tier gates, freezes contracts, and advances through tiers. Events are streamed as JSON lines for observability.
 
 ```
-sawtools program-execute <program-manifest> [flags]
+polywave-tools program-execute <program-manifest> [flags]
 ```
 
 **Arguments:**
@@ -2340,9 +2340,9 @@ sawtools program-execute <program-manifest> [flags]
 
 **Example:**
 ```bash
-sawtools program-execute docs/PROGRAM.yaml
-sawtools program-execute docs/PROGRAM.yaml --auto
-sawtools program-execute docs/PROGRAM.yaml --auto --model claude-opus-4-6
+polywave-tools program-execute docs/PROGRAM.yaml
+polywave-tools program-execute docs/PROGRAM.yaml --auto
+polywave-tools program-execute docs/PROGRAM.yaml --auto --model claude-opus-4-6
 ```
 
 ---
@@ -2352,7 +2352,7 @@ sawtools program-execute docs/PROGRAM.yaml --auto --model claude-opus-4-6
 Auto-generate a PROGRAM manifest from existing IMPL docs. Uses cross-IMPL conflict detection to automatically assign tiers so that IMPLs with overlapping file ownership are placed in separate tiers.
 
 ```
-sawtools create-program [flags]
+polywave-tools create-program [flags]
 ```
 
 **Flags:**
@@ -2366,8 +2366,8 @@ sawtools create-program [flags]
 
 **Example:**
 ```bash
-sawtools create-program --from-impls feature-a --from-impls feature-b
-sawtools create-program --from-impls feature-a --from-impls feature-b --slug my-program --title "My Program"
+polywave-tools create-program --from-impls feature-a --from-impls feature-b
+polywave-tools create-program --from-impls feature-a --from-impls feature-b --slug my-program --title "My Program"
 ```
 
 ---
@@ -2377,7 +2377,7 @@ sawtools create-program --from-impls feature-a --from-impls feature-b --slug my-
 Check for file ownership conflicts across IMPL docs. Loads IMPL docs by slug, extracts `file_ownership` entries, and detects overlapping files.
 
 ```
-sawtools check-impl-conflicts [flags]
+polywave-tools check-impl-conflicts [flags]
 ```
 
 **Flags:**
@@ -2389,7 +2389,7 @@ sawtools check-impl-conflicts [flags]
 
 **Example:**
 ```bash
-sawtools check-impl-conflicts --impls feature-a --impls feature-b
+polywave-tools check-impl-conflicts --impls feature-a --impls feature-b
 ```
 
 ---
@@ -2399,7 +2399,7 @@ sawtools check-impl-conflicts --impls feature-a --impls feature-b
 Detect file ownership conflicts across IMPLs in a specific program tier.
 
 ```
-sawtools check-program-conflicts <program-manifest> --tier <n>
+polywave-tools check-program-conflicts <program-manifest> --tier <n>
 ```
 
 **Arguments:**
@@ -2414,7 +2414,7 @@ sawtools check-program-conflicts <program-manifest> --tier <n>
 
 **Example:**
 ```bash
-sawtools check-program-conflicts docs/PROGRAM.yaml --tier 1
+polywave-tools check-program-conflicts docs/PROGRAM.yaml --tier 1
 ```
 
 ---
@@ -2424,7 +2424,7 @@ sawtools check-program-conflicts docs/PROGRAM.yaml --tier 1
 Import existing IMPL documents into a PROGRAM manifest for tiered execution. Supports both explicit import and auto-discovery. Computes tier assignments based on file ownership overlap.
 
 ```
-sawtools import-impls [flags]
+polywave-tools import-impls [flags]
 ```
 
 **Flags:**
@@ -2441,8 +2441,8 @@ sawtools import-impls [flags]
 
 **Example:**
 ```bash
-sawtools import-impls --program PROGRAM-my-feature.yaml --discover
-sawtools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml --from-impls IMPL-b.yaml
+polywave-tools import-impls --program PROGRAM-my-feature.yaml --discover
+polywave-tools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml --from-impls IMPL-b.yaml
 ```
 
 ---
@@ -2452,7 +2452,7 @@ sawtools import-impls --program PROGRAM-my-feature.yaml --from-impls IMPL-a.yaml
 Update the status of a specific IMPL entry in a PROGRAM manifest. The IMPL is identified by its slug field.
 
 ```
-sawtools update-program-impl <program-manifest> --impl <slug> --status <status>
+polywave-tools update-program-impl <program-manifest> --impl <slug> --status <status>
 ```
 
 **Arguments:**
@@ -2468,7 +2468,7 @@ sawtools update-program-impl <program-manifest> --impl <slug> --status <status>
 
 **Example:**
 ```bash
-sawtools update-program-impl docs/PROGRAM.yaml --impl my-feature --status complete
+polywave-tools update-program-impl docs/PROGRAM.yaml --impl my-feature --status complete
 ```
 
 ---
@@ -2478,7 +2478,7 @@ sawtools update-program-impl docs/PROGRAM.yaml --impl my-feature --status comple
 Update the state field of a PROGRAM manifest.
 
 ```
-sawtools update-program-state <program-manifest> --state <state>
+polywave-tools update-program-state <program-manifest> --state <state>
 ```
 
 **Arguments:**
@@ -2493,18 +2493,18 @@ sawtools update-program-state <program-manifest> --state <state>
 
 **Example:**
 ```bash
-sawtools update-program-state docs/PROGRAM.yaml --state REVIEWED
-sawtools update-program-state docs/PROGRAM.yaml --state TIER_EXECUTING
+polywave-tools update-program-state docs/PROGRAM.yaml --state REVIEWED
+polywave-tools update-program-state docs/PROGRAM.yaml --state TIER_EXECUTING
 ```
 
 ---
 
 ### create-program-worktrees
 
-Create IMPL branches and worktrees for all IMPLs in a program tier. Branch naming follows `saw/program/{program-slug}/tier{N}-impl-{impl-slug}`. These branches serve as merge targets for all wave executions within each IMPL.
+Create IMPL branches and worktrees for all IMPLs in a program tier. Branch naming follows `polywave/program/{program-slug}/tier{N}-impl-{impl-slug}`. These branches serve as merge targets for all wave executions within each IMPL.
 
 ```
-sawtools create-program-worktrees <program-manifest> --tier <n>
+polywave-tools create-program-worktrees <program-manifest> --tier <n>
 ```
 
 **Arguments:**
@@ -2519,8 +2519,8 @@ sawtools create-program-worktrees <program-manifest> --tier <n>
 
 **Example:**
 ```bash
-sawtools create-program-worktrees docs/PROGRAM.yaml --tier 1
-sawtools create-program-worktrees program.yaml --tier 2 --repo-dir /path/to/repo
+polywave-tools create-program-worktrees docs/PROGRAM.yaml --tier 1
+polywave-tools create-program-worktrees program.yaml --tier 2 --repo-dir /path/to/repo
 ```
 
 ---
@@ -2530,7 +2530,7 @@ sawtools create-program-worktrees program.yaml --tier 2 --repo-dir /path/to/repo
 Prepare a program tier for execution. Checks for file ownership conflicts across IMPLs, validates each IMPL doc (with auto-corrections), and creates IMPL branches for all IMPLs in the tier. Counterpart to `finalize-tier`.
 
 ```
-sawtools prepare-tier <program-manifest> --tier <n>
+polywave-tools prepare-tier <program-manifest> --tier <n>
 ```
 
 **Arguments:**
@@ -2545,8 +2545,8 @@ sawtools prepare-tier <program-manifest> --tier <n>
 
 **Example:**
 ```bash
-sawtools prepare-tier docs/PROGRAM.yaml --tier 1
-sawtools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
+polywave-tools prepare-tier docs/PROGRAM.yaml --tier 1
+polywave-tools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
 ```
 
 ---
@@ -2556,7 +2556,7 @@ sawtools prepare-tier program.yaml --tier 2 --repo-dir /path/to/repo
 Finalize a program tier by merging all IMPL branches into main in sequence, then running tier-level quality gates. Stops on the first merge failure. With `--auto`, automatically advances to the next tier after the gate passes.
 
 ```
-sawtools finalize-tier <program-manifest> --tier <n> [flags]
+polywave-tools finalize-tier <program-manifest> --tier <n> [flags]
 ```
 
 **Arguments:**
@@ -2572,9 +2572,9 @@ sawtools finalize-tier <program-manifest> --tier <n> [flags]
 
 **Example:**
 ```bash
-sawtools finalize-tier docs/PROGRAM.yaml --tier 1
-sawtools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
-sawtools finalize-tier program.yaml --tier 1 --auto
+polywave-tools finalize-tier docs/PROGRAM.yaml --tier 1
+polywave-tools finalize-tier program.yaml --tier 2 --repo-dir /path/to/repo
+polywave-tools finalize-tier program.yaml --tier 1 --auto
 ```
 
 ---

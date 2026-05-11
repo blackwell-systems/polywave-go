@@ -289,7 +289,7 @@ Explicit prefix overrides `BackendConfig.Kind`.
 | `api` / `anthropic` | `apiclient` (Anthropic Messages API) | Default; uses `ANTHROPIC_API_KEY` |
 | `openai` | `openaibackend` (OpenAI-compatible) | Uses `OpenAIKey` or `OPENAI_API_KEY`; supports `BaseURL` override |
 | `bedrock` | `bedrockbackend` (AWS Bedrock SDK) | Auto-expands short model names to Bedrock inference profile IDs |
-| `cli` | `cliclient` (shells out to Claude CLI) | Uses `SAW_CLI_BINARY` env var |
+| `cli` | `cliclient` (shells out to Claude CLI) | Uses `POLYWAVE_CLI_BINARY` env var |
 | `ollama` | `openaibackend` with localhost:11434 | OpenAI-compatible API, no API key |
 | `lmstudio` | `openaibackend` with localhost:1234 | OpenAI-compatible API |
 | `auto` / `""` | Anthropic API if key present, else CLI | Fallback logic |
@@ -418,7 +418,7 @@ the IMPL manifest's `quality_gates:` section:
 
 `engine.FinalizeWave()` (in `pkg/engine/finalize.go`) is the engine-level
 post-agent finalization pipeline. It is the Go equivalent of the CLI's
-`sawtools finalize-wave` command.
+`polywave-tools finalize-wave` command.
 
 ### Pipeline Steps
 
@@ -508,7 +508,7 @@ exist.
 recovery:
 
 - **`PrepareAgentContext()`** -- loads journal history from
-  `.saw-state/wave{N}/agent-{ID}/index.jsonl` and generates context markdown
+  `.polywave-state/wave{N}/agent-{ID}/index.jsonl` and generates context markdown
   for agent recovery. Returns empty string on first launch.
 - **`WriteJournalEntry()`** -- appends tool use/result entries to the agent's
   journal in JSONL format. Creates directory structure on first write.
@@ -728,7 +728,7 @@ agent launch order within a wave based on dependency graph analysis.
    - File count (ascending) -- fewer files = lower implementation risk
    - Original declaration order (stable sort for ties)
 
-Single-agent waves skip sorting. Disabled via `SAW_NO_PRIORITIZE=1` env var.
+Single-agent waves skip sorting. Disabled via `POLYWAVE_NO_PRIORITIZE=1` env var.
 
 The orchestrator publishes an `agent_prioritized` event showing original vs.
 reordered launch sequence.

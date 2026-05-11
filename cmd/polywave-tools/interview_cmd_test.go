@@ -234,7 +234,7 @@ func TestInterviewCmd_NonInteractive_ShortFlow(t *testing.T) {
 	if !strings.Contains(output, "Interview doc saved to") {
 		t.Errorf("expected 'Interview doc saved to' in output, got: %s", output)
 	}
-	if !strings.Contains(output, "Next step: /saw bootstrap or /saw scout") {
+	if !strings.Contains(output, "Next step: /polywave bootstrap or /polywave scout") {
 		t.Errorf("expected next step guidance in output, got: %s", output)
 	}
 
