@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Polywave" width="600">
+</p>
+
 # polywave-go
 
 [![Blackwell Systems™](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
