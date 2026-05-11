@@ -21,9 +21,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Install polywave-tools
-        run: |
-          go build -o polywave-tools ./cmd/polywave-tools/
-          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+        run: go install ./cmd/polywave-tools/
 
       - name: Run tests before release
         run: go test ./...
