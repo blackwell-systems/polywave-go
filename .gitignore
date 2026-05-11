@@ -2,14 +2,14 @@
 /saw
 /sawtools
 
-# SAW ephemeral state (machine-specific, per-session)
+# Polywave ephemeral state (machine-specific, per-session)
 .claude/worktrees/
-.saw-state/
-.saw-agent-brief.md
-docs/IMPL/.saw-state/
+.polywave-state/
+.polywave-agent-brief.md
+docs/IMPL/.polywave-state/
 *.bak
 
-# SAW-managed go workspace files (created/restored by prepare-wave/finalize-wave)
+# Polywave-managed go workspace files (created/restored by prepare-wave/finalize-wave)
 go.work
 go.work.sum
 inspections/

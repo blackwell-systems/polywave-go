@@ -232,7 +232,7 @@ func Save(repoPath string, cfg *PolywaveConfig) result.Result[bool] {
 	}
 
 	// Atomic write: temp file + rename.
-	tmpFile, err := os.CreateTemp(repoPath, ".saw-config-*.tmp")
+	tmpFile, err := os.CreateTemp(repoPath, ".polywave-config-*.tmp")
 	if err != nil {
 		return result.NewFailure[bool]([]result.PolywaveError{
 			result.NewError(result.CodeConfigIOFailed, "failed to create temp file: "+err.Error()),

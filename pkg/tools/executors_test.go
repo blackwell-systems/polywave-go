@@ -235,12 +235,12 @@ func TestFileListExecutor_ListsDirectory(t *testing.T) {
 // BashExecutor git ownership tests
 func TestBashExecutor_GitOwnershipWarning(t *testing.T) {
 	tmpDir := t.TempDir()
-	// Create .saw-ownership.json
+	// Create .polywave-ownership.json
 	ownership := map[string]interface{}{
 		"owned_files": []string{"owned.txt"},
 	}
 	ownershipJSON, _ := json.Marshal(ownership)
-	os.WriteFile(filepath.Join(tmpDir, ".saw-ownership.json"), ownershipJSON, 0o644)
+	os.WriteFile(filepath.Join(tmpDir, ".polywave-ownership.json"), ownershipJSON, 0o644)
 
 	// Initialize git repo
 	exec.Command("git", "init", tmpDir).Run()

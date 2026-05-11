@@ -201,7 +201,7 @@ func addBuildTestKeysInternal(configPath string, project detectedProject) error 
 
 	// Atomic write.
 	dir := filepath.Dir(configPath)
-	tmpFile, err := os.CreateTemp(dir, ".saw-config-*.tmp")
+	tmpFile, err := os.CreateTemp(dir, ".polywave-config-*.tmp")
 	if err != nil {
 		return err
 	}

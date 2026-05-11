@@ -430,7 +430,7 @@ The rationale: detecting collisions before launch is cheaper than discovering th
 At the SubagentStop lifecycle event, a hook validates that the completing agent has fulfilled its protocol obligations before the agent session closes. The hook identifies Polywave agents by parsing the `[PW:...]` tag from `agent_description` and runs agent-type-specific checks. Non-Polywave agents pass through immediately (exit 0).
 
 Validation matrix by agent type:
-- **Wave agents:** I1 ownership verification (`git diff --name-only` vs `.saw-ownership.json`), I5 commit verification (at least 1 commit ahead of merge base), completion report presence in IMPL doc.
+- **Wave agents:** I1 ownership verification (`git diff --name-only` vs `.polywave-ownership.json`), I5 commit verification (at least 1 commit ahead of merge base), completion report presence in IMPL doc.
 - **Critic agents:** `critic_report:` field present with `verdict`, `agents_reviewed`, and `issues` keys.
 - **Scout agents:** IMPL doc exists at expected path and passes `polywave-tools validate`.
 - **Scaffold agents:** All scaffold entries have `status: committed (...)`.

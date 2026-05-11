@@ -47,7 +47,7 @@ type PrepareAgentResult struct {
 }
 
 // PrepareAgent performs all prepare-agent work: parse IMPL doc, find agent task,
-// build brief, write .polywave-agent-brief.md and .saw-ownership.json, detect
+// build brief, write .polywave-agent-brief.md and .polywave-ownership.json, detect
 // context_source, persist to IMPL doc, initialize journal observer.
 func PrepareAgent(ctx context.Context, opts PrepareAgentOpts) result.Result[PrepareAgentResult] {
 	var res PrepareAgentResult
@@ -204,7 +204,7 @@ polywave_name: %s
 		ownedFiles = append(ownedFiles, f)
 	}
 
-	// Write .saw-ownership.json to the same directory as the brief.
+	// Write .polywave-ownership.json to the same directory as the brief.
 	// The check_wave_ownership PreToolUse hook reads this at write time.
 	type ownershipManifest struct {
 		Agent      string   `json:"agent"`
@@ -220,7 +220,7 @@ polywave_name: %s
 		OwnedFiles: ownedFiles,
 		RepoRoot:   opts.ProjectRoot,
 	}, "", "  ")
-	ownershipPath := filepath.Join(filepath.Dir(briefPath), ".saw-ownership.json")
+	ownershipPath := filepath.Join(filepath.Dir(briefPath), ".polywave-ownership.json")
 	if err := os.WriteFile(ownershipPath, ownershipData, 0644); err != nil {
 		return result.NewFailure[PrepareAgentResult]([]result.PolywaveError{
 			result.NewFatal(result.CodePrepareWaveFailed, fmt.Sprintf("failed to write ownership manifest: %v", err)),

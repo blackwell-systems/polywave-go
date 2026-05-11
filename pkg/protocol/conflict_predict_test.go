@@ -158,7 +158,7 @@ func TestPredictConflictsFromReports_IMPLFilesIgnored(t *testing.T) {
 	}
 }
 
-func TestPredictConflictsFromReports_SawStateFilesIgnored(t *testing.T) {
+func TestPredictConflictsFromReports_PolywaveStateFilesIgnored(t *testing.T) {
 	manifest := &IMPLManifest{
 		Waves: []Wave{
 			{

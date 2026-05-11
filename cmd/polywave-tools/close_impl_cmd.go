@@ -106,8 +106,8 @@ Examples:
 
 			// Step 5: Clean .polywave-state wave directories
 			stateCleanedCount := 0
-			sawStatePath := protocol.PolywaveStateDir(projectRoot)
-			if entries, err := os.ReadDir(sawStatePath); err == nil {
+			statePath := protocol.PolywaveStateDir(projectRoot)
+			if entries, err := os.ReadDir(statePath); err == nil {
 				// Check if any active IMPLs exist in this repo
 				activeIMPLs := 0
 				implDir := protocol.IMPLDir(projectRoot)
@@ -122,7 +122,7 @@ Examples:
 				if activeIMPLs == 0 {
 					for _, e := range entries {
 						if e.IsDir() && (len(e.Name()) >= 4 && e.Name()[:4] == "wave" || e.Name() == "archive") {
-							_ = os.RemoveAll(filepath.Join(sawStatePath, e.Name()))
+							_ = os.RemoveAll(filepath.Join(statePath, e.Name()))
 							stateCleanedCount++
 						}
 					}
@@ -147,12 +147,12 @@ Examples:
 						restoreBranch = manifest.OriginalBranch
 					} else {
 						// 2. Fall back to .polywave-state prepare-result.json
-						if entries, err := os.ReadDir(sawStatePath); err == nil {
+						if entries, err := os.ReadDir(statePath); err == nil {
 							for _, e := range entries {
 								if !e.IsDir() || len(e.Name()) < 4 || e.Name()[:4] != "wave" {
 									continue
 								}
-								data, err := os.ReadFile(filepath.Join(sawStatePath, e.Name(), "prepare-result.json"))
+								data, err := os.ReadFile(filepath.Join(statePath, e.Name(), "prepare-result.json"))
 								if err != nil {
 									continue
 								}

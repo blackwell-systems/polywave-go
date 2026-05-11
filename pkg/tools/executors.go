@@ -117,7 +117,7 @@ func (e *BashExecutor) Execute(ctx context.Context, execCtx ExecutionContext, in
 	}
 
 	// I1 layer 2: after git commands that can modify files, check for ownership violations.
-	// Reads .saw-ownership.json from working directory (same as CLI hook approach).
+	// Reads .polywave-ownership.json from working directory (same as CLI hook approach).
 	if isGitModifyCommand(command) {
 		if ownedFiles := loadOwnershipFromWorkDir(execCtx.WorkDir); len(ownedFiles) > 0 {
 			if warning := checkGitOwnershipViolations(execCtx.WorkDir, ownedFiles); warning != "" {
@@ -174,10 +174,10 @@ func checkGitOwnershipViolations(workDir string, ownedFiles map[string]bool) str
 	)
 }
 
-// loadOwnershipFromWorkDir reads .saw-ownership.json from the working directory
-// and returns the owned files map. Returns nil if not in a SAW context.
+// loadOwnershipFromWorkDir reads .polywave-ownership.json from the working directory
+// and returns the owned files map. Returns nil if not in a Polywave context.
 func loadOwnershipFromWorkDir(workDir string) map[string]bool {
-	data, err := os.ReadFile(filepath.Join(workDir, ".saw-ownership.json"))
+	data, err := os.ReadFile(filepath.Join(workDir, ".polywave-ownership.json"))
 	if err != nil {
 		return nil // Not in a Polywave worktree
 	}
