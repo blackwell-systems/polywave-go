@@ -2,7 +2,7 @@
   <img src="assets/logo.png" alt="Polywave" width="600">
 </p>
 
-# polywave-go
+<h1 align="center">polywave-go</h1>
 
 <p align="center">
   <a href="https://github.com/blackwell-systems"><img src="https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg" alt="Blackwell Systems" /></a>
@@ -11,7 +11,7 @@
   <a href="https://buymeacoffee.com/blackwellsystems"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg" alt="Buy Me A Coffee" /></a>
 </p>
 
-Go engine, Protocol SDK, and `polywave-tools` CLI for Polywave: a coordination protocol for parallel AI agent development that makes merge conflicts structurally impossible when work can be decomposed safely.
+<p align="center">Go engine, Protocol SDK, and <code>polywave-tools</code> CLI for Polywave: a coordination protocol for parallel AI agent development that makes merge conflicts structurally impossible when work can be decomposed safely.</p>
 
 > **Using Claude Code?** Start at [polywave](https://github.com/blackwell-systems/polywave) for the Agent Skill and install guide. This repo provides the engine and CLI that the skill depends on.
 
