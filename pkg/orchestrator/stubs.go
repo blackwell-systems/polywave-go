@@ -25,11 +25,11 @@ func loggerFrom(l *slog.Logger) *slog.Logger {
 // wave agent completion reports, invokes scan-stubs.sh, and appends the
 // ## Stub Report — Wave {N} section to the IMPL doc at implDocPath.
 //
-// sawRepoPath locates scan-stubs.sh: falls back to $POLYWAVE_REPO env var, then
+// polywaveRepoPath locates scan-stubs.sh: falls back to $POLYWAVE_REPO env var, then
 // ~/code/polywave (same fallback as RunScout).
 //
 // Always returns success — stub detection is informational only (E20).
-func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, sawRepoPath string, logger *slog.Logger) result.Result[RunStubData] {
+func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports map[string]*protocol.CompletionReport, polywaveRepoPath string, logger *slog.Logger) result.Result[RunStubData] {
 	log := loggerFrom(logger)
 	// 1. Collect the union of all FilesChanged and FilesCreated, deduplicated,
 	//    skipping any files under docs/IMPL/.
@@ -56,21 +56,21 @@ func RunStubScan(ctx context.Context, implDocPath string, waveNum int, reports m
 		}
 	}
 
-	// 2. Resolve sawRepoPath.
-	if sawRepoPath == "" {
-		sawRepoPath = os.Getenv("POLYWAVE_REPO")
+	// 2. Resolve polywaveRepoPath.
+	if polywaveRepoPath == "" {
+		polywaveRepoPath = os.Getenv("POLYWAVE_REPO")
 	}
-	if sawRepoPath == "" {
+	if polywaveRepoPath == "" {
 		homeDir, err := os.UserHomeDir()
 		if err != nil {
 			log.Warn("RunStubScan: could not determine home dir", "err", err)
 			homeDir = "~"
 		}
-		sawRepoPath = filepath.Join(homeDir, "code", "polywave")
+		polywaveRepoPath = filepath.Join(homeDir, "code", "polywave")
 	}
 
 	// 3. Locate scan-stubs.sh.
-	scriptPath := filepath.Join(sawRepoPath, "implementations", "claude-code", "scripts", "scan-stubs.sh")
+	scriptPath := filepath.Join(polywaveRepoPath, "implementations", "claude-code", "scripts", "scan-stubs.sh")
 
 	// 4. If the script does not exist, write a stub report noting the missing script.
 	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {

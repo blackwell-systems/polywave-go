@@ -196,7 +196,7 @@ func checkSkillDirectory() InstallCheck {
 		}
 	}
 
-	skillDir := filepath.Join(home, ".claude", "skills", "saw")
+	skillDir := filepath.Join(home, ".claude", "skills", "polywave")
 	if info, err := os.Stat(skillDir); err != nil || !info.IsDir() {
 		return InstallCheck{
 			Name:   "skill_directory",
@@ -222,7 +222,7 @@ func checkSkillFiles() InstallCheck {
 		}
 	}
 
-	skillDir := filepath.Join(home, ".claude", "skills", "saw")
+	skillDir := filepath.Join(home, ".claude", "skills", "polywave")
 	// Update this list when skill files are added or renamed.
 	required := []string{"SKILL.md", "agent-template.md", "polywave-bootstrap.md"}
 	var missing []string

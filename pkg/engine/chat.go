@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/polywave-go/pkg/orchestrator"
@@ -33,19 +32,11 @@ func RunChat(ctx context.Context, opts RunChatOpts, onChunk func(string)) result
 	}
 
 	// Resolve Polywave repo path.
-	polywaveRepo := opts.PolywaveRepoPath
-	if polywaveRepo == "" {
-		polywaveRepo = os.Getenv("POLYWAVE_REPO")
+	polywaveRepo, resolveErr := resolvePolywaveRepo(opts.PolywaveRepoPath)
+	if resolveErr != nil {
+		return result.NewFailure[ChatData]([]result.PolywaveError{*resolveErr})
 	}
-	if polywaveRepo == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return result.NewFailure[ChatData]([]result.PolywaveError{
-				result.NewFatal(result.CodeChatFailed, "engine.RunChat: cannot determine home directory").WithCause(err),
-			})
-		}
-		polywaveRepo = filepath.Join(home, "code", "polywave")
-	}
+	_ = polywaveRepo // currently unused but resolved for future prompt loading
 
 	// Build system prompt with IMPL doc context and instructions.
 	systemPrompt := fmt.Sprintf(`You are an expert software architect answering questions about a Polywave IMPL doc.

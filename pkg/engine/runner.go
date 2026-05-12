@@ -70,22 +70,13 @@ func RunScout(ctx context.Context, opts RunScoutOpts, onChunk func(string)) resu
 	}
 
 	// Resolve Polywave repo path.
-	polywaveRepo := opts.PolywaveRepoPath
-	if polywaveRepo == "" {
-		polywaveRepo = os.Getenv("POLYWAVE_REPO")
-	}
-	if polywaveRepo == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return result.NewFailure[ScoutData]([]result.PolywaveError{
-				result.NewFatal(result.CodeScoutRunFailed, "engine.RunScout: cannot determine home directory").WithCause(err),
-			})
-		}
-		polywaveRepo = filepath.Join(home, "code", "polywave")
+	polywaveRepo, resolveErr := resolvePolywaveRepo(opts.PolywaveRepoPath)
+	if resolveErr != nil {
+		return result.NewFailure[ScoutData]([]result.PolywaveError{*resolveErr})
 	}
 
 	// Load scout.md prompt (L1: no fallback — missing file is a fatal error).
-	scoutMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "scout.md")
+	scoutMdPath := agentPromptPath(polywaveRepo, "scout.md")
 	scoutMdRes := LoadTypePromptWithRefs(scoutMdPath)
 	if scoutMdRes.IsFatal() {
 		return result.NewFailure[ScoutData]([]result.PolywaveError{
@@ -202,22 +193,13 @@ func RunPlanner(ctx context.Context, opts RunPlannerOpts, onChunk func(string)) 
 		})
 	}
 
-	polywaveRepo := opts.PolywaveRepoPath
-	if polywaveRepo == "" {
-		polywaveRepo = os.Getenv("POLYWAVE_REPO")
-	}
-	if polywaveRepo == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return result.NewFailure[PlannerData]([]result.PolywaveError{
-				result.NewFatal(result.CodePlannerFailed, "engine.RunPlanner: cannot determine home directory").WithCause(err),
-			})
-		}
-		polywaveRepo = filepath.Join(home, "code", "polywave")
+	polywaveRepo, resolveErr := resolvePolywaveRepo(opts.PolywaveRepoPath)
+	if resolveErr != nil {
+		return result.NewFailure[PlannerData]([]result.PolywaveError{*resolveErr})
 	}
 
 	// Load planner.md prompt with fallback.
-	plannerMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "planner.md")
+	plannerMdPath := agentPromptPath(polywaveRepo, "planner.md")
 	plannerMdContent := "You are a Planner agent. Analyze the project requirements and produce a PROGRAM manifest at the specified output path. Decompose the project into features organized into dependency-ordered tiers. Define cross-feature program contracts for shared types/APIs."
 	if plannerMdRes := LoadTypePromptWithRefs(plannerMdPath); plannerMdRes.IsSuccess() {
 		plannerMdContent = plannerMdRes.GetData()
@@ -589,15 +571,8 @@ func RunScaffold(opts RunScaffoldOpts) result.Result[ScaffoldData] {
 	publish("scaffold_started", ScaffoldStartedPayload{IMPLPath: implPath})
 
 	// Locate scaffold-agent.md prompt.
-	polywaveRepo := polywaveRepoPath
-	if polywaveRepo == "" {
-		polywaveRepo = os.Getenv("POLYWAVE_REPO")
-	}
-	if polywaveRepo == "" {
-		home, _ := os.UserHomeDir()
-		polywaveRepo = filepath.Join(home, "code", "polywave")
-	}
-	scaffoldMdPath := filepath.Join(polywaveRepo, "implementations", "claude-code", "prompts", "agents", "scaffold-agent.md")
+	polywaveRepo, _ := resolvePolywaveRepo(polywaveRepoPath)
+	scaffoldMdPath := agentPromptPath(polywaveRepo, "scaffold-agent.md")
 	scaffoldMdContent := "You are a Scaffold Agent. Create the stub files defined in the IMPL doc Scaffolds section."
 	if scaffoldMdRes := LoadTypePromptWithRefs(scaffoldMdPath); scaffoldMdRes.IsSuccess() {
 		scaffoldMdContent = scaffoldMdRes.GetData()
