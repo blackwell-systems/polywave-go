@@ -318,7 +318,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave-web .
 git clone https://github.com/blackwell-systems/polywave-web.git
 cd polywave-web
 make build
-./polywave serve
+./polywave-web serve
 ```
 
 **For power users / CI/CD:**
