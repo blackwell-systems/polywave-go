@@ -4,9 +4,12 @@
 
 # polywave-go
 
-[![Blackwell Systems™](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
-[![CI](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/blackwell-systems/polywave-go)](https://github.com/blackwell-systems/polywave-go/releases)
+<p align="center">
+  <a href="https://github.com/blackwell-systems"><img src="https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg" alt="Blackwell Systems" /></a>
+  <a href="https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml"><img src="https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/blackwell-systems/polywave-go/releases"><img src="https://img.shields.io/github/v/release/blackwell-systems/polywave-go" alt="Release" /></a>
+  <a href="https://buymeacoffee.com/blackwellsystems"><img src="https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg" alt="Buy Me A Coffee" /></a>
+</p>
 
 Go engine, Protocol SDK, and `polywave-tools` CLI for Polywave: a coordination protocol for parallel AI agent development that makes merge conflicts structurally impossible when work can be decomposed safely.
 
