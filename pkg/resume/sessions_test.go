@@ -123,7 +123,7 @@ func TestLoadAgentSessions_FileNotExist(t *testing.T) {
 // .polywave-state/sessions/ directory if it does not exist.
 func TestSaveAgentSession_CreatesDirectory(t *testing.T) {
 	// Use a stateDir that does NOT pre-create the sessions subdirectory.
-	stateDir := filepath.Join(t.TempDir(), "saw-state-new")
+	stateDir := filepath.Join(t.TempDir(), "polywave-state-new")
 	// Do not create stateDir or sessions dir — SaveAgentSession must create them.
 
 	slug := "dir-test"

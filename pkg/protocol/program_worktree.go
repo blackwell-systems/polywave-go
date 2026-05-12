@@ -39,8 +39,8 @@ type CreateProgramWorktreesData struct {
 // It parses the PROGRAM manifest from programManifestPath, finds the tier by tierNumber,
 // and creates a worktree for each IMPL slug in that tier.
 //
-// Branch names follow: saw/program/{program-slug}/tier{N}-impl-{impl-slug}
-// Worktree paths follow: {repoDir}/.claude/worktrees/saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+// Branch names follow: polywave/program/{program-slug}/tier{N}-impl-{impl-slug}
+// Worktree paths follow: {repoDir}/.claude/worktrees/polywave/program/{program-slug}/tier{N}-impl-{impl-slug}
 //
 // If any worktree creation fails, returns a failure result immediately (no partial state).
 func CreateProgramWorktrees(programManifestPath string, tierNumber int, repoDir string, logger *slog.Logger) result.Result[*CreateProgramWorktreesData] {

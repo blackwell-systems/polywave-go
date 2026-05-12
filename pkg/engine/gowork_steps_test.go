@@ -151,7 +151,7 @@ func TestStepGoWorkRestore_DeletesGoWorkWhenNoBackup(t *testing.T) {
 
 	// Create a go.work that the setup would have created
 	goWorkPath := filepath.Join(repoRoot, "go.work")
-	if err := os.WriteFile(goWorkPath, []byte("// saw-managed go.work"), 0644); err != nil {
+	if err := os.WriteFile(goWorkPath, []byte("// polywave-managed go.work"), 0644); err != nil {
 		t.Fatalf("failed to write go.work: %v", err)
 	}
 

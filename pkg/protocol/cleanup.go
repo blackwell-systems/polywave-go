@@ -228,7 +228,7 @@ func Cleanup(ctx context.Context, manifestPath string, waveNum int, repoDir stri
 	}
 
 	// Remove empty slug parent directory if all agent worktrees were cleaned.
-	// Worktree paths are: .claude/worktrees/saw/{slug}/wave{N}-agent-{ID}
+	// Worktree paths are: .claude/worktrees/polywave/{slug}/wave{N}-agent-{ID}
 	// After removing all agent dirs, the slug dir is left empty.
 	for repo := range prunedRepos {
 		slugDir := filepath.Join(repo, ".claude", "worktrees", "polywave", manifest.FeatureSlug)

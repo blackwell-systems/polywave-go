@@ -328,21 +328,21 @@ func TestDetectCLICommands(t *testing.T) {
 	}{
 		{
 			name:      "new _cmd.go file generates item",
-			file:      "cmd/saw/populate_integration_checklist_cmd.go",
+			file:      "cmd/polywave-tools/populate_integration_checklist_cmd.go",
 			action:    "new",
 			wantItems: 1,
 			setupFile: true,
 		},
 		{
 			name:      "cmd main.go with modify does not generate item",
-			file:      "cmd/saw/main.go",
+			file:      "cmd/polywave-tools/main.go",
 			action:    "modify",
 			wantItems: 0,
 			setupFile: false,
 		},
 		{
 			name:      "new main.go does not generate item (not a _cmd.go file)",
-			file:      "cmd/saw/main.go",
+			file:      "cmd/polywave-tools/main.go",
 			action:    "new",
 			wantItems: 0,
 			setupFile: false,
@@ -382,7 +382,7 @@ func TestDetectCLICommands(t *testing.T) {
 // TestDetectCLICommands_WithRealFile tests parsing an actual CLI command file.
 func TestDetectCLICommands_WithRealFile(t *testing.T) {
 	repoRoot := t.TempDir()
-	cmdDir := filepath.Join(repoRoot, "cmd", "saw")
+	cmdDir := filepath.Join(repoRoot, "cmd", "polywave-tools")
 	require.NoError(t, os.MkdirAll(cmdDir, 0755))
 
 	cmdContent := `package main
@@ -405,7 +405,7 @@ func runPopulateIntegrationChecklist(cmd *cobra.Command, args []string) error {
 	require.NoError(t, os.WriteFile(filePath, []byte(cmdContent), 0644))
 
 	ownership := []FileOwnership{
-		{File: "cmd/saw/populate_integration_checklist_cmd.go", Agent: "D", Wave: 1, Action: "new"},
+		{File: "cmd/polywave-tools/populate_integration_checklist_cmd.go", Agent: "D", Wave: 1, Action: "new"},
 	}
 	items := detectCLICommands(ownership, repoRoot)
 	require.Len(t, items, 1)
@@ -537,7 +537,7 @@ func TestPopulateIntegrationChecklist_MultiPattern(t *testing.T) {
 	createReactComponentFile(t, repoRoot, "web/src/components/QueuePanel.tsx", "QueuePanel")
 
 	// Create CLI command file
-	createCLICmdFile(t, repoRoot, "cmd/saw/populate_integration_checklist_cmd.go",
+	createCLICmdFile(t, repoRoot, "cmd/polywave-tools/populate_integration_checklist_cmd.go",
 		"populate-integration-checklist", "newPopulateIntegrationChecklistCmd")
 
 	// Given: manifest with 3 new API handlers, 2 React components, 1 CLI command
@@ -551,7 +551,7 @@ func TestPopulateIntegrationChecklist_MultiPattern(t *testing.T) {
 			{File: "pkg/api/resume_handler.go", Agent: "B", Wave: 1, Action: "new"},
 			{File: "web/src/components/PipelineView.tsx", Agent: "C", Wave: 1, Action: "new"},
 			{File: "web/src/components/QueuePanel.tsx", Agent: "C", Wave: 1, Action: "new"},
-			{File: "cmd/saw/populate_integration_checklist_cmd.go", Agent: "D", Wave: 1, Action: "new"},
+			{File: "cmd/polywave-tools/populate_integration_checklist_cmd.go", Agent: "D", Wave: 1, Action: "new"},
 		},
 	}
 
@@ -680,7 +680,7 @@ func TestPopulateIntegrationChecklist_NoNewFiles(t *testing.T) {
 		FileOwnership: []FileOwnership{
 			{File: "pkg/api/pipeline_handler.go", Agent: "A", Wave: 1, Action: "modify"},
 			{File: "web/src/components/PipelineView.tsx", Agent: "C", Wave: 1, Action: "modify"},
-			{File: "cmd/saw/main.go", Agent: "D", Wave: 1, Action: "modify"},
+			{File: "cmd/polywave-tools/main.go", Agent: "D", Wave: 1, Action: "modify"},
 		},
 	}
 

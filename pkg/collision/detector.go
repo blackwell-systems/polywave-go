@@ -22,7 +22,7 @@ import (
 //
 // Algorithm:
 // 1. Load IMPL manifest and identify all agents in target wave
-// 2. For each agent, determine branch name (saw/{slug}/waveN-agent-{ID} or legacy waveN-agent-{ID})
+// 2. For each agent, determine branch name (polywave/{slug}/waveN-agent-{ID} or legacy waveN-agent-{ID})
 // 3. Run git diff <merge-base HEAD branch>..branch --name-only to get changed .go files
 // 4. For each .go file, parse AST and extract type declarations
 // 5. Group types by package path

@@ -94,11 +94,11 @@ func TestPolywaveConfigParser_Priority(t *testing.T) {
 
 func TestPolywaveConfigParser_PriorityAboveCI(t *testing.T) {
 	// PolywaveConfigParser priority must exceed GithubActionsParser priority.
-	saw := &PolywaveConfigParser{}
+	pw := &PolywaveConfigParser{}
 	ci := &GithubActionsParser{}
-	if saw.Priority() <= ci.Priority() {
+	if pw.Priority() <= ci.Priority() {
 		t.Errorf("PolywaveConfigParser priority (%d) must be > GithubActionsParser priority (%d)",
-			saw.Priority(), ci.Priority())
+			pw.Priority(), ci.Priority())
 	}
 }
 

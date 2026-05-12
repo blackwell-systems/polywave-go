@@ -161,7 +161,7 @@ func TestFinalizeWaveResultHasWiringReport(t *testing.T) {
 					Declaration: protocol.WiringDeclaration{
 						Symbol:           "NewFoo",
 						DefinedIn:        "pkg/foo/foo.go",
-						MustBeCalledFrom: "cmd/saw/main.go",
+						MustBeCalledFrom: "cmd/polywave-tools/main.go",
 					},
 					Reason:   "symbol not found in caller file",
 					Severity: "error",

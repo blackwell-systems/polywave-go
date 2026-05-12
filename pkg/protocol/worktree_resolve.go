@@ -12,7 +12,7 @@ import (
 var WorktreeBaseDirs = []string{".claude", ".claire"}
 
 // ResolveWorktreePath finds an existing worktree by checking all known base
-// directories. It first checks slug-scoped paths (saw/{slug}/...) then falls
+// directories. It first checks slug-scoped paths (polywave/{slug}/...) then falls
 // back to legacy flat paths for backward compatibility.
 //
 // Returns the first path that exists on disk, or falls back to the canonical
@@ -92,7 +92,7 @@ func ResolveWorktreePathWithSlug(repoDir, slug string, waveNum int, agentID stri
 // IsWorktreePath returns true if the given absolute path contains a worktree
 // directory segment from any of the known base directories. Handles both
 // legacy flat layout (.claude/worktrees/wave1-agent-A) and slug-scoped
-// layout (.claude/worktrees/saw/{slug}/wave1-agent-A).
+// layout (.claude/worktrees/polywave/{slug}/wave1-agent-A).
 func IsWorktreePath(absPath string) bool {
 	for _, base := range WorktreeBaseDirs {
 		if strings.Contains(absPath, base+"/worktrees/") {

@@ -120,7 +120,7 @@ func setupBranchTestRepo(t *testing.T) (string, func()) {
 }
 
 // TestAllBranchesAbsent_NoBranches verifies that AllBranchesAbsent returns true
-// when no saw/ branches exist in the repository.
+// when no polywave/ branches exist in the repository.
 func TestAllBranchesAbsent_NoBranches(t *testing.T) {
 	repoDir, cleanup := setupBranchTestRepo(t)
 	defer cleanup()

@@ -87,7 +87,7 @@ func newMetricsCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&programSlug, "program", "", "Show program-level summary instead of IMPL metrics")
 	cmd.Flags().BoolVar(&breakdown, "breakdown", false, "Show per-agent cost breakdown")
-	cmd.Flags().StringVar(&storeDSN, "store", "", "Store DSN (default: ~/.saw/observability.db)")
+	cmd.Flags().StringVar(&storeDSN, "store", "", "Store DSN (default: ~/.polywave/observability.db)")
 
 	return cmd
 }
@@ -111,7 +111,7 @@ func showProgramSummary(ctx context.Context, store obs.Store, programSlug string
 }
 
 // openStore creates an observability.Store from the given DSN.
-// If dsn is empty, defaults to ~/.saw/observability.db (SQLite).
+// If dsn is empty, defaults to ~/.polywave/observability.db (SQLite).
 // For now, returns an in-memory stub since concrete store implementations
 // (SQLite, PostgreSQL) are provided by other agents/packages.
 func openStore(dsn string) (obs.Store, error) {
@@ -120,7 +120,7 @@ func openStore(dsn string) (obs.Store, error) {
 		if err != nil {
 			return nil, fmt.Errorf("resolve home dir: %w", err)
 		}
-		dsn = home + "/.saw/observability.db"
+		dsn = home + "/.polywave/observability.db"
 	}
 
 	if strings.HasPrefix(dsn, "postgres://") || strings.HasPrefix(dsn, "postgresql://") {

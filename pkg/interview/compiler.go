@@ -12,7 +12,7 @@ import (
 const placeholder = "<!-- placeholder — fill in before running /polywave bootstrap -->"
 
 // CompileToRequirements converts a completed InterviewDoc into the
-// REQUIREMENTS.md format expected by saw-bootstrap.md Phase 0.
+// REQUIREMENTS.md format expected by polywave-bootstrap.md Phase 0.
 // Returns the rendered markdown string.
 func CompileToRequirements(doc *InterviewDoc) result.Result[string] {
 	if doc == nil {

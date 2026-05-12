@@ -147,10 +147,10 @@ func TestPrepareWave_RepoMismatchBlocksWorktreeCreation(t *testing.T) {
 	}
 
 	configRepos := []protocol.RepoEntry{
-		{Name: "polywave-web", Path: "/tmp/saw-web"},
+		{Name: "polywave-web", Path: "/tmp/polywave-web"},
 	}
 
-	res := protocol.ValidateRepoMatch(doc, "/tmp/saw-go", configRepos)
+	res := protocol.ValidateRepoMatch(doc, "/tmp/polywave-go", configRepos)
 	if res.IsSuccess() {
 		t.Fatal("expected repo mismatch error, got success")
 	}

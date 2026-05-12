@@ -206,7 +206,7 @@ func detectCLICommands(ownership []FileOwnership, repoRoot string) []ChecklistIt
 			continue
 		}
 
-		// Match cmd/saw/*_cmd.go or cmd/*_cmd.go
+		// Match cmd/polywave-tools/*_cmd.go or cmd/*_cmd.go
 		if !matchesCLICommandPattern(f.File) {
 			continue
 		}
@@ -220,10 +220,10 @@ func detectCLICommands(ownership []FileOwnership, repoRoot string) []ChecklistIt
 			continue
 		}
 
-		description := fmt.Sprintf("Register %s in cmd/saw/main.go", cmdName)
+		description := fmt.Sprintf("Register %s in cmd/polywave-tools/main.go", cmdName)
 		// cmdName is e.g. "populate-integration-checklist", newXCmd is camelCase
 		newFuncName := commandNameToFuncName(cmdName)
-		command := fmt.Sprintf("grep '%s' cmd/saw/main.go", newFuncName)
+		command := fmt.Sprintf("grep '%s' cmd/polywave-tools/main.go", newFuncName)
 
 		items = append(items, ChecklistItem{
 			Description: description,
@@ -462,7 +462,7 @@ func matchesReactComponentPattern(file string) bool {
 }
 
 // matchesCLICommandPattern returns true if the file path matches
-// cmd/saw/*_cmd.go or cmd/*_cmd.go
+// cmd/polywave-tools/*_cmd.go or cmd/*_cmd.go
 func matchesCLICommandPattern(file string) bool {
 	file = filepath.ToSlash(file)
 	base := filepath.Base(file)

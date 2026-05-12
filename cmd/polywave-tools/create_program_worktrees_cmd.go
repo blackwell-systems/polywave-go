@@ -16,7 +16,7 @@ func newCreateProgramWorktreesCmd() *cobra.Command {
 		Use:   "create-program-worktrees <program-manifest>",
 		Short: "Create IMPL branches and worktrees for all IMPLs in a program tier",
 		Long: `Creates long-lived IMPL branches for all IMPLs in a program tier.
-Branch naming: saw/program/{program-slug}/tier{N}-impl-{impl-slug}
+Branch naming: polywave/program/{program-slug}/tier{N}-impl-{impl-slug}
 These branches serve as merge targets for all wave executions within each IMPL.
 Waves merge to the IMPL branch, not to main.
 

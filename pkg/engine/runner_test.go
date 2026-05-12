@@ -19,13 +19,13 @@ import (
 // TestRunScout_MissingScoutMd verifies that RunScout returns a fatal result when scout.md is missing (L1).
 func TestRunScout_MissingScoutMd(t *testing.T) {
 	dir := t.TempDir()
-	nonexistentSAWRepo := filepath.Join(dir, "nonexistent-saw-repo")
+	nonexistentPolywaveRepo := filepath.Join(dir, "nonexistent-polywave-repo")
 
 	res := RunScout(context.Background(), RunScoutOpts{
 		Feature:     "test feature",
 		RepoPath:    dir,
 		IMPLOutPath: filepath.Join(dir, "IMPL-test.yaml"),
-		PolywaveRepoPath: nonexistentSAWRepo,
+		PolywaveRepoPath: nonexistentPolywaveRepo,
 	}, func(string) {})
 	if !res.IsFatal() {
 		t.Fatal("expected fatal result when scout.md is missing, got success")
@@ -414,7 +414,7 @@ func TestLoadTypePromptWithRefs(t *testing.T) {
 // nil pointer panic) when invoked with nil ObsEmitter.
 func TestRunScout_NilObsEmitter_NoScoutCompletePanic(t *testing.T) {
 	dir := t.TempDir()
-	nonexistentSAWRepo := dir + "/fake-saw"
+	nonexistentPolywaveRepo := dir + "/fake-polywave"
 
 	defer func() {
 		if r := recover(); r != nil {
@@ -427,7 +427,7 @@ func TestRunScout_NilObsEmitter_NoScoutCompletePanic(t *testing.T) {
 		Feature:     "test feature",
 		RepoPath:    dir,
 		IMPLOutPath: dir + "/IMPL-test.yaml",
-		PolywaveRepoPath: nonexistentSAWRepo,
+		PolywaveRepoPath: nonexistentPolywaveRepo,
 		ObsEmitter:  nil,
 	}, func(string) {})
 

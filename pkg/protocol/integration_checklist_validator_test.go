@@ -14,7 +14,7 @@ func TestValidateIntegrationChecklist_NoHandlers(t *testing.T) {
 	m := &IMPLManifest{
 		FileOwnership: []FileOwnership{
 			{File: "pkg/protocol/foo.go", Agent: "A", Action: "new"},
-			{File: "cmd/saw/main.go", Agent: "B", Action: "modify"},
+			{File: "cmd/polywave-tools/main.go", Agent: "B", Action: "modify"},
 		},
 		PostMergeChecklist: nil,
 	}

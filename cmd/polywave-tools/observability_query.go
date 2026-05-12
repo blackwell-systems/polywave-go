@@ -101,7 +101,7 @@ func newQueryEventsCmd() *cobra.Command {
 	cmd.Flags().StringVar(&since, "since", "", "Time range (e.g., 24h, 7d, 30d)")
 	cmd.Flags().StringVar(&format, "format", "table", "Output format (table, json, csv)")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Max results to return")
-	cmd.Flags().StringVar(&storeDSN, "store", "", "Store DSN (default: ~/.saw/observability.db)")
+	cmd.Flags().StringVar(&storeDSN, "store", "", "Store DSN (default: ~/.polywave/observability.db)")
 
 	return cmd
 }

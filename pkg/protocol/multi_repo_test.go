@@ -4,15 +4,15 @@ import "testing"
 
 func TestResolveAgentRepo_WithMatchingRegistry(t *testing.T) {
 	fo := []FileOwnership{
-		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "saw-go"},
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
 	}
 	repos := []RepoEntry{
-		{Name: "saw-go", Path: "/abs/saw-go"},
+		{Name: "polywave-go", Path: "/abs/polywave-go"},
 	}
 
 	got := ResolveAgentRepo(fo, "A", "/fallback", repos)
-	if got != "/abs/saw-go" {
-		t.Errorf("expected /abs/saw-go, got %s", got)
+	if got != "/abs/polywave-go" {
+		t.Errorf("expected /abs/polywave-go, got %s", got)
 	}
 }
 
@@ -35,7 +35,7 @@ func TestResolveAgentRepo_FallbackWhenNoRepoField(t *testing.T) {
 		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1},
 	}
 	repos := []RepoEntry{
-		{Name: "saw-go", Path: "/abs/saw-go"},
+		{Name: "polywave-go", Path: "/abs/polywave-go"},
 	}
 
 	got := ResolveAgentRepo(fo, "A", "/fallback", repos)
@@ -46,7 +46,7 @@ func TestResolveAgentRepo_FallbackWhenNoRepoField(t *testing.T) {
 
 func TestResolveAgentRepo_FallbackWhenNilRepos(t *testing.T) {
 	fo := []FileOwnership{
-		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "saw-go"},
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
 	}
 
 	got := ResolveAgentRepo(fo, "A", "/fallback", nil)
@@ -57,7 +57,7 @@ func TestResolveAgentRepo_FallbackWhenNilRepos(t *testing.T) {
 
 func TestResolveAgentRepo_FallbackWhenNilOwnership(t *testing.T) {
 	repos := []RepoEntry{
-		{Name: "saw-go", Path: "/abs/saw-go"},
+		{Name: "polywave-go", Path: "/abs/polywave-go"},
 	}
 
 	got := ResolveAgentRepo(nil, "A", "/fallback", repos)
@@ -68,12 +68,12 @@ func TestResolveAgentRepo_FallbackWhenNilOwnership(t *testing.T) {
 
 func TestAgentRepoName_ReturnsName(t *testing.T) {
 	fo := []FileOwnership{
-		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "saw-go"},
+		{File: "pkg/foo/foo.go", Agent: "A", Wave: 1, Repo: "polywave-go"},
 	}
 
 	got := AgentRepoName(fo, "A")
-	if got != "saw-go" {
-		t.Errorf("expected saw-go, got %s", got)
+	if got != "polywave-go" {
+		t.Errorf("expected polywave-go, got %s", got)
 	}
 }
 

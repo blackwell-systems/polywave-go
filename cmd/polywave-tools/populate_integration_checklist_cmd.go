@@ -36,7 +36,7 @@ and populates post_merge_checklist groups.
 Detection patterns:
 - API handlers: pkg/api/*_handler.go (action:new) → register routes in server.go
 - React components: web/src/components/*.tsx (action:new) → add to App.tsx navigation
-- CLI commands: cmd/saw/*_cmd.go (action:new) → register in main.go
+- CLI commands: cmd/polywave-tools/*_cmd.go (action:new) -> register in main.go
 - Background services: goroutine spawn patterns → init in Server constructor
 
 Output: Updated IMPL manifest with populated post_merge_checklist.

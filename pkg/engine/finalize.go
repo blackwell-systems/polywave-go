@@ -801,7 +801,7 @@ func containsAny(s string, substrs ...string) bool {
 // On mid-run failure, the file enables recovery:
 //
 //	cat .polywave-state/wave1/branch-refs.json  # {"A":"<sha>","B":"<sha>"}
-//	git branch saw/<slug>/wave1-agent-A <sha>
+//	git branch polywave/<slug>/wave1-agent-A <sha>
 //	polywave-tools finalize-wave ...
 //
 // Errors are silently swallowed — this is a best-effort record.

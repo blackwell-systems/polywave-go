@@ -259,7 +259,7 @@ func TestBuildWaveConstraints_Integration_BadPath(t *testing.T) {
 func TestBuildConstraints_IntegratorRole(t *testing.T) {
 	connectors := []protocol.IntegrationConnector{
 		{File: "pkg/engine/orchestrator.go", Reason: "wire NewRunner into orchestrator"},
-		{File: "cmd/saw/main.go", Reason: "register subcommand"},
+		{File: "cmd/polywave-tools/main.go", Reason: "register subcommand"},
 	}
 	manifest := &protocol.IMPLManifest{}
 
@@ -280,8 +280,8 @@ func TestBuildConstraints_IntegratorRole(t *testing.T) {
 	if !prefixSet["pkg/engine/orchestrator.go"] {
 		t.Error("expected pkg/engine/orchestrator.go in AllowedPathPrefixes")
 	}
-	if !prefixSet["cmd/saw/main.go"] {
-		t.Error("expected cmd/saw/main.go in AllowedPathPrefixes")
+	if !prefixSet["cmd/polywave-tools/main.go"] {
+		t.Error("expected cmd/polywave-tools/main.go in AllowedPathPrefixes")
 	}
 
 	// Integrator should NOT have OwnedFiles or FrozenPaths
@@ -356,7 +356,7 @@ waves:
 integration_connectors:
   - file: pkg/engine/orchestrator.go
     reason: wire NewRunner into orchestrator
-  - file: cmd/saw/main.go
+  - file: cmd/polywave-tools/main.go
     reason: register subcommand
 `
 
@@ -388,8 +388,8 @@ integration_connectors:
 	if !prefixSet["pkg/engine/orchestrator.go"] {
 		t.Error("expected pkg/engine/orchestrator.go in AllowedPathPrefixes")
 	}
-	if !prefixSet["cmd/saw/main.go"] {
-		t.Error("expected cmd/saw/main.go in AllowedPathPrefixes")
+	if !prefixSet["cmd/polywave-tools/main.go"] {
+		t.Error("expected cmd/polywave-tools/main.go in AllowedPathPrefixes")
 	}
 
 	if !c.TrackCommits {

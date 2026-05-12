@@ -32,8 +32,8 @@ type CreateWorktreesData struct {
 // /path/to/polywave and an agent has Repo=polywave-go, the worktree
 // is created at /path/to/polywave-go/.claude/worktrees/...).
 //
-// Each worktree is created at {agentRepoDir}/.claude/worktrees/saw/{slug}/wave{N}-agent-{Letter}
-// on a new branch named saw/{slug}/wave{N}-agent-{Letter}.
+// Each worktree is created at {agentRepoDir}/.claude/worktrees/polywave/{slug}/wave{N}-agent-{Letter}
+// on a new branch named polywave/{slug}/wave{N}-agent-{Letter}.
 //
 // If any worktree creation fails, returns an error immediately without
 // attempting to create remaining worktrees.

@@ -225,7 +225,7 @@ func TestScopedBranchRegex_Invalid(t *testing.T) {
 		"wave1-A",                      // missing "agent-" prefix
 		"wave-1-agent-A",               // wrong wave format
 		"wave1-agent-a",                // lowercase agent (invalid)
-		"polywave/wave1-agent-A",            // missing slug between saw/ and wave
+		"polywave/wave1-agent-A",            // missing slug between polywave/ and wave
 		"polywave//wave1-agent-A",           // empty slug
 		"main",                         // not a Polywave branch
 		"feature/my-feature",           // different branch pattern
@@ -370,7 +370,7 @@ func TestExtractSlug_Invalid(t *testing.T) {
 		"main",
 		"feature/branch",
 		"polywave/",     // no slug
-		"sawx/test/wave1-agent-A", // not starting with saw/
+		"polywavex/test/wave1-agent-A", // not starting with polywave/
 	}
 
 	for _, branch := range invalid {

@@ -10,7 +10,7 @@ import (
 
 // worktreeBranchRegex validates branch names in both legacy and slug-scoped formats:
 //   - Legacy: wave{N}-agent-{ID}
-//   - New: saw/{slug}/wave{N}-agent-{ID}
+//   - New: polywave/{slug}/wave{N}-agent-{ID}
 //
 // Uses ScopedBranchRegex from branchname.go which accepts both formats.
 var worktreeBranchRegex = ScopedBranchRegex
@@ -66,7 +66,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.PolywaveError {
 				errs = append(errs, result.PolywaveError{
 					Code:     result.CodeInvalidWorktreeName,
 					Severity: "error",
-					Message:  fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or saw/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
+					Message:  fmt.Sprintf("agent %s branch %q does not match pattern wave{N}-agent-{ID} or polywave/{slug}/wave{N}-agent-{ID}", agentID, report.Branch),
 					Field:    fmt.Sprintf("completion_reports[%s].branch", agentID),
 					Context:  map[string]string{"slug": m.FeatureSlug, "wave": fmt.Sprintf("%d", waveNum), "agent_id": agentID},
 				})
@@ -105,7 +105,7 @@ func ValidateWorktreeNames(m *IMPLManifest) []result.PolywaveError {
 			expectedSegment := fmt.Sprintf("wave%d-agent-%s", waveNum, agentID)
 			// Check if worktree path contains the expected segment as a path component.
 			// Accepts both legacy (.claude/worktrees/wave1-agent-A) and slug-scoped
-			// (.claude/worktrees/saw/{slug}/wave1-agent-A) paths.
+			// (.claude/worktrees/polywave/{slug}/wave1-agent-A) paths.
 			// Split by both '/' and '\' to handle Unix and Windows paths.
 			pathNormalized := strings.ReplaceAll(report.Worktree, "\\", "/")
 			pathSegments := strings.Split(pathNormalized, "/")
