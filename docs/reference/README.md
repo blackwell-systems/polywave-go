@@ -29,7 +29,7 @@ code is authoritative and the doc should be updated.
 | Doc | What it covers |
 |-----|---------------|
 | [cli-reference.md](cli-reference.md) | All polywave-tools commands — usage, flags, exit codes, examples |
-| [binaries.md](binaries.md) | polywave-tools vs polywave binary split, build instructions, release workflow |
+| [binaries.md](binaries.md) | polywave-tools vs polywave-web binary split, build instructions, release workflow |
 
 ## SDK / engine internals
 
@@ -46,8 +46,8 @@ code is authoritative and the doc should be updated.
 |-----|---------------|
 | [architecture.md](architecture.md) | System overview, three-repo structure, package dependency graph |
 | [orchestration.md](orchestration.md) | Engine orchestration flow, step sequence, E19 failure routing |
-| [api-endpoints.md](api-endpoints.md) | polywave server REST API |
-| [sse-events.md](sse-events.md) | Server-sent events emitted by the polywave server |
+| [api-endpoints.md](api-endpoints.md) | polywave-web server REST API |
+| [sse-events.md](sse-events.md) | Server-sent events emitted by the polywave-web server |
 | [backends.md](backends.md) | LLM backend configuration (Anthropic, Bedrock, etc.) |
 | [bedrock-tool-use-api.md](bedrock-tool-use-api.md) | AWS Bedrock tool use specifics |
 
