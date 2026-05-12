@@ -8,11 +8,11 @@ Polywave ships **two separate binaries** from **two separate repositories**. Thi
 
 1. **polywave-tools** is a protocol engine CLI. It exposes every low-level protocol operation as a command. Its consumers are the `/polywave` skill (Claude Code orchestrator), CI/CD pipelines, and the Go SDK. It has zero web dependencies -- no embedded assets, no HTTP server, no React. Adding a web dependency would bloat every CI job and skill invocation with 4+ MB of unused React bundle.
 
-2. **saw** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with ~112 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from polywave-go as Go libraries -- it never shells out to polywave-tools.
+2. **polywave-web** is a web application binary. It embeds a full React UI via `//go:embed` and runs an HTTP server with ~112 API endpoints. Its consumers are developers using the web UI to run Scout/Wave/Merge workflows interactively. It imports `pkg/engine` and `pkg/protocol` from polywave-go as Go libraries -- it never shells out to polywave-tools.
 
 3. **They share the Go engine, not each other.** Both binaries depend on `polywave-go/pkg/` packages. Neither binary depends on the other. The web app does not call polywave-tools. polywave-tools does not know the web app exists.
 
-Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an unused React bundle; every web app user gets 77 CLI commands they never run; the web app repo loses independent deployability. There is no benefit.
+Merging them would mean: every `/polywave` skill invocation and CI pipeline embeds an unused React bundle; every web app user gets 77 CLI commands they never run; the web app repo loses independent deployability. There is no benefit.
 
 ---
 
@@ -21,7 +21,7 @@ Merging them would mean: every `/saw` skill invocation and CI pipeline embeds an
 | Binary | Source Repo | Commands | Size | Purpose |
 |--------|-------------|----------|------|---------|
 | **polywave-tools** | polywave-go | 77 | ~26 MB | Protocol engine CLI for skill/CI/SDK consumers |
-| **saw** | polywave-web | 23 | ~24 MB (includes embedded React) | Web application with HTTP API |
+| **polywave-web** | polywave-web | 23 | ~24 MB (includes embedded React) | Web application binary with HTTP API |
 
 ---
 
@@ -172,13 +172,13 @@ cp polywave-tools ~/.local/bin/polywave-tools
 
 ## polywave (Web Application)
 
-**Source:** `polywave-web/cmd/polywave`
+**Source:** `polywave-web/cmd/polywave-web`
 
 **Installation:**
 ```bash
 cd polywave-web
-make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd/polywave
-./polywave serve
+make build  # or: cd web && npm run build && cd .. && go build -o polywave-web ./cmd/polywave-web
+./polywave-web serve
 ```
 
 **Target audience:**
@@ -245,7 +245,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd
 │                                                               │
 │  web/             React UI (embedded in binary via go:embed) │
 │                                                               │
-│  cmd/polywave/  ────► polywave (23 commands)                           │
+│  cmd/polywave-web/ ──► polywave-web (23 commands)                      │
 │                   Web UI + orchestration CLI                  │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -264,7 +264,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd
 
 **63 commands are polywave-tools-only** (protocol engine, worktree management, program execution, journals, daemon, recovery, queue). These are the operations that CLI orchestrators and CI pipelines need but web UI users do not run manually.
 
-**9 commands are saw-only** (serve, scout, scaffold, wave, merge, merge-wave, current-wave, status, render). These are high-level orchestration commands and the web server itself.
+**9 commands are polywave-web-only** (serve, scout, scaffold, wave, merge, merge-wave, current-wave, status, render). These are high-level orchestration commands and the web server itself.
 
 ---
 
@@ -273,14 +273,14 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd
 ### CLI Orchestration (uses polywave-tools)
 **Context:** Inside a Claude Code session (Max plan or Bedrock)
 
-1. Orchestrator (Claude via `/saw` skill) launches agents via Agent tool
+1. Orchestrator (Claude via `/polywave` skill) launches agents via Agent tool
 2. Orchestrator calls `polywave-tools prepare-wave` to set up worktrees, briefs, journals
 3. Agents run in isolated worktrees
 4. Orchestrator calls `polywave-tools finalize-wave` to merge, verify, clean up
 
 **Why polywave-tools?** The orchestrator is a running LLM session. It cannot import Go packages, so it needs CLI commands.
 
-### Web Orchestration (uses saw)
+### Web Orchestration (uses polywave-web)
 **Context:** User in browser at `localhost:7432`
 
 1. User clicks "Run Scout" in web UI
@@ -288,14 +288,14 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave ./cmd
 3. Web app calls `engine.RunWave()` to execute agents
 4. Results streamed to UI via SSE (~112 API endpoints)
 
-**Why saw?** The web app is a Go application. It imports the engine as a library. No CLI shelling-out needed.
+**Why polywave-web?** The web app is a Go application. It imports the engine as a library. No CLI shelling-out needed.
 
 ---
 
 ## When to Use Which
 
 ### Use polywave-tools when:
-- Orchestrating from CLI (e.g., `/saw` skill in Claude Code)
+- Orchestrating from CLI (e.g., `/polywave` skill in Claude Code)
 - Running in CI/CD pipelines
 - Executing multi-IMPL programs (`program-execute`, `finalize-tier`)
 - Debugging protocol internals (dependency solver, journal inspection, stub scanning)
@@ -329,7 +329,7 @@ go build -o polywave-tools ./cmd/polywave-tools
 cp polywave-tools ~/.local/bin/polywave-tools
 ```
 
-**For developers:** Install both. Use `saw serve` for the development workflow. Use `polywave-tools` for testing protocol operations.
+**For developers:** Install both. Use `polywave-web serve` for the development workflow. Use `polywave-tools` for testing protocol operations.
 
 ---
 
