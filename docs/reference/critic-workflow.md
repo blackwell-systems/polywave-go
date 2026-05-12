@@ -105,7 +105,7 @@ If neither condition is met, the critic gate is skipped entirely.
 | `Verdict == "ISSUES"`, warnings only | proceed | block (surface to user) |
 | Unknown verdict (not `PASS` or `ISSUES`) | block | block |
 
-**Auto mode** is active when the wave was launched via `--auto` (unattended execution) or when called from `prepare-wave` / `prepare-tier`. **Manual mode** applies to interactive `saw wave` invocations (via `engine.Prepare`) where the user can review and decide.
+**Auto mode** is active when the wave was launched via `--auto` (unattended execution) or when called from `prepare-wave` / `prepare-tier`. **Manual mode** applies to interactive `polywave-web wave` invocations (via `engine.Prepare`) where the user can review and decide.
 
 A warnings-only report in auto mode is treated as safe to proceed. In manual mode the gate blocks and the orchestrator surfaces the warnings to the user for a decision.
 
@@ -152,7 +152,7 @@ polywave-tools run-critic <impl-path> [flags]
 1. `$POLYWAVE_REPO` environment variable
 2. `~/code/polywave` (default fallback)
 
-The `critic-agent.md` prompt is loaded from `<saw-repo>/implementations/claude-code/prompts/agents/critic-agent.md` with reference injection via `engine.LoadTypePromptWithRefs`. If the file cannot be loaded, `RunCritic` returns a fatal error.
+The `critic-agent.md` prompt is loaded from `<polywave-repo>/implementations/claude-code/prompts/agents/critic-agent.md` with reference injection via `engine.LoadTypePromptWithRefs`. If the file cannot be loaded, `RunCritic` returns a fatal error.
 
 ---
 

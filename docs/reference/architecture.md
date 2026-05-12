@@ -580,7 +580,7 @@ The engine is split across three repos:
 
 - **polywave** -- protocol specification (invariants, execution rules, agent prompts)
 - **polywave-go** (this repo) -- engine, protocol SDK, CLI
-- **polywave-web** -- web UI, HTTP server, `saw serve` binary
+- **polywave-web** -- web UI, HTTP server, `polywave-web serve` binary
 
 `polywave-web` imports the engine as a Go module:
 
@@ -592,7 +592,7 @@ import (
 )
 ```
 
-The `saw serve` command in `polywave-web` wraps the engine with HTTP
+The `polywave-web serve` command in `polywave-web` wraps the engine with HTTP
 handlers and an SSE broker.
 
 ## Design Decisions

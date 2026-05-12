@@ -145,7 +145,7 @@ Emitted during wave execution when monitoring agent lifecycle or validating comp
 
 ## N — Engine
 
-Emitted by the saw orchestration engine during wave preparation, execution, and finalization.
+Emitted by the Polywave orchestration engine during wave preparation, execution, and finalization.
 
 | Code | Description | Fix |
 |------|-------------|-----|

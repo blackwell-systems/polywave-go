@@ -702,7 +702,7 @@ polywave-tools run-scout <feature-description> [flags]
 
 **Flags:**
 - `--repo-dir` -- target repository path (default: current directory)
-- `--saw-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
+- `--protocol-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
 - `--scout-model` -- Scout model override (e.g., `claude-opus-4-6`)
 - `--critic-model` -- critic agent model override (e.g., `claude-opus-4-6`)
 - `--no-critic` -- skip critic gate even if agent count threshold is met (default: false)
@@ -820,7 +820,7 @@ polywave-tools auto <feature-description> [flags]
 - `feature-description` -- description of the feature to implement (required)
 
 **Flags:**
-- `--saw-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
+- `--protocol-repo` -- Polywave protocol repo path (default: `$POLYWAVE_REPO` or `~/code/polywave`)
 - `--scout-model` -- Scout model override (e.g., `claude-opus-4-6`)
 - `--wave-model` -- wave model override (reserved for future use)
 - `--timeout` -- Scout timeout in minutes (default: 10)
@@ -1246,8 +1246,8 @@ polywave-tools verify-hook-installed <worktree-path> [flags]
 
 **Example:**
 ```bash
-polywave-tools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A
-polywave-tools verify-hook-installed /tmp/saw-worktrees/wave1-agent-A --wave 1
+polywave-tools verify-hook-installed /tmp/polywave-worktrees/wave1-agent-A
+polywave-tools verify-hook-installed /tmp/polywave-worktrees/wave1-agent-A --wave 1
 ```
 
 ---
