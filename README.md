@@ -8,7 +8,9 @@
 [![CI](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/polywave-go/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/blackwell-systems/polywave-go)](https://github.com/blackwell-systems/polywave-go/releases)
 
-Go engine and Protocol SDK for Polywave — a coordination protocol for parallel AI agent development that guarantees merge-conflict-free execution by construction.
+Go engine, Protocol SDK, and `polywave-tools` CLI for Polywave: a coordination protocol for parallel AI agent development that makes merge conflicts structurally impossible when work can be decomposed safely.
+
+Polywave is not a generic agent runner. It is a protocol for deciding when parallel agent work is suitable, partitioning that work by file ownership, enforcing the partition before agents start, and merging completed work through deterministic gates.
 
 ---
 
@@ -16,209 +18,37 @@ Go engine and Protocol SDK for Polywave — a coordination protocol for parallel
 
 **No two agents in the same wave own the same file** (I1: Disjoint File Ownership).
 
-This is not a convention or a preference. It is a hard constraint enforced before any worktree is created. The result: parallel agents can never produce a merge conflict on agent-owned files. The conflict is structurally impossible because the ownership partition is verified and locked before execution begins.
+This is a hard constraint, not a convention. Polywave validates the ownership partition before creating worktrees. Branches and worktrees isolate concurrent edits, but they do not prevent two agents from independently modifying the same file and producing a merge conflict later. Polywave prevents that conflict from being possible on agent-owned files.
 
-This is distinct from branch-based coordination. Branches prevent concurrent writes to the same commit, but do nothing to prevent two agents from independently modifying the same file on separate branches — which produces a merge conflict you must resolve manually. Polywave prevents the conflict from being possible in the first place.
-
----
-
-## Feature Highlights
-
-- **Merge-conflict-free by construction** — file ownership is partitioned and locked before execution begins; conflicts on agent-owned files are structurally impossible
-- **Runs on any LLM: Anthropic, OpenAI, Ollama, or any OpenAI-compatible endpoint. Mix providers per-agent within the same wave.**
-- **Full protocol SDK** — importable Go module, no LLM dependencies, deterministic for all inputs
-- **75+ CLI commands** — single-purpose with structured JSON output, covering the full wave lifecycle
-- **Program layer** — tier-gated execution of multiple IMPLs with shared contract freezing
+The result: when the suitability gate passes and invariants hold, parallel agents can work independently, commit independently, and merge mechanically.
 
 ---
 
-## LLM Backend
+## When To Use Polywave
 
-The engine abstracts agent execution behind a `Runtime` interface. Provider routing uses model prefix notation:
+Use Polywave for agentic development when the work has real parallel structure:
 
-| Prefix | Backend |
-|--------|---------|
-| `anthropic:` | Anthropic API (direct) |
-| `openai:` | OpenAI-compatible endpoint (OpenAI, Ollama, LM Studio, etc.) |
-| `cli:` | Local CLI binary (Claude Code, `POLYWAVE_CLI_BINARY`) |
-| *(none)* | Auto-detect from environment |
+- Multi-file feature work with separable modules or components
+- Refactors that can be split by package, route, service, adapter, or UI area
+- Audit-remediation work after findings have been classified
+- Multi-feature programs where tier ordering and shared contracts matter
+- Tasks where build/test verification is expensive enough that parallelism pays for the orchestration overhead
 
-### Per-agent provider routing
+Do not use Polywave for every edit. The Scout runs a suitability gate before producing agent prompts and returns `NOT_SUITABLE` when the work does not fit.
 
-Each agent in an IMPL doc carries an optional `model:` field. The orchestrator reads it at launch time and routes that agent to the appropriate backend — with zero changes to the orchestrator itself.
+Polywave is usually the wrong tool for:
 
-This means a single wave can run heterogeneous workloads: route the broad-context analysis agent to a large-context model, route the mechanical code-generation agents to a fast, cheap model, and route the integration agent to whichever model has the strongest reasoning for your stack. The allocation lives in the IMPL doc, not in orchestrator code.
+- Tiny one-file changes
+- Investigation-first debugging where the root cause is unknown
+- Work where cross-agent interfaces cannot be defined before implementation
+- Highly coupled edits to the same central file
+- Exploratory prototypes where discovery is more valuable than execution discipline
 
-Example: Agent A on `anthropic:claude-haiku-3` (fast, cheap, high-parallelism), Agent B on `anthropic:claude-opus-4` (complex reasoning, low-parallelism), Agent C on `openai:llama3` via a local Ollama endpoint — all executing concurrently in the same wave, all merging into the same branch when done.
-
----
-
-## How It Works
-
-Polywave decomposes feature work into three phases:
-
-**Scout** — An AI agent analyzes the codebase, runs a suitability gate, designs the file ownership partition, defines interface contracts across agent boundaries, and writes an IMPL doc (a YAML manifest that is the single source of truth for the entire feature).
-
-**Wave** — Parallel AI agents execute concurrently, each in its own git worktree, each owning a disjoint set of files. Agents implement against pre-committed scaffold files; they never coordinate directly. When the wave completes, merging is mechanical — no conflicts on agent-owned files by construction.
-
-**Merge + Verify** — `finalize-wave` runs the full post-wave pipeline: commit verification, stub detection, quality gates (concurrent), merge, build verification, and cleanup. Integration gaps are detected and optionally wired by an Integration Agent.
-
-The IMPL doc flows through the entire lifecycle: Scout writes it, agents append their completion reports to it, the orchestrator reads it to track state, and it becomes the audit trail when the feature closes.
+This is intentional. The protocol includes its own "do not use Polywave here" decision point.
 
 ---
 
-## The IMPL Doc as Single Source of Truth
-
-Every piece of protocol state lives in one YAML file (I4):
-
-- Suitability verdict and pre-mortem risk assessment
-- File ownership table (per-agent, per-wave, per-repo for cross-repo waves)
-- Interface contracts and scaffold file status
-- Quality gate configuration
-- Agent prompts (9-field format)
-- Wave structure and dependency graph
-- Completion reports from every agent
-- Stub scan results and integration reports
-
-Chat output is not the record. If a completion report is written to chat only, it is a protocol violation — downstream agents and the orchestrator cannot see it.
-
-This makes the protocol observable and auditable. Every Polywave session can be reconstructed from the IMPL doc and git history alone.
-
----
-
-## Interface Contracts and the Freeze Point
-
-Before any worktree is created, the Scout defines all interfaces that cross agent boundaries. A Scaffold Agent materializes them as committed source files on HEAD. Then worktrees branch from that HEAD.
-
-When worktrees are created, interface contracts become immutable (I2, E2). This is the freeze point: wave agents implement against a committed spec, not against each other. An agent cannot discover at runtime that a type it expected does not exist — the type was committed before the agent launched.
-
-Wave N+1 does not launch until Wave N merges and post-merge verification passes (I3). This provides cross-wave coordination without special mechanisms: each successive wave branches from the fully merged codebase of all prior waves.
-
----
-
-## Program Layer
-
-For multi-feature projects, Polywave includes a program layer that coordinates multiple IMPL docs through tier-gated execution.
-
-A **PROGRAM manifest** decomposes a project into:
-- **Tiers** — groups of independent IMPLs that execute in parallel
-- **Program contracts** — shared types and interfaces consumed by multiple IMPLs, frozen at tier boundaries
-- **Tier gates** — quality checks that must pass before the next tier begins
-
-Execution rules:
-- **E28** — All IMPLs in a tier are scouted in parallel (one Scout per IMPL)
-- **E29** — Tier gate runs after all IMPLs in the tier complete; blocks advancement on failure
-- **E30** — Program contracts freeze at tier boundaries; downstream Scouts receive them as immutable inputs
-- **E33** — `--auto` mode advances tiers automatically after gate pass; human gate is never skipped on failure
-- **E34** — Tier gate failure re-engages the Planner to revise the PROGRAM manifest; human reviews the revised plan before any tier re-executes
-
-The DAG prioritization engine (`polywave-tools` integrates `PrioritizeIMPLs` / `ScoreTierIMPLs`) scores IMPL execution order within a tier based on dependency depth and downstream unlock count.
-
----
-
-## Autonomy Layer
-
-Three autonomy levels control how much the orchestrator pauses for human review:
-
-| Level | Behavior |
-|-------|----------|
-| `gated` | Pauses at every decision point (default) |
-| `supervised` | Auto-approves wave advancement and gate retry; pauses for IMPL review |
-| `autonomous` | All stages auto-approved; only surfaces gate failures |
-
-The daemon run loop (`polywave-tools daemon`) enables fully unattended execution across multiple queued IMPLs. Failure classification (E19) routes correctable failures (`transient`, `fixable`) to automatic retry and non-correctable failures (`needs_replan`, `escalate`) to human review, regardless of autonomy level.
-
-The `build-retry-context` command produces structured failure context (error classification, targeted fix suggestions, retry prompt) for re-launching a failed agent with awareness of prior attempts.
-
----
-
-## polywave-tools CLI
-
-The `polywave-tools` binary provides 60+ commands covering the full protocol lifecycle. Commands are single-purpose with structured JSON output.
-
-### Wave lifecycle
-
-| Command | What it does |
-|---------|-------------|
-| `prepare-wave` | Atomic: baseline gate (E21A) + worktree creation + per-agent brief extraction + journal init |
-| `finalize-wave` | Atomic: verify-commits + scan-stubs + run-gates + merge-agents + verify-build + cleanup |
-| `create-worktrees` | Create git worktrees for a wave's agents |
-| `merge-agents` | Merge wave worktree branches to main |
-| `verify-commits` | Verify each agent has commits before merge (I5) |
-| `verify-build` | Post-merge build verification |
-| `cleanup` | Remove worktrees after merge |
-
-### Validation and verification
-
-| Command | What it does |
-|---------|-------------|
-| `validate` | E16 manifest validation: required blocks, dep graph grammar, duplicate keys, action enums |
-| `check-conflicts` | I1 file ownership conflict detection across agents |
-| `validate-scaffolds` | Verify scaffold files are committed before worktree creation (I2) |
-| `freeze-check` | Interface contract freeze enforcement (E2) |
-| `scan-stubs` | E20 stub detection across agent-owned files |
-| `run-gates` | E21/E21A quality gate verification (concurrent, E21B) |
-| `predict-conflicts` | E11 hunk-level conflict prediction before merge |
-| `check-type-collisions` | Detect duplicate type/const definitions across agent branches |
-| `pre-wave-validate` | Combined E16 + E35 + test cascade + wave structure check |
-| `finalize-scout` | Consolidates Scout validation: validate + pre-wave-validate + validate-briefs + set-injection-method |
-| `validate-integration` | E25 integration gap detection; E35 wiring obligation verification |
-| `verify-isolation` | Verify agent is in correct worktree before execution begins |
-| `analyze-suitability` | Pre-implementation scanning gate (H1a) |
-| `detect-cascades` | Cross-package cascade detection (M2) |
-
-### Agent lifecycle
-
-| Command | What it does |
-|---------|-------------|
-| `run-scout` | Full Scout pipeline: launch + validate (E16) + auto-correct IDs (M1) + finalize gates (M4) |
-| `prepare-agent` | Extract brief + init journal for a single agent |
-| `extract-context` | E23 per-agent context extraction from IMPL doc |
-| `set-completion` | Register agent completion report |
-| `set-critic-verdict` | Set critic report verdict (PASS/ISSUES) without duplicate key risk |
-| `set-impl-state` | Atomically transition IMPL state (protocol state machine) |
-| `set-injection-method` | Record how Scout received reference files (hook/manual-fallback) |
-| `update-status` | Update agent/wave status in manifest |
-| `update-agent-prompt` | E8 downstream prompt update after contract revision |
-| `build-retry-context` | Structured failure context for agent retry (E19) |
-| `assign-agent-ids` | M1 auto-correct agent ID assignment |
-
-### Program layer
-
-| Command | What it does |
-|---------|-------------|
-| `validate-program` | PROGRAM manifest schema validation + P1 circular dependency check |
-| `tier-gate` | E29 tier quality gate verification |
-| `freeze-contracts` | E30 program contract freezing at tier boundary |
-| `program-status` | E32 full program status report (per-tier, per-IMPL, contract freeze states) |
-| `program-replan` | E34 re-engage Planner on tier gate failure |
-| `mark-program-complete` | Mark PROGRAM manifest complete + update CONTEXT.md |
-| `list-programs` | Discover PROGRAM manifests in repo |
-
-### Setup
-
-| Command | What it does |
-|---------|-------------|
-| `init` | Auto-detect project language, build/test commands; generate `saw.config.json` |
-| `verify-install` | Check prerequisites: polywave-tools on PATH, skill files, Git version, repo paths |
-
-### Utilities
-
-| Command | What it does |
-|---------|-------------|
-| `amend-impl` | E36 IMPL amendment: add-wave, redirect-agent, extend-scope |
-| `close-impl` | Atomic: E15 polywave:complete + archive + update CONTEXT.md + git commit |
-| `mark-complete` | E15 write polywave:complete marker + archive to `docs/IMPL/complete/` |
-| `update-context` | E18 update `docs/CONTEXT.md` after feature completion |
-| `list-impls` | Discover IMPL docs (active and archived) |
-| `resume-detect` | Detect interrupted Polywave sessions for recovery |
-| `journal-init` | Initialize agent tool journal |
-| `journal-context` | Generate context summary from tool journal (E23A) |
-| `daemon` | Run loop for autonomous multi-IMPL execution |
-| `run-review` | AI code review gate on merged diff |
-| `diagnose-build-failure` | AI-assisted build failure diagnosis |
-
-### Install
+## Install
 
 ```bash
 # Homebrew (macOS/Linux)
@@ -229,26 +59,27 @@ go install github.com/blackwell-systems/polywave-go/cmd/polywave-tools@latest
 ```
 
 <details>
-<summary>Download pre-built binary (no Go/Homebrew required)</summary>
+<summary>Download a pre-built binary</summary>
 
 Pre-built binaries for macOS and Linux are attached to every [GitHub release](https://github.com/blackwell-systems/polywave-go/releases/latest).
 
 ```bash
-# Resolve latest version and download (macOS Apple Silicon shown)
+# macOS Apple Silicon example
 VERSION=$(curl -sI https://github.com/blackwell-systems/polywave-go/releases/latest | grep -i location | sed 's|.*/v||;s/\r//')
 curl -sL "https://github.com/blackwell-systems/polywave-go/releases/download/v${VERSION}/polywave-tools_${VERSION}_darwin_arm64.tar.gz" | tar xz
 mkdir -p ~/.local/bin && mv polywave-tools ~/.local/bin/
-
-# Available archives:
-#   polywave-tools_{version}_darwin_arm64.tar.gz   (macOS Apple Silicon)
-#   polywave-tools_{version}_darwin_amd64.tar.gz   (macOS Intel)
-#   polywave-tools_{version}_linux_amd64.tar.gz    (Linux x86_64)
-#   polywave-tools_{version}_linux_arm64.tar.gz    (Linux ARM64)
 ```
+
+Available archives:
+
+- `polywave-tools_{version}_darwin_arm64.tar.gz`
+- `polywave-tools_{version}_darwin_amd64.tar.gz`
+- `polywave-tools_{version}_linux_amd64.tar.gz`
+- `polywave-tools_{version}_linux_arm64.tar.gz`
 </details>
 
 <details>
-<summary>Build from source (for contributors)</summary>
+<summary>Build from source</summary>
 
 ```bash
 go build -o polywave-tools ./cmd/polywave-tools
@@ -258,134 +89,246 @@ cp polywave-tools ~/.local/bin/polywave-tools
 
 ---
 
+## Quickstart
+
+Initialize a repository:
+
+```bash
+cd your-project
+polywave-tools init
+```
+
+Produce or validate an IMPL manifest:
+
+```bash
+polywave-tools run-scout "Add rate limiting to the API" --repo-dir "$PWD"
+polywave-tools validate docs/IMPL/IMPL-rate-limiting.yaml
+```
+
+Prepare and finalize the first wave:
+
+```bash
+polywave-tools prepare-wave docs/IMPL/IMPL-rate-limiting.yaml --wave 1 --repo-dir "$PWD"
+
+# Agents run in their assigned worktrees, commit, and write completion reports.
+
+polywave-tools finalize-wave docs/IMPL/IMPL-rate-limiting.yaml --wave 1 --repo-dir "$PWD"
+```
+
+Claude Code users normally invoke the higher-level `/polywave` AgentSkills workflow. This repository provides the Go engine and CLI that make the protocol executable.
+
+---
+
+## How It Works
+
+Polywave execution has three core phases.
+
+**Scout:** An agent analyzes the repository, runs the suitability gate, designs the file ownership partition, defines cross-agent interface contracts, and writes an IMPL manifest.
+
+**Wave:** Parallel agents execute concurrently. Each agent owns a disjoint set of files, works in its own git worktree, implements against pre-committed scaffold files, commits its changes, and writes a completion report back to the IMPL manifest.
+
+**Merge + Verify:** `finalize-wave` verifies commits, checks completion reports, predicts conflicts, scans for stubs, runs quality gates, merges agent branches, verifies the merged build, records integration gaps, and cleans up worktrees.
+
+Wave N+1 does not launch until Wave N has merged and passed post-merge verification. Later waves coordinate through committed code, not direct agent-to-agent communication.
+
+---
+
+## The IMPL Manifest
+
+The IMPL manifest is the single source of truth for a feature. Chat output is not protocol state.
+
+It records:
+
+- Suitability verdict and reasoning
+- File ownership by agent, wave, and repository
+- Interface contracts and scaffold status
+- Quality gates
+- Wave structure and agent prompts
+- Completion reports
+- Stub, wiring, and integration reports
+- Protocol state
+
+Abbreviated example:
+
+```yaml
+title: "API rate limiting"
+feature_slug: "rate-limiting"
+repository: "/path/to/repo"
+state: "REVIEWED"
+verdict: "SUITABLE"
+test_command: "go test ./..."
+lint_command: "go vet ./..."
+
+file_ownership:
+  - file: "pkg/ratelimit/limiter.go"
+    agent: "A"
+    wave: 1
+    action: "new"
+  - file: "internal/api/middleware.go"
+    agent: "B"
+    wave: 1
+    action: "modify"
+
+interface_contracts:
+  - name: "Limiter"
+    location: "pkg/ratelimit/limiter.go"
+    definition: "type Limiter interface { Allow(key string) bool }"
+
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: "Implement the limiter package."
+        files: ["pkg/ratelimit/limiter.go"]
+      - id: "B"
+        task: "Wire the limiter into API middleware."
+        files: ["internal/api/middleware.go"]
+        dependencies: []
+```
+
+All structural operations on this manifest are deterministic Go code. LLMs analyze and implement; the SDK validates, gates, and records.
+
+---
+
+## What This Repo Provides
+
+- **Protocol SDK:** Importable Go package for manifests, invariants, validation, state transitions, conflict prediction, gates, and program-level manifests.
+- **Engine:** High-level lifecycle entrypoints for Scout, Planner, wave preparation, wave finalization, tier execution, autonomy, retry, and integration validation.
+- **CLI:** `polywave-tools`, a command-line interface over the protocol and engine.
+- **Agent backends:** Provider routing for Anthropic, OpenAI-compatible APIs, AWS Bedrock, Ollama, LM Studio, and local CLI execution.
+- **Program layer:** Tier-gated execution of multiple IMPLs with shared contract freezing.
+
+Provider routing uses model prefixes:
+
+| Prefix | Backend |
+|--------|---------|
+| `anthropic:` | Anthropic API |
+| `openai:` | OpenAI-compatible endpoint |
+| `bedrock:` | AWS Bedrock |
+| `ollama:` | Ollama OpenAI-compatible endpoint |
+| `lmstudio:` | LM Studio OpenAI-compatible endpoint |
+| `cli:` | Local CLI binary |
+| *(none)* | Auto-detect from environment |
+
+Each agent may specify its own `model:` in the IMPL manifest, so one wave can mix providers and model sizes without changing orchestration code.
+
+---
+
+## Essential CLI Commands
+
+| Command | Purpose |
+|---------|---------|
+| `init` | Detect project language and default build/test commands |
+| `run-scout` | Launch Scout and produce an IMPL manifest |
+| `validate` | Validate IMPL manifest structure and invariants |
+| `prepare-wave` | Run baseline gates, create worktrees, extract briefs, initialize journals |
+| `finalize-wave` | Verify, gate, merge, build, and clean up a wave |
+| `check-conflicts` | Enforce I1 file ownership disjointness |
+| `validate-scaffolds` | Verify scaffold files are committed before launch |
+| `freeze-check` | Enforce interface contract freeze |
+| `validate-integration` | Detect wiring and integration gaps |
+| `set-completion` | Record an agent completion report |
+| `set-impl-state` | Apply a protocol state transition |
+| `resume-detect` | Detect interrupted sessions |
+| `daemon` | Run queued IMPLs under autonomy settings |
+
+The CLI contains many more single-purpose commands for advanced validation, program execution, review, retry, observability, and recovery. See [`cmd/polywave-tools/README.md`](cmd/polywave-tools/README.md) for command-level reference.
+
+---
+
 ## Protocol SDK
 
-The `pkg/protocol` package is the importable core: pure Go, no LLM dependencies, deterministic for all inputs.
+The `pkg/protocol` package is the deterministic core. It has no LLM dependency.
 
 ```go
 import "github.com/blackwell-systems/polywave-go/pkg/protocol"
 
-// Load and validate a manifest
 manifest, err := protocol.Load(ctx, "docs/IMPL/IMPL-feature.yaml")
+if err != nil {
+    return err
+}
+
 errs := protocol.Validate(manifest)
-
-// I1 check: will any agents in wave 1 conflict?
-conflicts := protocol.CheckOwnershipConflicts(manifest, 1)
-
-// Query current wave
+i1Errs := protocol.ValidateI1DisjointOwnership(manifest, 1)
 wave := protocol.CurrentWave(manifest)
 
-// Register agent completion
+_ = i1Errs
+_ = wave
+
 protocol.SetCompletionReport(manifest, "A", protocol.CompletionReport{
-    Status: "complete",
-    Commit: "abc123",
-    Branch: "polywave/my-feature/wave1-agent-A",
+    Status:       protocol.StatusComplete,
+    Commit:       "abc123",
+    Branch:       "polywave/my-feature/wave1-agent-A",
     FilesCreated: []string{"pkg/cache/cache.go"},
 })
-protocol.Save(ctx, manifest, "docs/IMPL/IMPL-feature.yaml")
-```
 
-### Invariant enforcement
-
-| Invariant | Rule | Enforcement |
-|-----------|------|-------------|
-| I1 | No two agents in the same wave own the same file | `Validate()` checks ownership table; `check-conflicts` at pre-launch |
-| I2 | Interface contracts defined before agents launch | Scaffold files committed before worktrees created; `freeze-check` enforces |
-| I3 | Wave N+1 waits for Wave N merge | `CurrentWave()` returns first incomplete wave; orchestrator controls transitions |
-| I4 | IMPL manifest is single source of truth | All state read/written via SDK operations; completion reports written to IMPL doc |
-| I5 | Agents commit before reporting | `SetCompletionReport()` requires commit hash; `verify-commits` gates merge |
-| I6 | Orchestrator does not perform agent work | Behavioral; enforced by role separation in agent type definitions |
-
-Validation errors are structured (`ValidationError` with code, message, field) — not line-number parse errors.
-
-### Package structure
-
-See [`pkg/README.md`](pkg/README.md) for the full package map (27 packages) with dependency hierarchy and entry points.
-
-Key packages:
-
-```
-pkg/
-├── protocol/       # Protocol SDK — types, validation, manifest I/O, baseline gates
-├── engine/         # High-level entrypoints: RunScout, FinalizeWave, RunReview
-├── orchestrator/   # Wave orchestration, SSE events, journal integration
-├── agent/          # Agent execution runtime, tool dispatch, LLM backends
-├── result/         # result.Result[T] — canonical return type for fallible functions
-├── collision/      # Type/const collision detection across agent branches
-├── gatecache/      # Baseline gate result caching (E38)
-├── observability/  # Event store, metrics rollups, query engine
-├── journal/        # Tool journal: append-only execution trace, context recovery
-├── pipeline/       # Atomic batching pipeline (prepare-wave, finalize-wave)
-├── solver/         # Constraint solver for file ownership optimization
-├── worktree/       # Git worktree management
-└── ...             # 15 more — see pkg/README.md
-
-internal/
-└── git/            # Git operations (commit, branch, merge)
-```
-
----
-
-## Installation
-
-```bash
-go get github.com/blackwell-systems/polywave-go
-```
-
----
-
-## Getting Started
-
-**Using the `/polywave` skill (Claude Code):** See the [protocol repository](https://github.com/blackwell-systems/polywave) for the skill and agent prompts. The `/polywave scout <feature>` -> `/polywave wave` -> `/polywave wave --auto` workflow is the primary path for Claude Code users.
-
-**Using polywave-tools directly:**
-
-```bash
-# Install the CLI
-go install github.com/blackwell-systems/polywave-go/cmd/polywave-tools@latest
-
-# Initialize your project (auto-detects language, build, and test commands)
-cd your-project
-polywave-tools init
-
-# Validate an IMPL doc
-polywave-tools validate docs/IMPL/IMPL-feature.yaml
-
-# Prepare wave 1 (baseline gate + worktrees + agent briefs)
-polywave-tools prepare-wave docs/IMPL/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
-
-# After agents complete, finalize the wave (gates + merge + verify)
-polywave-tools finalize-wave /abs/path/to/IMPL-feature.yaml --wave 1 --repo-dir /path/to/repo
-```
-
-**Using the engine programmatically:**
-
-```go
-import "github.com/blackwell-systems/polywave-go/pkg/engine"
-
-opts := engine.RunScoutOpts{
-    Prompt:     "Add rate limiting to the API",
-    RepoPath:   "/path/to/repo",
-    ScoutModel: "claude-sonnet-4-6",
+save := protocol.Save(ctx, manifest, "docs/IMPL/IMPL-feature.yaml")
+if save.IsFatal() {
+    return fmt.Errorf("save failed: %v", save.Errors)
 }
-manifestPath, err := engine.RunScout(ctx, opts)
 ```
+
+Invariant enforcement:
+
+| Invariant | Enforcement |
+|-----------|-------------|
+| I1: Disjoint file ownership | `Validate`, `check-conflicts`, prepare-wave fast-fail, merge prediction |
+| I2: Interface contracts precede implementation | Scaffold validation and freeze checks before worktree launch |
+| I3: Wave sequencing | Prepare-wave blocks later waves until prior waves complete |
+| I4: IMPL manifest is source of truth | Completion reports and state transitions are manifest writes |
+| I5: Agents commit before reporting | Completion report validation and `verify-commits` gate |
+| I6: Role separation | Agent role boundaries, Scout write-boundary checks, and orchestration discipline |
+
+---
+
+## Program Layer
+
+For larger work, a PROGRAM manifest coordinates multiple IMPL manifests through tiers.
+
+- Same-tier IMPLs must be independent.
+- Later tiers may depend on earlier tiers.
+- Program contracts are materialized and frozen before downstream Scouts consume them.
+- Tier gates block advancement on failure.
+- IMPL branches isolate in-progress tier work until the tier is finalized.
+
+This extends the same idea as waves: tiers are to IMPLs what waves are to agents.
 
 ---
 
 ## Architecture
 
-Three repositories with separation of concerns:
+Four repositories separate the protocol, skills, engine, and UI:
 
 | Repository | Purpose |
 |-----------|---------|
-| [polywave](https://github.com/blackwell-systems/polywave) | Protocol specification: invariants (I1–I6), execution rules (E1–E47), agent prompts, `/saw` skill |
-| **polywave-go** (this repo) | Go engine + Protocol SDK + `polywave-tools` CLI |
-| [polywave-web](https://github.com/blackwell-systems/polywave-web) | Web UI + HTTP/SSE server (imports this engine) |
+| [polywave-protocol](https://github.com/blackwell-systems/polywave-protocol) | Normative protocol specification: invariants, execution rules, state machine, message formats |
+| [polywave](https://github.com/blackwell-systems/polywave) | AgentSkills layer and agent-facing workflow |
+| **polywave-go** | Go engine, Protocol SDK, and `polywave-tools` CLI |
+| [polywave-web](https://github.com/blackwell-systems/polywave-web) | Web UI and HTTP/SSE server using this engine |
 
-The protocol repo is the source of truth for semantics. This repo implements them. The web repo provides the UI layer.
+The protocol repo defines the semantics. This repo implements them. The AgentSkills layer shapes agent behavior. The web repo provides an operator interface.
 
-**Design principle:** The SDK handles data deterministically. The engine handles execution. Validation happens at every boundary between the two. Structural operations (manifest parsing, invariant validation, file ownership, wave sequencing) are Go code — pure functions, no LLM, same output for the same input. Creative operations (codebase analysis, implementation, novel error handling) are LLM work, delegated to the appropriate agent type.
+Package map:
+
+```text
+pkg/
+├── protocol/       # Manifest types, validation, invariants, gates, merge logic
+├── engine/         # RunScout, PrepareWave, FinalizeWave, program/tier execution
+├── orchestrator/   # Wave orchestration, backend routing, event flow
+├── agent/          # Agent runtime and backend interface
+├── analyzer/       # Dependency, cascade, wiring, and shared-type analysis
+├── hooks/          # Boundary and prelaunch checks
+├── journal/        # Append-only execution trace and context recovery
+├── observability/  # Event model, metrics, SQLite store
+├── retry/          # Failure classification and retry support
+├── worktree/       # Git worktree management
+└── result/         # Canonical Result[T] error model
+
+internal/
+└── git/            # Git command wrappers
+```
+
+See [`pkg/README.md`](pkg/README.md) for a deeper package map.
 
 ---
 
@@ -395,6 +338,12 @@ The protocol repo is the source of truth for semantics. This repo implements the
 go build ./...
 go test ./...
 golangci-lint run
+```
+
+If `go.work` points at local repositories that are not present on your machine, run package commands with workspace mode disabled:
+
+```bash
+GOWORK=off go test ./...
 ```
 
 ---
