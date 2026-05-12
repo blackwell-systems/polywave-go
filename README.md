@@ -10,6 +10,8 @@
 
 Go engine, Protocol SDK, and `polywave-tools` CLI for Polywave: a coordination protocol for parallel AI agent development that makes merge conflicts structurally impossible when work can be decomposed safely.
 
+> **Using Claude Code?** Start at [polywave](https://github.com/blackwell-systems/polywave) for the Agent Skill and install guide. This repo provides the engine and CLI that the skill depends on.
+
 Polywave is not a generic agent runner. It is a protocol for deciding when parallel agent work is suitable, partitioning that work by file ownership, enforcing the partition before agents start, and merging completed work through deterministic gates.
 
 ---
