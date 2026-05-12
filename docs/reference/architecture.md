@@ -576,9 +576,10 @@ allowed-transitions map. Invalid transitions return an error.
 
 ## Cross-Repo Architecture
 
-The engine is split across three repos:
+The engine is split across four repos:
 
-- **polywave** -- protocol specification (invariants, execution rules, agent prompts)
+- **polywave-protocol** -- protocol specification (invariants, execution rules, state machine, message formats)
+- **polywave** -- Claude Code implementation (Agent Skill, hooks, agent prompts)
 - **polywave-go** (this repo) -- engine, protocol SDK, CLI
 - **polywave-web** -- web UI, HTTP server, `polywave-web serve` binary
 

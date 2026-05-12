@@ -1,4 +1,4 @@
-# Binary Architecture: polywave-tools vs polywave
+# Binary Architecture: polywave-tools vs polywave-web
 
 ## Do Not Merge These Binaries
 
@@ -302,7 +302,7 @@ make build  # or: cd web && npm run build && cd .. && go build -o polywave-web .
 - Need low-level worktree or merge operations
 - Cannot import Go packages
 
-### Use polywave when:
+### Use polywave-web when:
 - Want interactive web UI for IMPL review and wave monitoring
 - Need real-time SSE event streaming
 - Running as a local HTTP server
