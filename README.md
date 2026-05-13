@@ -228,6 +228,29 @@ No API keys, no external services, no Python dependencies. The engine drives the
 
 ---
 
+## No External Agent Framework Required
+
+Most multi-agent systems depend on Python agent SDKs (LangGraph, CrewAI, AutoGen, Pydantic AI) to provide the tool-use loop: the cycle of sending a prompt, parsing tool calls, executing tools, feeding results back, and iterating until completion.
+
+polywave-go implements this loop natively in Go. The `pkg/agent` package is a complete agent runtime:
+
+- **Tool schema generation:** file read/write, shell execution, git operations, formatted as model-native tool definitions
+- **Response parsing:** extracts tool calls from streaming model responses (Anthropic tool_use blocks, OpenAI function_call format)
+- **Tool execution:** runs the requested operation in the agent's assigned worktree
+- **Result feeding:** appends tool results to the conversation and re-prompts
+- **Termination detection:** recognizes when the agent signals completion
+- **Streaming:** real-time output via callback for observability and web UI integration
+
+This means:
+- **Zero Python in the stack.** Single static Go binary. No virtualenvs, no pip, no dependency conflicts.
+- **Any model works.** Anthropic, OpenAI, Bedrock, or any local model via Ollama/LM Studio/vLLM. Same tool-use loop regardless of provider.
+- **Fully programmatic execution.** Import `pkg/engine` into your own Go code and run waves without a CLI or interactive session.
+- **Unattended operation.** `polywave-tools daemon` processes queued IMPLs with no human in the loop.
+
+The protocol validates all output regardless of which model produced it. A local 7B model's scout output goes through the same validation gates as Claude Opus. Bad decompositions fail structurally; they don't produce unsafe merges.
+
+---
+
 ## Essential CLI Commands
 
 | Command | Purpose |
