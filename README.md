@@ -39,7 +39,7 @@ Use Polywave for agentic development when the work has real parallel structure:
 - Multi-feature programs where tier ordering and shared contracts matter
 - Tasks where build/test verification is expensive enough that parallelism pays for the orchestration overhead
 
-Do not use Polywave for every edit. The Scout runs a suitability gate before producing agent prompts and returns `NOT_SUITABLE` when the work does not fit.
+Do not use Polywave for every edit. The protocol runs a mandatory suitability gate that answers five questions before producing any agent prompts. If work does not decompose cleanly, the Scout returns `NOT_SUITABLE` and stops. This is a structural boundary, not a suggestion.
 
 Polywave is usually the wrong tool for:
 
