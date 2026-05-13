@@ -200,7 +200,8 @@ All structural operations on this manifest are deterministic Go code. LLMs analy
 - **Protocol SDK:** Importable Go package for manifests, invariants, validation, state transitions, conflict prediction, gates, and program-level manifests.
 - **Engine:** High-level lifecycle entrypoints for Scout, Planner, wave preparation, wave finalization, tier execution, autonomy, retry, and integration validation.
 - **CLI:** `polywave-tools`, a command-line interface over the protocol and engine.
-- **Agent backends:** Provider routing for Anthropic, OpenAI-compatible APIs, AWS Bedrock, Ollama, LM Studio, and local CLI execution.
+- **Agent runtime:** Complete agentic tool-use loop in native Go. Sends prompts with tool schemas, parses tool-call responses, executes tools (file I/O, shell commands, git operations), feeds results back, and iterates until the agent signals completion. This is a self-contained agent SDK; no external framework (LangGraph, CrewAI, AutoGen) is required.
+- **Agent backends:** Provider routing for Anthropic, OpenAI-compatible APIs, AWS Bedrock, Ollama, LM Studio, and local CLI execution. Any model behind an OpenAI-compatible endpoint works, including local models via Ollama or vLLM.
 - **Program layer:** Tier-gated execution of multiple IMPLs with shared contract freezing.
 
 Provider routing uses model prefixes:
@@ -216,6 +217,14 @@ Provider routing uses model prefixes:
 | *(none)* | Auto-detect from environment |
 
 Each agent may specify its own `model:` in the IMPL manifest, so one wave can mix providers and model sizes without changing orchestration code.
+
+For fully local execution, point at an Ollama instance:
+
+```bash
+polywave-tools run-scout "add rate limiting" --model ollama:qwen2.5-coder:32b --repo-dir "$PWD"
+```
+
+No API keys, no external services, no Python dependencies. The engine drives the full tool-use loop natively in Go.
 
 ---
 
