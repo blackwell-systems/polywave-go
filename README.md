@@ -302,16 +302,17 @@ This extends the same idea as waves: tiers are to IMPLs what waves are to agents
 
 ## Architecture
 
-Four repositories separate the protocol, skills, engine, and UI:
+Five repositories separate the protocol, skills, engine, and UI:
 
 | Repository | Purpose |
 |-----------|---------|
 | [polywave-protocol](https://github.com/blackwell-systems/polywave-protocol) | Normative protocol specification: invariants, execution rules, state machine, message formats |
-| [polywave](https://github.com/blackwell-systems/polywave) | AgentSkills layer and agent-facing workflow |
+| [polywave](https://github.com/blackwell-systems/polywave) | Claude Code implementation: Agent Skill, hooks, agent prompts |
+| [polywave-codex](https://github.com/blackwell-systems/polywave-codex) | Codex CLI implementation: same protocol, different platform |
 | **polywave-go** | Go engine, Protocol SDK, and `polywave-tools` CLI |
 | [polywave-web](https://github.com/blackwell-systems/polywave-web) | Web UI and HTTP/SSE server using this engine |
 
-The protocol repo defines the semantics. This repo implements them. The AgentSkills layer shapes agent behavior. The web repo provides an operator interface.
+The protocol repo defines the semantics. This repo implements them. The skill repos (polywave, polywave-codex) shape agent behavior on their respective platforms. The web repo provides an operator interface.
 
 Package map:
 
