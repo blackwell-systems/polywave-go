@@ -518,6 +518,171 @@ func TestRunSingleAgent_JournalContextApplied(t *testing.T) {
 	}
 }
 
+// TestRunPlanner_MissingDescription verifies that RunPlanner returns a fatal result
+// when Description is empty.
+func TestRunPlanner_MissingDescription(t *testing.T) {
+	res := RunPlanner(context.Background(), RunPlannerOpts{
+		Description:    "",
+		RepoPath:       "/tmp/repo",
+		ProgramOutPath: "/tmp/PROGRAM.yaml",
+	}, func(string) {})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when Description is empty, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "Description is required") {
+		t.Errorf("error should mention Description is required, got: %v", res.Errors)
+	}
+}
+
+// TestRunPlanner_MissingRepoPath verifies that RunPlanner returns a fatal result
+// when RepoPath is empty.
+func TestRunPlanner_MissingRepoPath(t *testing.T) {
+	res := RunPlanner(context.Background(), RunPlannerOpts{
+		Description:    "Some project description",
+		RepoPath:       "",
+		ProgramOutPath: "/tmp/PROGRAM.yaml",
+	}, func(string) {})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when RepoPath is empty, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "RepoPath is required") {
+		t.Errorf("error should mention RepoPath is required, got: %v", res.Errors)
+	}
+}
+
+// TestRunPlanner_MissingProgramOutPath verifies that RunPlanner returns a fatal result
+// when ProgramOutPath is empty.
+func TestRunPlanner_MissingProgramOutPath(t *testing.T) {
+	res := RunPlanner(context.Background(), RunPlannerOpts{
+		Description:    "Some project description",
+		RepoPath:       "/tmp/repo",
+		ProgramOutPath: "",
+	}, func(string) {})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when ProgramOutPath is empty, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "ProgramOutPath is required") {
+		t.Errorf("error should mention ProgramOutPath is required, got: %v", res.Errors)
+	}
+}
+
+// TestRunScaffold_NoScaffolds verifies that RunScaffold returns success with
+// ScaffoldsFound=0 when the manifest has no scaffold entries.
+func TestRunScaffold_NoScaffolds(t *testing.T) {
+	dir := t.TempDir()
+	implPath := filepath.Join(dir, "IMPL.yaml")
+	content := `title: test
+feature_slug: test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership: []
+interface_contracts: []
+scaffolds: []
+waves: []
+quality_gates:
+  level: standard
+  gates: []
+`
+	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
+	}
+
+	var events []Event
+	res := RunScaffold(RunScaffoldOpts{
+		Ctx:      context.Background(),
+		ImplPath: implPath,
+		RepoPath: dir,
+		Model:    "",
+		OnEvent:  func(ev Event) { events = append(events, ev) },
+	})
+	if res.IsFatal() {
+		t.Fatalf("RunScaffold returned failure: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.ScaffoldsFound != 0 {
+		t.Errorf("ScaffoldsFound = %d, want 0", data.ScaffoldsFound)
+	}
+	if data.IMPLPath != implPath {
+		t.Errorf("IMPLPath = %q, want %q", data.IMPLPath, implPath)
+	}
+}
+
+// TestRunScaffold_AllExist verifies that RunScaffold skips execution when all
+// scaffold files already exist on disk.
+func TestRunScaffold_AllExist(t *testing.T) {
+	dir := t.TempDir()
+
+	// Create the scaffold file that the manifest references.
+	scaffoldFile := filepath.Join(dir, "pkg", "api", "api.go")
+	if err := os.MkdirAll(filepath.Dir(scaffoldFile), 0755); err != nil {
+		t.Fatalf("failed to create scaffold dir: %v", err)
+	}
+	if err := os.WriteFile(scaffoldFile, []byte("package api\n"), 0644); err != nil {
+		t.Fatalf("failed to write scaffold file: %v", err)
+	}
+
+	implPath := filepath.Join(dir, "IMPL.yaml")
+	content := fmt.Sprintf(`title: test
+feature_slug: test
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership: []
+interface_contracts: []
+scaffolds:
+  - file_path: %s
+    purpose: API stub
+waves: []
+quality_gates:
+  level: standard
+  gates: []
+`, scaffoldFile)
+	if err := os.WriteFile(implPath, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write IMPL manifest: %v", err)
+	}
+
+	var events []Event
+	res := RunScaffold(RunScaffoldOpts{
+		Ctx:      context.Background(),
+		ImplPath: implPath,
+		RepoPath: dir,
+		Model:    "",
+		OnEvent:  func(ev Event) { events = append(events, ev) },
+	})
+	if res.IsFatal() {
+		t.Fatalf("RunScaffold returned failure: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.ScaffoldsFound != 1 {
+		t.Errorf("ScaffoldsFound = %d, want 1", data.ScaffoldsFound)
+	}
+	// No scaffold_started event because all files exist.
+	for _, ev := range events {
+		if ev.Event == "scaffold_started" {
+			t.Error("scaffold_started event should not be emitted when all scaffolds exist")
+		}
+	}
+}
+
+// TestRunScaffold_ManifestLoadFails verifies that RunScaffold returns a fatal
+// result when the IMPL manifest cannot be loaded.
+func TestRunScaffold_ManifestLoadFails(t *testing.T) {
+	res := RunScaffold(RunScaffoldOpts{
+		Ctx:      context.Background(),
+		ImplPath: "/nonexistent/IMPL.yaml",
+		RepoPath: "/tmp/repo",
+		Model:    "",
+		OnEvent:  func(ev Event) {},
+	})
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when manifest load fails, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "load manifest failed") {
+		t.Errorf("error should mention load manifest failed, got: %v", res.Errors)
+	}
+}
+
 // TestBuildProgramContractsSection verifies that frozen contracts are correctly extracted and formatted.
 func TestBuildProgramContractsSection(t *testing.T) {
 	// Create a test manifest with frozen contracts

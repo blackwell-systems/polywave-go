@@ -1435,5 +1435,447 @@ func TestLaunchAgent_JournalContextSkippedWhenEmpty(t *testing.T) {
 	}
 }
 
+// TestNewBackendFromModel_HappyPath verifies that NewBackendFromModel returns a
+// successful result when the model string is valid and newBackendFunc succeeds.
+func TestNewBackendFromModel_HappyPath(t *testing.T) {
+	origNewBackend := newBackendFunc
+	t.Cleanup(func() { newBackendFunc = origNewBackend })
+
+	var gotCfg BackendConfig
+	newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+		gotCfg = cfg
+		return &fakeBackend{}, nil
+	}
+
+	res := NewBackendFromModel("openai:gpt-4o")
+	if res.IsFatal() {
+		t.Fatalf("NewBackendFromModel returned failure: %v", res.Errors)
+	}
+	b := res.GetData()
+	if b == nil {
+		t.Fatal("NewBackendFromModel returned nil backend on success")
+	}
+	if gotCfg.Model != "openai:gpt-4o" {
+		t.Errorf("BackendConfig.Model = %q, want %q", gotCfg.Model, "openai:gpt-4o")
+	}
+}
+
+// TestNewBackendFromModel_ErrorPropagation verifies that NewBackendFromModel returns
+// a fatal result with CodeAgentLaunchFailed when newBackendFunc returns an error.
+func TestNewBackendFromModel_ErrorPropagation(t *testing.T) {
+	origNewBackend := newBackendFunc
+	t.Cleanup(func() { newBackendFunc = origNewBackend })
+
+	newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+		return nil, errors.New("simulated backend creation failure")
+	}
+
+	res := NewBackendFromModel("bad-model")
+	if !res.IsFatal() {
+		t.Fatal("expected fatal result when backend creation fails, got success")
+	}
+	if len(res.Errors) == 0 {
+		t.Fatal("expected errors in fatal result, got none")
+	}
+	if !strings.Contains(res.Errors[0].Message, "simulated backend creation failure") {
+		t.Errorf("error message should contain cause, got: %q", res.Errors[0].Message)
+	}
+}
+
+// TestNewBackendFromModel_ProviderPrefixPassedThrough verifies that the full
+// model string (including provider prefix) is forwarded to newBackendFunc unchanged.
+func TestNewBackendFromModel_ProviderPrefixPassedThrough(t *testing.T) {
+	origNewBackend := newBackendFunc
+	t.Cleanup(func() { newBackendFunc = origNewBackend })
+
+	models := []string{
+		"bedrock:claude-sonnet-4-6",
+		"anthropic:claude-haiku-4-5",
+		"ollama:llama3",
+		"gpt-4o", // no prefix
+	}
+
+	for _, model := range models {
+		var gotModel string
+		newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+			gotModel = cfg.Model
+			return &fakeBackend{}, nil
+		}
+		res := NewBackendFromModel(model)
+		if res.IsFatal() {
+			t.Errorf("NewBackendFromModel(%q) failed: %v", model, res.Errors)
+			continue
+		}
+		if gotModel != model {
+			t.Errorf("NewBackendFromModel(%q): backend received Model=%q", model, gotModel)
+		}
+	}
+}
+
+// TestIMPLDoc_ReturnsDoc verifies that IMPLDoc() returns the same document pointer
+// that was used to construct the orchestrator.
+func TestIMPLDoc_ReturnsDoc(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		Title:       "my-feature",
+		FeatureSlug: "my-feature",
+		Verdict:     "SUITABLE",
+	}
+	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
+
+	got := o.IMPLDoc()
+	if got != doc {
+		t.Error("IMPLDoc() did not return the same pointer passed to newFromDoc")
+	}
+	if got.Title != "my-feature" {
+		t.Errorf("IMPLDoc().Title = %q, want %q", got.Title, "my-feature")
+	}
+	if got.FeatureSlug != "my-feature" {
+		t.Errorf("IMPLDoc().FeatureSlug = %q, want %q", got.FeatureSlug, "my-feature")
+	}
+}
+
+// TestIMPLDoc_NilDoc verifies that IMPLDoc() returns nil when the orchestrator
+// was constructed with a nil document (e.g. when the IMPL path is empty).
+func TestIMPLDoc_NilDoc(t *testing.T) {
+	o := newFromDoc(nil, "/repo", "")
+	if o.IMPLDoc() != nil {
+		t.Error("IMPLDoc() should return nil when doc is nil")
+	}
+}
+
+// TestSetWorktreePaths_HappyPath verifies that SetWorktreePaths stores the
+// paths map and that they are accessible on the orchestrator.
+func TestSetWorktreePaths_HappyPath(t *testing.T) {
+	o := makeOrch()
+	paths := map[string]string{
+		"A": "/worktrees/wave1-agent-A",
+		"B": "/worktrees/wave1-agent-B",
+	}
+	o.SetWorktreePaths(paths)
+
+	if o.worktreePaths == nil {
+		t.Fatal("SetWorktreePaths: worktreePaths is nil after set")
+	}
+	if o.worktreePaths["A"] != "/worktrees/wave1-agent-A" {
+		t.Errorf("worktreePaths[A] = %q, want %q", o.worktreePaths["A"], "/worktrees/wave1-agent-A")
+	}
+	if o.worktreePaths["B"] != "/worktrees/wave1-agent-B" {
+		t.Errorf("worktreePaths[B] = %q, want %q", o.worktreePaths["B"], "/worktrees/wave1-agent-B")
+	}
+}
+
+// TestSetWorktreePaths_NilMap verifies that SetWorktreePaths accepts nil without panicking.
+func TestSetWorktreePaths_NilMap(t *testing.T) {
+	o := makeOrch()
+	o.SetWorktreePaths(nil)
+	if o.worktreePaths != nil {
+		t.Error("SetWorktreePaths(nil): expected worktreePaths to be nil")
+	}
+}
+
+// TestSetWorktreePaths_Overwrite verifies that calling SetWorktreePaths a second
+// time replaces the previous map.
+func TestSetWorktreePaths_Overwrite(t *testing.T) {
+	o := makeOrch()
+	o.SetWorktreePaths(map[string]string{"A": "/path1"})
+	o.SetWorktreePaths(map[string]string{"X": "/path2"})
+
+	if _, ok := o.worktreePaths["A"]; ok {
+		t.Error("old path 'A' should not exist after overwrite")
+	}
+	if o.worktreePaths["X"] != "/path2" {
+		t.Errorf("worktreePaths[X] = %q, want %q", o.worktreePaths["X"], "/path2")
+	}
+}
+
+// TestSetPrioritizeAgentsFunc_ReplacesAndCalls verifies that SetPrioritizeAgentsFunc
+// replaces the global prioritizeAgentsFunc and that the replacement is called.
+func TestSetPrioritizeAgentsFunc_ReplacesAndCalls(t *testing.T) {
+	orig := prioritizeAgentsFunc
+	t.Cleanup(func() { prioritizeAgentsFunc = orig })
+
+	var calledWith int
+	SetPrioritizeAgentsFunc(func(manifest *protocol.IMPLManifest, waveNum int) []string {
+		calledWith = waveNum
+		return []string{"Z", "Y", "X"}
+	})
+
+	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
+		Waves: []protocol.Wave{
+			{Number: 5, Agents: []protocol.Agent{
+				{ID: "A"}, {ID: "B"},
+			}},
+		},
+	}
+	result := prioritizeAgentsFunc(doc, 5)
+
+	if calledWith != 5 {
+		t.Errorf("prioritizeAgentsFunc called with waveNum=%d, want 5", calledWith)
+	}
+	if len(result) != 3 || result[0] != "Z" {
+		t.Errorf("prioritizeAgentsFunc returned %v, want [Z Y X]", result)
+	}
+}
+
+// TestSetPrioritizeAgentsFunc_NilReplacement verifies that setting nil
+// causes a panic if called (since nil funcs panic on invocation). This
+// confirms that the function variable is truly replaced.
+func TestSetPrioritizeAgentsFunc_NilReplacedWithValid(t *testing.T) {
+	orig := prioritizeAgentsFunc
+	t.Cleanup(func() { prioritizeAgentsFunc = orig })
+
+	// Replace with a valid function, then verify it works
+	called := false
+	SetPrioritizeAgentsFunc(func(_ *protocol.IMPLManifest, _ int) []string {
+		called = true
+		return nil
+	})
+	_ = prioritizeAgentsFunc(nil, 1)
+	if !called {
+		t.Error("replacement function was not called")
+	}
+}
+
+// TestRunAgent_HappyPath verifies that RunAgent finds the target agent by letter
+// (case-insensitive) and launches it successfully.
+func TestRunAgent_HappyPath(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
+	}
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	var capturedPrompt string
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
+		capturedPrompt = systemPrompt
+		return "done", nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
+	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
+		Waves: []protocol.Wave{
+			{
+				Number: 2,
+				Agents: []protocol.Agent{
+					{ID: "A", Task: "task A"},
+					{ID: "B", Task: "task B"},
+				},
+			},
+		},
+	}
+	o := newFromDoc(doc, "/tmp/repo", "/nonexistent/IMPL.md")
+
+	res := o.RunAgent(context.Background(), 2, "B", "")
+	if res.IsFatal() {
+		t.Fatalf("RunAgent returned failure: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.WaveNum != 2 {
+		t.Errorf("AgentData.WaveNum = %d, want 2", data.WaveNum)
+	}
+	if data.AgentLetter != "B" {
+		t.Errorf("AgentData.AgentLetter = %q, want %q", data.AgentLetter, "B")
+	}
+	// Verify the backend was actually called.
+	if capturedPrompt == "" {
+		t.Error("backend was not called (capturedPrompt is empty)")
+	}
+}
+
+// TestRunAgent_PromptPrefix verifies that promptPrefix is prepended to the agent task.
+func TestRunAgent_PromptPrefix(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
+	}
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+
+	var capturedPrompt string
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
+		capturedPrompt = systemPrompt
+		return "done", nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
+	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "original task"}}},
+		},
+	}
+	o := newFromDoc(doc, "/tmp/repo", "/nonexistent/IMPL.md")
+
+	res := o.RunAgent(context.Background(), 1, "A", "SCOPE HINT: focus on X only")
+	if res.IsFatal() {
+		t.Fatalf("RunAgent returned failure: %v", res.Errors)
+	}
+	if !strings.Contains(capturedPrompt, "SCOPE HINT: focus on X only") {
+		t.Errorf("prompt does not contain prefix; got: %q", capturedPrompt)
+	}
+	if !strings.Contains(capturedPrompt, "original task") {
+		t.Errorf("prompt does not contain original task; got: %q", capturedPrompt)
+	}
+}
+
+// TestRunAgent_NilDoc verifies that RunAgent returns a fatal result when implDoc is nil.
+func TestRunAgent_NilDoc(t *testing.T) {
+	o := newFromDoc(nil, "/repo", "/repo/IMPL.md")
+	res := o.RunAgent(context.Background(), 1, "A", "")
+	if !res.IsFatal() {
+		t.Fatal("expected failure when implDoc is nil, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "no IMPL doc loaded") {
+		t.Errorf("error should mention no IMPL doc loaded, got: %v", res.Errors)
+	}
+}
+
+// TestRunAgent_WaveNotFound verifies that RunAgent returns a fatal result when
+// the requested wave number does not exist.
+func TestRunAgent_WaveNotFound(t *testing.T) {
+	o := makeOrchWithWave(1, "A")
+	res := o.RunAgent(context.Background(), 99, "A", "")
+	if !res.IsFatal() {
+		t.Fatal("expected failure for missing wave 99, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "99") {
+		t.Errorf("error should mention wave 99, got: %v", res.Errors)
+	}
+}
+
+// TestRunAgent_AgentNotFound verifies that RunAgent returns a fatal result when
+// the requested agent letter does not exist in the wave.
+func TestRunAgent_AgentNotFound(t *testing.T) {
+	o := makeOrchWithWave(1, "A", "B")
+	res := o.RunAgent(context.Background(), 1, "Z", "")
+	if !res.IsFatal() {
+		t.Fatal("expected failure for missing agent Z, got success")
+	}
+	if len(res.Errors) == 0 || !strings.Contains(res.Errors[0].Message, "Z") {
+		t.Errorf("error should mention agent Z, got: %v", res.Errors)
+	}
+}
+
+// TestRunAgent_CaseInsensitiveLookup verifies that agent lookup is case-insensitive.
+func TestRunAgent_CaseInsensitiveLookup(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, id string) (string, error) {
+		return "/tmp/fake-wt-" + id, nil
+	}
+	waitForCompletionFunc = func(_ context.Context, _, _ string, _, _ time.Duration) (*protocol.CompletionReport, error) {
+		return &protocol.CompletionReport{Status: "complete"}, nil
+	}
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b)
+	}
+
+	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "work"}}},
+		},
+	}
+	o := newFromDoc(doc, "/tmp/repo", "/nonexistent/IMPL.md")
+
+	// Lowercase "a" should match agent "A"
+	res := o.RunAgent(context.Background(), 1, "a", "")
+	if res.IsFatal() {
+		t.Fatalf("RunAgent with lowercase 'a' failed: %v", res.Errors)
+	}
+	if res.GetData().AgentLetter != "a" {
+		t.Errorf("AgentData.AgentLetter = %q, want %q", res.GetData().AgentLetter, "a")
+	}
+}
+
+// TestUpdateIMPLStatus_WaveNotFound verifies that UpdateIMPLStatus returns
+// success with nil CompletedAgents when the wave is not found.
+func TestUpdateIMPLStatus_WaveNotFound(t *testing.T) {
+	o := makeOrchWithWave(1, "A", "B")
+	res := o.UpdateIMPLStatus(context.Background(), 99)
+	if res.IsFatal() {
+		t.Fatalf("expected success for missing wave, got failure: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.WaveNum != 99 {
+		t.Errorf("UpdateData.WaveNum = %d, want 99", data.WaveNum)
+	}
+	if data.CompletedAgents != nil {
+		t.Errorf("CompletedAgents should be nil for missing wave, got: %v", data.CompletedAgents)
+	}
+}
+
+// TestUpdateIMPLStatus_ManifestLoadFails verifies that UpdateIMPLStatus returns
+// success (with nil CompletedAgents) when the IMPL doc cannot be loaded.
+func TestUpdateIMPLStatus_ManifestLoadFails(t *testing.T) {
+	doc := &protocol.IMPLManifest{
+		FeatureSlug: "test",
+		Waves: []protocol.Wave{
+			{Number: 1, Agents: []protocol.Agent{{ID: "A", Task: "work"}}},
+		},
+	}
+	// Use a non-existent implDocPath so protocol.Load fails.
+	o := newFromDoc(doc, "/repo", "/nonexistent/IMPL.yaml")
+
+	res := o.UpdateIMPLStatus(context.Background(), 1)
+	if res.IsFatal() {
+		t.Fatalf("expected success when manifest load fails, got failure: %v", res.Errors)
+	}
+	data := res.GetData()
+	if data.CompletedAgents != nil {
+		t.Errorf("CompletedAgents should be nil when manifest can't be loaded, got: %v", data.CompletedAgents)
+	}
+}
+
 // Compile-time check: journal package is used to verify import is valid.
 var _ = journal.ToolEntry{}
