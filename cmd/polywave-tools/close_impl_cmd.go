@@ -133,7 +133,8 @@ Examples:
 			}
 
 			// Step 6: Restore original branch if currently on a Polywave-managed branch.
-			// Priority: (1) manifest.OriginalBranch, (2) .polywave-state prepare-result.json, (3) "main".
+			// Priority: (1) .polywave-state prepare-result.json, (2) "main".
+			// original_branch is operational state stored in .polywave-state, not the IMPL manifest.
 			branchRestored := false
 			branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current")
 			if branchErr == nil {
@@ -142,27 +143,22 @@ Examples:
 					(strings.HasPrefix(currentBranch, "wave") && strings.Contains(currentBranch, "-agent-"))
 				if isPolywaveBranch {
 					restoreBranch := "main"
-					// 1. Check manifest field (most reliable — survives .polywave-state cleanup)
-					if manifest.OriginalBranch != "" {
-						restoreBranch = manifest.OriginalBranch
-					} else {
-						// 2. Fall back to .polywave-state prepare-result.json
-						if entries, err := os.ReadDir(statePath); err == nil {
-							for _, e := range entries {
-								if !e.IsDir() || len(e.Name()) < 4 || e.Name()[:4] != "wave" {
-									continue
-								}
-								data, err := os.ReadFile(filepath.Join(statePath, e.Name(), "prepare-result.json"))
-								if err != nil {
-									continue
-								}
-								var result struct {
-									OriginalBranch string `json:"original_branch"`
-								}
-								if err := json.Unmarshal(data, &result); err == nil && result.OriginalBranch != "" {
-									restoreBranch = result.OriginalBranch
-									break
-								}
+					// 1. Check .polywave-state prepare-result.json
+					if entries, err := os.ReadDir(statePath); err == nil {
+						for _, e := range entries {
+							if !e.IsDir() || len(e.Name()) < 4 || e.Name()[:4] != "wave" {
+								continue
+							}
+							data, err := os.ReadFile(filepath.Join(statePath, e.Name(), "prepare-result.json"))
+							if err != nil {
+								continue
+							}
+							var result struct {
+								OriginalBranch string `json:"original_branch"`
+							}
+							if err := json.Unmarshal(data, &result); err == nil && result.OriginalBranch != "" {
+								restoreBranch = result.OriginalBranch
+								break
 							}
 						}
 					}

@@ -200,16 +200,12 @@ func PrepareWave(ctx context.Context, opts PrepareWaveOpts) (*PrepareWaveResult,
 	}
 	recordStep(res, opts.OnEvent, "load_manifest", "success", "manifest loaded")
 
-	// Record original branch on first prepare-wave run (once only, not overwritten on retries).
-	if doc.OriginalBranch == "" {
-		if branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current"); branchErr == nil {
-			if b := strings.TrimSpace(string(branchOut)); b != "" {
-				doc.OriginalBranch = b
-				if saveRes := protocol.Save(ctx, doc, opts.IMPLPath); saveRes.IsFatal() {
-					recordStep(res, opts.OnEvent, "record_original_branch", "warning",
-						fmt.Sprintf("could not save original_branch to manifest: %v", saveRes.Errors))
-				}
-			}
+	// Record original branch for restore on close-impl. Written to .polywave-state
+	// (via prepare-result.json), NOT to the IMPL manifest. The IMPL doc is protocol
+	// state; original_branch is operational state.
+	if branchOut, branchErr := git.Run(projectRoot, "branch", "--show-current"); branchErr == nil {
+		if b := strings.TrimSpace(string(branchOut)); b != "" {
+			res.OriginalBranch = b
 		}
 	}
 
