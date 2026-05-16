@@ -85,6 +85,38 @@ func CheckAgentComplexity(ctx context.Context, m *IMPLManifest) []result.Polywav
 	return warnings
 }
 
+// nonCodeExtensions lists file extensions that are excluded from the LOC budget
+// check. These are documentation, configuration, and data files where line count
+// does not reflect implementation complexity or agent cognitive load.
+var nonCodeExtensions = map[string]bool{
+	".md":       true,
+	".markdown": true,
+	".txt":      true,
+	".rst":      true,
+	".adoc":     true,
+	".yaml":     true,
+	".yml":      true,
+	".json":     true,
+	".toml":     true,
+	".xml":      true,
+	".csv":      true,
+	".svg":      true,
+	".html":     true,
+	".css":      true,
+	".lock":     true,
+	".sum":      true,
+	".mod":      true,
+}
+
+// isNonCodeFile returns true if the file has an extension that indicates it is
+// documentation, configuration, or data rather than source code. These files
+// are excluded from the LOC budget because their line count does not represent
+// implementation complexity.
+func isNonCodeFile(path string) bool {
+	ext := strings.ToLower(filepath.Ext(path))
+	return nonCodeExtensions[ext]
+}
+
 // CheckAgentLOCBudget checks that no agent owns files totalling more than maxLOC
 // lines. Only action=modify files are counted (action=new files do not yet exist).
 // Returns blocking errors for agents over budget.
@@ -109,6 +141,9 @@ func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, 
 			continue
 		}
 		if fo.V048Exempt {
+			continue
+		}
+		if isNonCodeFile(fo.File) {
 			continue
 		}
 		absPath := filepath.Join(repoPath, fo.File)

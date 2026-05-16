@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-05-16)
+- **V048_AGENT_LOC_BUDGET excludes non-code files** — documentation (.md, .txt, .rst), configuration (.yaml, .json, .toml), and data files (.csv, .svg, .html, .css, .lock, .sum, .mod) are now skipped in the LOC budget check. Line count in these files does not reflect implementation complexity. Agents owning large markdown docs no longer trigger false V048 errors.
+
 ### Changed (2026-05-11)
 - **Rebrand: `.saw-ownership.json` renamed to `.polywave-ownership.json`** — `prepare_agent.go` writes `.polywave-ownership.json`, `executors.go` reads `.polywave-ownership.json`, matching the protocol-side hook rename. Cross-repo coordination gap closed: hooks and engine now agree on the artifact filename.
 - **Rebrand: remaining `.saw-` artifact names** — `.saw-config-*.tmp` temp files renamed to `.polywave-config-*.tmp` in `config.go` and `init_engine.go`; `sawStatePath` variable renamed to `statePath` in `close_impl_cmd.go`; `.gitignore` entries updated (`.saw-state/` to `.polywave-state/`, `.saw-agent-brief.md` to `.polywave-agent-brief.md`); test function `SawStateFilesIgnored` renamed to `PolywaveStateFilesIgnored`; `protocol-rules.md` reference updated.
