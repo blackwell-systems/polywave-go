@@ -588,6 +588,30 @@ func FixGateTypes(m *IMPLManifest) int {
 	return fixed
 }
 
+// actionAliases maps common scout-written action synonyms to the canonical enum value.
+var actionAliases = map[string]string{
+	"edit":   "modify",
+	"update": "modify",
+	"change": "modify",
+	"create": "new",
+	"add":    "new",
+	"remove": "delete",
+}
+
+// FixActionAliases normalizes file_ownership action values from common synonyms
+// (e.g., "edit" -> "modify", "create" -> "new") to canonical enum values.
+// Returns the number of entries fixed.
+func FixActionAliases(m *IMPLManifest) int {
+	fixed := 0
+	for i := range m.FileOwnership {
+		if canonical, ok := actionAliases[m.FileOwnership[i].Action]; ok {
+			m.FileOwnership[i].Action = canonical
+			fixed++
+		}
+	}
+	return fixed
+}
+
 // validateMultiRepoConsistency checks that when any file_ownership entry has a repo: field,
 // ALL entries have an explicit repo: field. Mixing explicit and implicit repo tags causes
 // the web GUI to misdetect multi-repo IMPLs.

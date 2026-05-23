@@ -54,6 +54,7 @@ func FullValidate(ctx context.Context, manifestPath string, opts FullValidateOpt
 	// Step 2: Auto-fix correctable issues
 	if opts.AutoFix {
 		totalFixed += FixGateTypes(m)
+		totalFixed += FixActionAliases(m)
 		if totalFixed > 0 {
 			if saveRes := Save(ctx, m, manifestPath); saveRes.IsFatal() {
 				return result.NewFailure[FullValidateData](saveRes.Errors)
