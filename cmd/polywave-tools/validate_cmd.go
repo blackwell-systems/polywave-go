@@ -35,6 +35,7 @@ func newValidateCmd() *cobra.Command {
 	var useSolver bool
 	var autoFix bool
 	var repoDir string
+	var waveNum int
 	cmd := &cobra.Command{
 		Use:   "validate <manifest-path>",
 		Short: "Validate a YAML IMPL manifest against protocol invariants",
@@ -54,6 +55,7 @@ func newValidateCmd() *cobra.Command {
 				AutoFix:   autoFix,
 				UseSolver: useSolver,
 				RepoPath:  effectiveRepoDir,
+				WaveNum:   waveNum,
 			})
 
 			if res.IsFatal() {
@@ -76,5 +78,6 @@ func newValidateCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&useSolver, "solver", false, "use CSP solver for wave assignment validation")
 	cmd.Flags().BoolVar(&autoFix, "fix", false, "auto-correct fixable issues (e.g. invalid gate types -> custom, unknown keys -> stripped)")
 	cmd.Flags().StringVar(&repoDir, "repo-dir", "", "repo root for file-existence checks (inferred from manifest path if not set)")
+	cmd.Flags().IntVar(&waveNum, "wave", 0, "scope V048 LOC budget check to this wave only (0 = check all)")
 	return cmd
 }

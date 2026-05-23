@@ -121,10 +121,27 @@ func isNonCodeFile(path string) bool {
 // lines. Only action=modify files are counted (action=new files do not yet exist).
 // Returns blocking errors for agents over budget.
 // If repoPath is empty, all checks are skipped (allows offline validation).
-func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, maxLOC int) []result.PolywaveError {
+// If waveNum > 0, only agents assigned to that wave are checked. This prevents
+// completed agents from earlier waves blocking later wave launches after their
+// files have grown post-merge.
+func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, maxLOC int, waveNum ...int) []result.PolywaveError {
 	_ = ctx
 	if repoPath == "" {
 		return nil
+	}
+
+	// Build set of agents in the target wave (if wave filtering is active).
+	var waveAgents map[string]bool
+	if len(waveNum) > 0 && waveNum[0] > 0 {
+		waveAgents = make(map[string]bool)
+		for _, w := range m.Waves {
+			if w.Number == waveNum[0] {
+				for _, a := range w.Agents {
+					waveAgents[a.ID] = true
+				}
+				break
+			}
+		}
 	}
 
 	// Build per-agent LOC and file count maps (action=modify only)
@@ -144,6 +161,10 @@ func CheckAgentLOCBudget(ctx context.Context, m *IMPLManifest, repoPath string, 
 			continue
 		}
 		if isNonCodeFile(fo.File) {
+			continue
+		}
+		// Skip agents not in the target wave (if wave filtering is active).
+		if waveAgents != nil && !waveAgents[fo.Agent] {
 			continue
 		}
 		absPath := filepath.Join(repoPath, fo.File)
