@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed (2026-05-20)
+- **V048_AGENT_LOC_BUDGET scoped to current wave** — `--wave` flag on `polywave-tools validate` and `WaveNum` in `FullValidateOpts` scope the LOC budget check to agents in the target wave only. Prevents completed Wave 1 agents from blocking Wave 2 launches after their files grew post-merge.
+- **`original_branch` removed from IMPL manifest** — operational state moved to `.polywave-state/waveN/prepare-result.json`. Eliminates the recurring `prepare-wave` / `validate` schema disagreement (V013_UNKNOWN_KEY) that blocked every wave launch.
+
 ### Fixed (2026-05-16)
 - **V048_AGENT_LOC_BUDGET excludes non-code files** — documentation (.md, .txt, .rst), configuration (.yaml, .json, .toml), and data files (.csv, .svg, .html, .css, .lock, .sum, .mod) are now skipped in the LOC budget check. Line count in these files does not reflect implementation complexity. Agents owning large markdown docs no longer trigger false V048 errors.
 
