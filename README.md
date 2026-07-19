@@ -15,7 +15,7 @@
 
 > **Using Claude Code?** Start at [polywave](https://github.com/blackwell-systems/polywave) for the Agent Skill and install guide. This repo provides the engine and CLI that the skill depends on.
 
-Polywave is not a generic agent runner. It is a protocol for deciding when parallel agent work is suitable, partitioning that work by file ownership, enforcing the partition before agents start, and merging completed work through deterministic gates.
+Polywave is not a generic agent runner, and it is not an agent platform you adopt. It is a protocol for deciding when parallel agent work is suitable, partitioning that work by file ownership, enforcing the partition before agents start, and merging completed work through deterministic gates. This repo is the thin CLI and engine that implementation skills depend on: the value is a lightweight overlay on the agent runtime you already use (Claude Code, Codex, or a local model), not a heavyweight engine that replaces it.
 
 ---
 
