@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -43,6 +44,9 @@ func RunVerifyInstall(opts VerifyInstallOpts) InstallResult {
 
 	// 2. Git version
 	checks = append(checks, checkGitVersion())
+
+	// 2b. LSP tooling (warn-only: agents degrade to grep without it)
+	checks = append(checks, checkLSPTooling())
 
 	// 3. Skill directory
 	skillDirCheck := checkSkillDirectory()
@@ -183,6 +187,44 @@ func checkGitVersion() InstallCheck {
 		Name:   "git_version",
 		Status: "fail",
 		Detail: fmt.Sprintf("%d.%d < 2.20 (worktree support required)", major, minor),
+	}
+}
+
+// knownLanguageServers maps a language-server binary name to a human label and
+// install hint. gopls is listed first because polywave-go itself is Go, and Go
+// is the most common Polywave target.
+var knownLanguageServers = []struct {
+	bin, label, hint string
+}{
+	{"gopls", "Go", "go install golang.org/x/tools/gopls@latest"},
+	{"rust-analyzer", "Rust", "rustup component add rust-analyzer"},
+	{"typescript-language-server", "TypeScript", "npm i -g typescript-language-server"},
+	{"pyright", "Python", "npm i -g pyright"},
+	{"clangd", "C/C++", "brew install llvm"},
+}
+
+// checkLSPTooling verifies at least one language server is on PATH. Wave and
+// scout agents use the LSP tool for navigation (find-references, hover, symbols);
+// without a language server they silently fall back to grep, which is slower and
+// less accurate. This is warn-only: Polywave still runs, just degraded.
+func checkLSPTooling() InstallCheck {
+	var found []string
+	for _, ls := range knownLanguageServers {
+		if _, err := exec.LookPath(ls.bin); err == nil {
+			found = append(found, ls.bin)
+		}
+	}
+	if len(found) > 0 {
+		return InstallCheck{
+			Name:   "lsp_tooling",
+			Status: "pass",
+			Detail: fmt.Sprintf("language server(s) on PATH: %s", strings.Join(found, ", ")),
+		}
+	}
+	return InstallCheck{
+		Name:   "lsp_tooling",
+		Status: "warn",
+		Detail: "no language server on PATH — agents fall back to grep (slower, less accurate). For Go: " + knownLanguageServers[0].hint,
 	}
 }
 

@@ -130,6 +130,13 @@ func main() {
 		newReconcileStateCmd(),
 		newAgentStatusCmd(),
 	)
+
+	// Tier the help output: surface the handful of workflow entrypoints and
+	// setup commands into named groups; the remaining ~75 plumbing commands fall
+	// under cobra's default "Additional Commands" section. This keeps
+	// `polywave-tools --help` scannable for new users.
+	applyCommandGroups(rootCmd)
+
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

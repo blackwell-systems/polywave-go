@@ -15,3 +15,4 @@ go.work.sum
 inspections/
 docs/competitive/
 polywave-tools
+polywave.config.json

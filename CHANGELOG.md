@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added (2026-05-25)
+- **New-user friction fixes.** `verify-install` gained an `lsp_tooling` check (warn-only) that detects whether a language server (gopls, rust-analyzer, pyright, etc.) is on PATH, since agents degrade to grep without one. `polywave-tools --help` now tiers commands into "Workflows (start here)" (7 entrypoints) and "Setup & verification" (3), with the ~75 plumbing commands under "Additional Commands". `polywave.config.json` is now gitignored (it holds machine-specific absolute paths and personal repo lists); a `polywave.config.example.json` documents the schema. `init` generates the real file locally.
+
 ### Fixed (2026-05-20)
 - **V048_AGENT_LOC_BUDGET scoped to current wave** — `--wave` flag on `polywave-tools validate` and `WaveNum` in `FullValidateOpts` scope the LOC budget check to agents in the target wave only. Prevents completed Wave 1 agents from blocking Wave 2 launches after their files grew post-merge.
 - **`original_branch` removed from IMPL manifest** — operational state moved to `.polywave-state/waveN/prepare-result.json`. Eliminates the recurring `prepare-wave` / `validate` schema disagreement (V013_UNKNOWN_KEY) that blocked every wave launch.
